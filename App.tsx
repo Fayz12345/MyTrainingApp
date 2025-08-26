@@ -9,6 +9,7 @@ import { SafeAreaView, Text, View, StyleSheet } from 'react-native';
 import { Amplify } from 'aws-amplify';
 import outputs from './amplify_outputs.json';
 import { Authenticator, useAuthenticator } from '@aws-amplify/ui-react-native';
+import { CourseList } from './CourseList';
 
 // This line configures Amplify with the backend info from your sandbox
 Amplify.configure(outputs);
@@ -22,7 +23,8 @@ function AppContent() {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.welcomeText}>Welcome, {user.signInDetails?.loginId || user.username}!</Text>
-        {/* We will add the CourseList component here later */}
+        {/* --- MAIN CONTENT --- */}
+        <CourseList />
         <Text>Your training app content will go here.</Text>
       </View>
       {/* A simple button to allow users to sign out */}
