@@ -13,6 +13,7 @@
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
     "@aws-amplify/ui-react-native": "^2.5.3",
+    "@aws-sdk/client-sns": "^3.883.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-native/new-app-screen": "0.80.2",
