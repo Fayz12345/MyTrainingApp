@@ -1,4 +1,5 @@
 import { defineBackend } from '@aws-amplify/backend';
+import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { storage } from './storage/resource';
@@ -7,9 +8,10 @@ import { quizCompletion } from './functions/quizCompletion/resource';
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
  */
-defineBackend({
+const backend = defineBackend({
   auth,
   data,
   storage,
   quizCompletion
 });
+
