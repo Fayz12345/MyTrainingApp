@@ -1,61 +1,38 @@
-import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
+import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 
+/* This is the schema for our Training App */
 const schema = a.schema({
+  // Course Model: The main training course
   Course: a
     .model({
-      id: a.id(),
       title: a.string().required(),
-      videoKey: a.string(), // S3 key for video
-      quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
-      passingScore: a.integer().required(),
-      createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      videoPath: a.string(),
+      questions: a.hasMany('Question', 'courseId'),
     })
-    .authorization(allow => [
-      allow.group('Managers').to(['create', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+    // THIS IS THE CORRECT, SIMPLIFIED RULE
+    .authorization((allow) => [
+      allow.publicApiKey() // This one line grants all permissions (create, read, update, delete)
     ]),
-  QuizQuestion: a
+
+  // Question Model: A question within a course
+  Question: a
     .model({
-      id: a.id(),
-      courseId: a.id(), // Foreign key linking to Course
-      course: a.belongsTo('Course', 'courseId'), // Added: Reciprocal relationship
-      question: a.string().required(),
-      options: a.string().array().required(),
-      correctAnswer: a.integer().required(),
-      createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
-    })
-    .authorization(allow => [
-      allow.group('Managers').to(['create', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
-    ]),
-  Assignment: a
-    .model({
-      id: a.id(),
-      employeeId: a.string().required(),
       courseId: a.id().required(),
-      status: a.enum(['assigned', 'completed']),
-      createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      course: a.belongsTo('Course', 'courseId'),
+      questionText: a.string().required(),
+      choices: a.hasMany('Choice', 'questionId'),
     })
-    .authorization(allow => [
-      allow.group('Managers').to(['create', 'update', 'delete', 'read']),
-      allow.group('Employees').to(['read'])
-    ]),
-  Result: a
+    .authorization((allow) => [allow.publicApiKey()]), // Using the same simple rule
+
+  // Choice Model: An answer choice for a question
+  Choice: a
     .model({
-      id: a.id(),
-      assignmentId: a.id().required(),
-      score: a.integer().required(),
-      passed: a.boolean().required(),
-      createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      questionId: a.id().required(),
+      question: a.belongsTo('Question', 'questionId'),
+      choiceText: a.string().required(),
+      isCorrect: a.boolean().required(),
     })
-    .authorization(allow => [
-      allow.group('Managers').to(['read', 'update']),
-      allow.group('Employees').to(['create', 'read'])
-    ])
+    .authorization((allow) => [allow.publicApiKey()]), // And here
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -63,6 +40,9 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'userPool' // Use Cognito for auth
-  }
+    defaultAuthorizationMode: 'apiKey',
+    apiKeyAuthorizationMode: {
+      expiresInDays: 30,
+    },
+  },
 });
