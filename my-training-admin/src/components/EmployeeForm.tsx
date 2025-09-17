@@ -1,8 +1,4 @@
 import React, { useState } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
-
-const client = generateClient<Schema>();
 
 interface EmployeeFormProps {
   onCancel: () => void;
@@ -47,22 +43,61 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     return password.split('').sort(() => Math.random() - 0.5).join('');
   };
 
-  const createCognitoUser = async (email: string, temporaryPassword: string, role: string) => {
+  const createCognitoUser = async (email: string, name: string, department: string, temporaryPassword: string, role: string) => {
     try {
-      console.log('Creating Cognito user with:', {
+      console.log('Calling Lambda Function URL to create user:', { email, name, role });
+      console.log('Function URL:', 'https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/');
+      
+      const requestBody = {
         email,
+        name, 
+        department,
         temporaryPassword,
         role
-      });
+      };
+      console.log('Request body:', requestBody);
       
-      // Generate a unique user ID for the Employee record
+      const response = await fetch('https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('Response received:', response);
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { error: `HTTP ${response.status} ${response.statusText}` };
+        }
+        console.error('Error response:', errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Lambda response:', result);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error from Lambda');
+      }
+
       return {
-        userId: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        userCreated: true
+        userId: result.employee.userId,
+        userCreated: true,
+        employeeId: result.employee.id
       };
     } catch (error) {
-      console.error('Error creating Cognito user:', error);
-      throw new Error('Failed to create user account');
+      console.error('Detailed error creating user via Lambda:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error name:', error instanceof Error ? error.name : 'Unknown');
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      throw new Error('Failed to create user account: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -83,29 +118,19 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     setError(null);
 
     try {
-      // Step 1: Create Cognito user (mock implementation)
-      const { userId } = await createCognitoUser(
-        formData.email, 
+      // Call Lambda Function URL to create complete employee (Cognito + DynamoDB)
+      const result = await createCognitoUser(
+        formData.email,
+        formData.name,
+        formData.department,
         formData.temporaryPassword, 
         formData.role
       );
 
-      // Step 2: Create Employee record in database
-      const result = await client.models.Employee.create({
-        userId: userId,
-        email: formData.email,
-        name: formData.name,
-        department: formData.department || undefined,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      console.log('Employee creation result:', result);
 
-      if (result.errors && result.errors.length > 0) {
-        throw new Error('Failed to create employee record: ' + result.errors.map((e: any) => e.message).join(', '));
-      }
-
-      alert(`Employee created successfully!\n\nEmployee Details:\n• Email: ${formData.email}\n• Name: ${formData.name}\n• Department: ${formData.department || 'Not specified'}\n• Role: ${formData.role}\n• Password: ${formData.temporaryPassword}\n\nNext Steps:\n1. The employee can now log in to the mobile app\n2. They will be prompted to change their password on first login\n3. You can assign courses to this employee from the 'Assign Courses' section`);
+      // Show success message
+      alert(`🎉 Employee created successfully!\n\n👤 Employee: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n👥 Role: ${formData.role}\n🆔 Employee ID: ${result.employeeId}\n\n✅ The employee can now log in to the mobile app immediately!\n✅ You can assign courses to this employee from the 'Assign Courses' section.`);
 
       onEmployeeCreated();
     } catch (err) {
