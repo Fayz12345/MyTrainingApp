@@ -7,12 +7,12 @@ const schema = a.schema({
       title: a.string().required(),
       videoKey: a.string(), // S3 key for video
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
-      passingScore: a.integer().required(),
+      passingScore: a.integer(),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
-      allow.group('Managers').to(['create', 'update', 'delete']),
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read'])
     ]),
   QuizQuestion: a
@@ -27,7 +27,7 @@ const schema = a.schema({
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
-      allow.group('Managers').to(['create', 'update', 'delete']),
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read'])
     ]),
   Assignment: a

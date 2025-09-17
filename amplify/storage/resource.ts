@@ -6,6 +6,10 @@ export const storage = defineStorage({
     'videos/{entity_id}/*': [
       allow.groups(['Managers']).to(['read', 'write', 'delete']),
       allow.groups(['Employees']).to(['read'])
+    ],
+    'courses/videos/*': [
+      allow.groups(['Managers']).to(['read', 'write', 'delete']),
+      allow.groups(['Employees']).to(['read'])
     ]
   })
 });
