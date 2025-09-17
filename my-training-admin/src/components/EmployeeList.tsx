@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
+import EmployeeForm from './EmployeeForm';
 
 const client = generateClient<Schema>();
 
@@ -40,6 +41,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -166,24 +168,50 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
     }
   };
 
+  if (showCreateForm) {
+    return (
+      <EmployeeForm 
+        onCancel={() => setShowCreateForm(false)}
+        onEmployeeCreated={() => {
+          setShowCreateForm(false);
+          fetchData(); // Refresh the employee list
+        }}
+      />
+    );
+  }
+
   if (employees.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '2rem' }}>
         <p>No employees found. Employees will appear here once they are added to the system.</p>
-        <button 
-          onClick={createTestEmployee}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#1976d2',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginTop: '1rem'
-          }}
-        >
-          Add Test Employee
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem' }}>
+          <button 
+            onClick={() => setShowCreateForm(true)}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#1976d2',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Create New Employee
+          </button>
+          <button 
+            onClick={createTestEmployee}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#f5f5f5',
+              color: '#333',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Add Test Employee (Demo)
+          </button>
+        </div>
       </div>
     );
   }
@@ -192,18 +220,33 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h3>Employees ({employees.length})</h3>
-        <button 
-          onClick={fetchData}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#f5f5f5',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          🔄 Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button 
+            onClick={() => setShowCreateForm(true)}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#1976d2',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            + Create Employee
+          </button>
+          <button 
+            onClick={fetchData}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#f5f5f5',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            🔄 Refresh
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: '1rem' }}>
