@@ -12,18 +12,16 @@
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
-    "@aws-amplify/ui-react-native": "^2.6.0",
-    "@aws-sdk/client-sns": "^3.883.0",
+    "@aws-amplify/ui-react-native": "^2.5.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-native/new-app-screen": "0.80.2",
-    "aws-amplify": "^6.15.5",
+    "aws-amplify": "^6.15.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-native": "0.80.2",
     "react-native-get-random-values": "^1.11.0",
-    "react-native-safe-area-context": "^5.6.1",
-    "react-native-url-polyfill": "^2.0.0",
+    "react-native-safe-area-context": "^5.5.2",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
