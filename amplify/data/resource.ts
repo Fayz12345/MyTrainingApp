@@ -7,6 +7,7 @@ const schema = a.schema({
       title: a.string().required(),
       videoKey: a.string(), // S3 key for video
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
+      assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
       passingScore: a.integer(),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
@@ -30,11 +31,29 @@ const schema = a.schema({
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read'])
     ]),
+  Employee: a
+    .model({
+      id: a.id(),
+      userId: a.string().required(), // Cognito user ID
+      email: a.string().required(),
+      name: a.string().required(),
+      department: a.string(),
+      isActive: a.boolean().default(true),
+      assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
+    ]),
   Assignment: a
     .model({
       id: a.id(),
-      employeeId: a.string().required(),
+      employeeId: a.id().required(),
       courseId: a.id().required(),
+      employee: a.belongsTo('Employee', 'employeeId'),
+      course: a.belongsTo('Course', 'courseId'),
       status: a.enum(['assigned', 'completed']),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()

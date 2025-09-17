@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
 import CourseForm from './CourseForm';
 import CourseList from './CourseList';
+import AssignmentForm from './AssignmentForm';
+import EmployeeList from './EmployeeList';
 
 interface ManagerDashboardProps {
   signOut: (() => void) | undefined;
   user: AuthUser;
 }
 
-type ViewMode = 'dashboard' | 'courses' | 'create-course';
+type ViewMode = 'dashboard' | 'courses' | 'create-course' | 'employees' | 'assignments';
 
 const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) => {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
@@ -70,6 +72,37 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </div>
         );
 
+      case 'employees':
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <h2>Employee Management</h2>
+            </div>
+            <EmployeeList refreshTrigger={refreshTrigger} />
+          </div>
+        );
+
+      case 'assignments':
+        return (
+          <div>
+            <div style={{ marginBottom: '1rem' }}>
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back to Dashboard
+              </button>
+            </div>
+            <AssignmentForm />
+          </div>
+        );
+
       default:
         return (
           <div>
@@ -94,16 +127,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}>
-                <h3>User Management</h3>
-                <p>Manage employee accounts, roles, and permissions.</p>
-                <button disabled style={{ 
-                  padding: '8px 16px',
-                  backgroundColor: '#ccc',
-                  color: '#666',
-                  border: 'none',
-                  borderRadius: '4px'
-                }}>
-                  Coming Soon
+                <h3>Employee Management</h3>
+                <p>View and manage employee information and assignments.</p>
+                <button 
+                  onClick={() => setCurrentView('employees')}
+                  style={{ 
+                    padding: '8px 16px',
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Manage Employees
                 </button>
               </div>
 
@@ -155,16 +192,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}>
-                <h3>Reports</h3>
-                <p>Generate and export training reports.</p>
-                <button disabled style={{ 
-                  padding: '8px 16px',
-                  backgroundColor: '#ccc',
-                  color: '#666',
-                  border: 'none',
-                  borderRadius: '4px'
-                }}>
-                  Coming Soon
+                <h3>Course Assignments</h3>
+                <p>Assign courses to employees for training.</p>
+                <button 
+                  onClick={() => setCurrentView('assignments')}
+                  style={{ 
+                    padding: '8px 16px',
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Assign Courses
                 </button>
               </div>
             </div>
@@ -211,14 +252,40 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 onClick={() => setCurrentView('courses')}
                 style={{
                   padding: '0.5rem 1rem',
-                  backgroundColor: currentView === 'courses' ? '#1976d2' : '#f5f5f5',
-                  color: currentView === 'courses' ? 'white' : '#333',
+                  backgroundColor: currentView === 'courses' || currentView === 'create-course' ? '#1976d2' : '#f5f5f5',
+                  color: currentView === 'courses' || currentView === 'create-course' ? 'white' : '#333',
                   border: '1px solid #ccc',
                   borderRadius: '4px',
                   cursor: 'pointer'
                 }}
               >
                 Courses
+              </button>
+              <button
+                onClick={() => setCurrentView('employees')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: currentView === 'employees' ? '#1976d2' : '#f5f5f5',
+                  color: currentView === 'employees' ? 'white' : '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Employees
+              </button>
+              <button
+                onClick={() => setCurrentView('assignments')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: currentView === 'assignments' ? '#1976d2' : '#f5f5f5',
+                  color: currentView === 'assignments' ? 'white' : '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Assignments
               </button>
             </nav>
           )}
