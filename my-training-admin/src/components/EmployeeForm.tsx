@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 interface EmployeeFormProps {
   onCancel: () => void;
@@ -128,6 +132,24 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
       );
 
       console.log('Employee creation result:', result);
+
+      // Also create the record via GraphQL for immediate visibility in the UI
+      try {
+        const now = new Date().toISOString();
+        await client.models.Employee.create({
+          id: result.employeeId,
+          userId: result.userId,
+          email: formData.email,
+          name: formData.name,
+          department: formData.department || null,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now
+        });
+        console.log('Employee record also created via GraphQL');
+      } catch (graphqlError) {
+        console.warn('GraphQL record creation failed (Lambda record still exists):', graphqlError);
+      }
 
       // Show success message
       alert(`🎉 Employee created successfully!\n\n👤 Employee: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n👥 Role: ${formData.role}\n🆔 Employee ID: ${result.employeeId}\n\n✅ The employee can now log in to the mobile app immediately!\n✅ You can assign courses to this employee from the 'Assign Courses' section.`);
