@@ -10,19 +10,47 @@ import { Amplify } from 'aws-amplify';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
 import outputs from './amplify_outputs.json';
 import { Authenticator, useAuthenticator } from '@aws-amplify/ui-react-native';
-import { CourseList } from './CourseList';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { CourseListTab } from './components/CourseListTab';
 
 // Configure Amplify with backend info
 Amplify.configure(outputs);
 
-function AppContent() {
+const Tab = createBottomTabNavigator();
+
+function CoursesScreen() {
+  return (
+    <View style={styles.container}>
+      <CourseListTab />
+    </View>
+  );
+}
+
+function ProfileScreen() {
   const { user, signOut } = useAuthenticator();
+  
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Profile</Text>
+      <Text style={styles.subtitle}>
+        Welcome, {user.signInDetails?.loginId || user.username}!
+      </Text>
+      <Text onPress={signOut} style={styles.signOutButton}>
+        Sign Out
+      </Text>
+    </View>
+  );
+}
+
+function AppContent() {
+  const { user } = useAuthenticator();
   const [isEmployee, setIsEmployee] = useState<boolean | null>(null);
 
   useEffect(() => {
     const checkGroups = async () => {
       try {
-        const user = await getCurrentUser();
+        const currentUser = await getCurrentUser();
         const session = await fetchAuthSession({ forceRefresh: true });
         let groups = session.tokens?.idToken?.payload['cognito:groups'];
         if (typeof groups === 'string') {
@@ -43,42 +71,55 @@ function AppContent() {
 
   if (isEmployee === null) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.centerContainer}>
         <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>Checking permissions...</Text>
       </SafeAreaView>
     );
   }
 
   if (!isEmployee) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.errorText}>Access denied. Employees only.</Text>
-        </View>
-        <View style={styles.buttonContainer}>
-          <Text onPress={signOut} style={styles.signOutButton}>
-            Sign Out
-          </Text>
-        </View>
+      <SafeAreaView style={styles.centerContainer}>
+        <Text style={styles.errorText}>Access denied. Employees only.</Text>
+        <Text style={styles.subtitle}>Contact your manager for access.</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.welcomeText}>
-          Welcome, {user.signInDetails?.loginId || user.username}!
-        </Text>
-        <CourseList />
-        <Text>Your training app content will go here.</Text>
-      </View>
-      <View style={styles.buttonContainer}>
-        <Text onPress={signOut} style={styles.signOutButton}>
-          Sign Out
-        </Text>
-      </View>
-    </SafeAreaView>
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={{
+          tabBarActiveTintColor: '#007AFF',
+          tabBarInactiveTintColor: '#999',
+          headerStyle: {
+            backgroundColor: '#007AFF',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      >
+        <Tab.Screen 
+          name="Courses" 
+          component={CoursesScreen}
+          options={{
+            title: 'My Training',
+            tabBarLabel: 'Courses',
+          }}
+        />
+        <Tab.Screen 
+          name="Profile" 
+          component={ProfileScreen}
+          options={{
+            title: 'Profile',
+            tabBarLabel: 'Profile',
+          }}
+        />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
 
@@ -95,30 +136,48 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
     padding: 20,
+    backgroundColor: '#f5f5f5',
   },
-  content: {
+  centerContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#f5f5f5',
   },
-  welcomeText: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 20,
+    color: '#333',
+    textAlign: 'center',
   },
-  buttonContainer: {
-    alignItems: 'center',
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  signOutButton: {
-    fontSize: 18,
-    color: 'red',
-    padding: 10,
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   errorText: {
     fontSize: 18,
     color: 'red',
     textAlign: 'center',
+    marginBottom: 10,
+  },
+  signOutButton: {
+    fontSize: 16,
+    color: '#dc3545',
+    fontWeight: 'bold',
+    padding: 10,
+    textAlign: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginTop: 20,
   },
 });
