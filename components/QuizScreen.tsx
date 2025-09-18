@@ -116,7 +116,7 @@ export function QuizScreen({ course, assignmentId, onQuizComplete, onClose }: Pr
       console.error('Error saving quiz result:', err);
     }
 
-    onQuizComplete(finalScore, passed);
+    // Don't call onQuizComplete immediately - let user see results first
   };
 
   if (loading) {
@@ -194,7 +194,9 @@ export function QuizScreen({ course, assignmentId, onQuizComplete, onClose }: Pr
               </TouchableOpacity>
             )}
             
-            <TouchableOpacity style={styles.button} onPress={onClose}>
+            <TouchableOpacity style={styles.button} onPress={() => {
+              onQuizComplete(score, passed);
+            }}>
               <Text style={styles.buttonText}>
                 {passed ? 'Complete Training' : 'Close'}
               </Text>
