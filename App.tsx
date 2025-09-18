@@ -22,7 +22,8 @@ function AppContent() {
   useEffect(() => {
     const checkGroups = async () => {
       try {
-        const user = await getCurrentUser();
+        const user1 = await getCurrentUser();
+        console.log('Current Cognito User:', user);
         const session = await fetchAuthSession({ forceRefresh: true });
         let groups = session.tokens?.idToken?.payload['cognito:groups'];
         if (typeof groups === 'string') {

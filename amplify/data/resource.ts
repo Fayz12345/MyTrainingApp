@@ -9,11 +9,12 @@ const schema = a.schema({
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
       passingScore: a.integer().required(),
       createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      updatedAt: a.datetime().required(),
+      assignedTo: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
     ]),
   QuizQuestion: a
     .model({
@@ -24,24 +25,26 @@ const schema = a.schema({
       options: a.string().array().required(),
       correctAnswer: a.integer().required(),
       createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      updatedAt: a.datetime().required(),
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
     ]),
   Assignment: a
     .model({
       id: a.id(),
       employeeId: a.string().required(),
       courseId: a.id().required(),
+      course: a.belongsTo('Course', 'courseId'),
+      userId: a.string().required(),
       status: a.enum(['assigned', 'completed']),
       createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      updatedAt: a.datetime().required(),
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete', 'read']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
     ]),
   Result: a
     .model({
@@ -50,12 +53,12 @@ const schema = a.schema({
       score: a.integer().required(),
       passed: a.boolean().required(),
       createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required()
+      updatedAt: a.datetime().required(),
     })
     .authorization(allow => [
       allow.group('Managers').to(['read', 'update']),
-      allow.group('Employees').to(['create', 'read'])
-    ])
+      allow.group('Employees').to(['create', 'read']),
+    ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -63,6 +66,6 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'userPool' // Use Cognito for auth
-  }
+    defaultAuthorizationMode: 'userPool', // Use Cognito for auth
+  },
 });

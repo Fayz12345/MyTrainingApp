@@ -24,6 +24,7 @@ export function CourseList() {
       setError(errorMessage);
     } else {
       console.log(`[CourseList] Successfully fetched ${items.length} courses.`);
+      console.log(items);
       setCourses(items);
     }
 
