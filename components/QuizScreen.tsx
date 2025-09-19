@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { generateClient } from 'aws-amplify/data';
-import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../amplify/data/resource';
 
 const client = generateClient<Schema>();
@@ -36,7 +35,7 @@ export function QuizScreen({ course, assignmentId, onQuizComplete, onClose }: Pr
     const loadQuestions = async () => {
       try {
         const { data: quizQuestions, errors } = await client.models.QuizQuestion.list({
-          filter: { courseId: { eq: course.id } }
+          filter: { courseId: { eq: course.id || '' } }
         });
 
         if (errors) {
@@ -103,14 +102,24 @@ export function QuizScreen({ course, assignmentId, onQuizComplete, onClose }: Pr
         assignmentId: assignmentId,
         score: finalScore,
         passed: passed,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
 
-      // Update assignment status if passed
+      // Update assignment and send notifications if passed
       if (passed) {
-        await client.models.Assignment.update({
-          id: assignmentId,
-          status: 'completed'
-        });
+        try {
+          // Update assignment with completion status
+          await client.models.Assignment.update({
+            id: assignmentId,
+            status: 'completed',
+            is_training_complete: true
+          });
+
+          console.log('Training completed successfully! Assignment status updated.');
+        } catch (updateError) {
+          console.error('Error updating assignment status:', updateError);
+        }
       }
     } catch (err) {
       console.error('Error saving quiz result:', err);

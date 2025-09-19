@@ -21,6 +21,7 @@ type Assignment = {
   readonly employeeId: string;
   readonly courseId: string;
   readonly status?: string | null;
+  readonly is_training_complete?: boolean | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -84,6 +85,10 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
 
   const getEmployeeAssignments = (employeeId: string) => {
     return assignments.filter(assignment => assignment.employeeId === employeeId);
+  };
+
+  const getCompletedTrainingCount = () => {
+    return assignments.filter(assignment => assignment.is_training_complete === true).length;
   };
 
   const getCourseTitle = (courseId: string) => {
@@ -219,7 +224,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h3>Employees ({employees.length})</h3>
+        <div>
+          <h3>Employees ({employees.length})</h3>
+          <p style={{ margin: '0.25rem 0 0 0', color: '#666', fontSize: '0.9rem' }}>
+            {getCompletedTrainingCount()} training completion{getCompletedTrainingCount() !== 1 ? 's' : ''} ready for scheduling
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button 
             onClick={() => setShowCreateForm(true)}
@@ -339,17 +349,33 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
                               <div style={{ fontSize: '0.8rem', color: '#666' }}>
                                 Status: {assignment.status || 'assigned'} • 
                                 Assigned: {new Date(assignment.createdAt).toLocaleDateString()}
+                                {assignment.is_training_complete && (
+                                  <span style={{ color: '#4caf50', fontWeight: 'bold' }}> • Training Complete ✅</span>
+                                )}
                               </div>
                             </div>
-                            <span style={{
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '4px',
-                              fontSize: '0.75rem',
-                              backgroundColor: assignment.status === 'completed' ? '#4caf50' : '#ff9800',
-                              color: 'white'
-                            }}>
-                              {assignment.status === 'completed' ? 'COMPLETED' : 'ASSIGNED'}
-                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end' }}>
+                              <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                backgroundColor: assignment.status === 'completed' ? '#4caf50' : '#ff9800',
+                                color: 'white'
+                              }}>
+                                {assignment.status === 'completed' ? 'COMPLETED' : 'ASSIGNED'}
+                              </span>
+                              {assignment.is_training_complete && (
+                                <span style={{
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  backgroundColor: '#2196f3',
+                                  color: 'white'
+                                }}>
+                                  READY FOR SCHEDULING
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
