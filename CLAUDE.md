@@ -29,6 +29,12 @@ Creates Cognito users + DynamoDB records automatically through admin form.
 - **Employee Table**: `Employee-u6qx457cnnc63grvlgaiwedzgi-NONE`
 - **Lambda Function**: `create-employee-function`
 
+## Training Completion Status (Latest Feature)
+**Implementation**: Automatic training status updates when employees pass quizzes
+- **Mobile App**: `QuizScreen.tsx` updates Assignment status to "completed" and sets `is_training_complete = true` on quiz pass
+- **Admin Portal**: `EmployeeList.tsx` displays completion status with "Training Complete ✅" and "READY FOR SCHEDULING" badges
+- **Database**: Assignment model includes `is_training_complete` boolean field for scheduling system integration
+
 ## Important Notes
 - Admin portal requires `amplify_outputs.json` to be copied from parent directory for GraphQL access
 - Employee creation uses dual approach: Lambda for Cognito + GraphQL for immediate UI visibility
