@@ -121,34 +121,30 @@ jobs:
     needs: deploy-backend
     
     steps:
-      - name: Checkout admin portal code
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/MyTrainingAdmin
-          ref: qa
-          path: admin
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: admin/package-lock.json
+          cache-dependency-path: my-training-admin/package-lock.json
 
       - name: Download amplify_outputs
         uses: actions/download-artifact@v4
         with:
           name: qa-amplify-outputs
-          path: admin/src/
+          path: my-training-admin/src/
 
       - name: Install admin portal dependencies
         run: |
-          cd admin
+          cd my-training-admin
           npm ci
 
       - name: Build admin portal
         run: |
-          cd admin
+          cd my-training-admin
           npm run build
 
       - name: Configure AWS credentials
@@ -158,11 +154,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to Amplify Hosting
+      - name: Deploy to S3 for QA
         run: |
-          cd admin
-          # Deploy to Amplify console automatically picks up the qa branch
-          echo "Admin portal will auto-deploy via Amplify Console from qa branch"
+          cd my-training-admin
+          # Create QA admin portal bucket if it doesn't exist
+          BUCKET_NAME="qa-mytrainingapp-admin-portal"
+          aws s3 mb s3://$BUCKET_NAME --region ${{ env.AWS_REGION }} || true
+          
+          # Sync build files to S3
+          aws s3 sync build/ s3://$BUCKET_NAME --delete
+          
+          # Configure bucket for static website hosting
+          aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
+          
+          # Make bucket publicly readable
+          aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "PublicReadGetObject",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::'$BUCKET_NAME'/*"
+              }
+            ]
+          }'
+          
+          echo "Admin portal deployed to: http://$BUCKET_NAME.s3-website.${{ env.AWS_REGION }}.amazonaws.com"
 
   seed-test-data:
     name: Seed QA Test Data
@@ -231,5 +250,5 @@ jobs:
           echo "- E2E Tests: ✅ Passed"
           echo ""
           echo "QA Environment URLs:"
-          echo "- Admin Portal: https://qa-branch.d{app-id}.amplifyapp.com"
+          echo "- Admin Portal: http://qa-mytrainingapp-admin-portal.s3-website.ca-central-1.amazonaws.com"
           echo "- Android APK: https://qa-mytrainingapp-artifacts.s3.ca-central-1.amazonaws.com/MyTrainingApp-qa-latest.apk"

@@ -19,8 +19,8 @@ The QA environment provides an isolated testing environment for the MyTrainingAp
 ## Access URLs
 
 ### Admin Portal
-- **URL**: Will be available at Amplify Console hosted URL for `qa` branch
-- **Format**: `https://qa-branch.d{app-id}.amplifyapp.com`
+- **URL**: `http://qa-mytrainingapp-admin-portal.s3-website.ca-central-1.amazonaws.com`
+- **Deployment**: Automatically deployed via GitHub Actions to S3 static website hosting
 
 ### Android APK Download
 - **Latest APK**: `https://qa-mytrainingapp-artifacts.s3.ca-central-1.amazonaws.com/MyTrainingApp-qa-latest.apk`
