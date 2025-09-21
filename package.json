@@ -8,7 +8,9 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "build:web": "webpack --mode production"
+    "build:web": "webpack --mode production",
+    "seed:qa": "node scripts/seed-qa-simple.js",
+    "deploy:qa": "npx @aws-amplify/backend-cli sandbox --identifier qa --once"
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
@@ -35,6 +37,7 @@
   "devDependencies": {
     "@aws-amplify/backend": "^1.16.1",
     "@aws-amplify/backend-cli": "^1.8.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.893.0",
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",

@@ -55,12 +55,13 @@ const schema = a.schema({
       employee: a.belongsTo('Employee', 'employeeId'),
       course: a.belongsTo('Course', 'courseId'),
       status: a.enum(['assigned', 'completed']),
+      is_training_complete: a.boolean().default(false),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete', 'read']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read', 'update'])
     ]),
   Result: a
     .model({

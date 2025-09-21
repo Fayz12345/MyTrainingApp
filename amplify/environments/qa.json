@@ -1,0 +1,24 @@
+{
+  "environment": "qa",
+  "branch": "qa",
+  "region": "ca-central-1",
+  "resourcePrefix": "qa-mytrainingapp",
+  "description": "QA Environment for MyTrainingApp",
+  "settings": {
+    "cognito": {
+      "userPoolName": "qa-mytrainingapp-userpool",
+      "identityPoolName": "qa-mytrainingapp-identitypool"
+    },
+    "storage": {
+      "bucketName": "qa-mytrainingapp-storage"
+    },
+    "functions": {
+      "quizCompletion": {
+        "environment": {
+          "ENVIRONMENT": "qa",
+          "LOG_LEVEL": "debug"
+        }
+      }
+    }
+  }
+}
