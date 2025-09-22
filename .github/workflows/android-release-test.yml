@@ -107,9 +107,9 @@ jobs:
           cd android
           chmod +x gradlew
           
-          # Use Gradle 9.6 (latest 9.x) with compatible Android Gradle Plugin
-          echo "🔧 Setting Gradle to version 9.6..."
-          ./gradlew wrapper --gradle-version 9.6
+          # Use Gradle 9.1.0 (actual latest stable) with compatible Android Gradle Plugin
+          echo "🔧 Setting Gradle to version 9.1.0..."
+          ./gradlew wrapper --gradle-version 9.1.0
           
           # Fix Android Gradle Plugin version compatibility 
           echo "🔧 Setting compatible Android Gradle Plugin version..."
@@ -130,7 +130,7 @@ jobs:
           echo "org.gradle.internal.http.connectionTimeout=600000" >> gradle.properties
           echo "org.gradle.internal.http.socketTimeout=600000" >> gradle.properties
           
-          echo "🔧 Building release APK with Gradle 9.6 + AGP 8.7.3..."
+          echo "🔧 Building release APK with Gradle 9.1.0 + AGP 8.7.3..."
           ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel
         env:
           GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC"'
