@@ -64,8 +64,8 @@ jobs:
           cd android
           chmod +x gradlew
           
-          # Use compatible Gradle version for React Native 0.80.x
-          ./gradlew wrapper --gradle-version 8.8
+          # Use minimum required Gradle version for Android plugin
+          ./gradlew wrapper --gradle-version 8.11.1
           
           # Clean and build with memory optimization
           ./gradlew clean --no-daemon --max-workers=2
