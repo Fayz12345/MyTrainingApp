@@ -95,8 +95,8 @@ jobs:
           BUCKET_NAME="qa-mytrainingapp-admin-portal"
           aws s3 mb s3://$BUCKET_NAME --region ${{ env.AWS_REGION }} || true
           
-          # Sync build files to S3 with public-read ACL
-          aws s3 sync build/ s3://$BUCKET_NAME --delete --acl public-read
+          # Sync build files to S3 
+          aws s3 sync build/ s3://$BUCKET_NAME --delete
           
           # Configure bucket for static website hosting
           aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
