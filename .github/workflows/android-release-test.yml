@@ -106,9 +106,18 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          
+          # Disable expensive optimizations that cause memory issues
+          echo "android.enableR8=false" >> gradle.properties
+          echo "android.enableR8.fullMode=false" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC" >> gradle.properties
+          echo "org.gradle.parallel=false" >> gradle.properties
+          echo "android.enableDexingArtifactTransform=false" >> gradle.properties
+          
+          echo "🔧 Building release APK with memory optimizations..."
+          ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel
         env:
-          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx4g"'
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC"'
 
       - name: Verify Release APK
         run: |
