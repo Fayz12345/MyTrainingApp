@@ -64,9 +64,14 @@ jobs:
           cd android
           chmod +x gradlew
           
-          # Clean and build (use existing Gradle version)
-          ./gradlew clean --no-daemon
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          # Force specific Gradle version for stability
+          ./gradlew wrapper --gradle-version 8.0.2
+          
+          # Clean and build with memory optimization
+          ./gradlew clean --no-daemon --max-workers=2
+          ./gradlew assembleRelease --no-daemon --max-workers=2 --stacktrace
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"'
 
       - name: Verify APK
         run: |
