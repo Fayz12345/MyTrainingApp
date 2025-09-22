@@ -1,0 +1,111 @@
+name: Simple Android APK (Final Attempt)
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ca-central-1
+
+jobs:
+  build-simple-apk:
+    name: Build Simple Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build DEBUG APK (much simpler)
+        run: |
+          echo "🔧 Building DEBUG APK (faster and more reliable)..."
+          cd android
+          chmod +x gradlew
+          
+          # Accept licenses
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          
+          # Build debug APK (no native modules complexity)
+          ./gradlew assembleDebug --no-daemon
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx4g"'
+
+      - name: Find and upload APK
+        run: |
+          echo "🔍 Looking for ANY APK files created..."
+          find android -name "*.apk" -type f | head -5 | while read apk; do
+            echo "📱 Found APK: $apk"
+            APK_SIZE=$(du -h "$apk" | cut -f1)
+            echo "📏 Size: $APK_SIZE"
+            
+            # Copy to root with descriptive name
+            APK_NAME="MyTrainingApp-QA-$(basename $(dirname $apk)).apk"
+            cp "$apk" "./$APK_NAME"
+            echo "✅ Copied to: $APK_NAME"
+          done
+          
+          ls -la *.apk || echo "❌ No APK files found in root"
+
+      - name: Upload ANY APK found
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-simple-apk
+          path: "*.apk"
+          if-no-files-found: ignore
+
+      - name: Configure AWS credentials
+        if: always()
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload to S3 if APK exists
+        if: always()
+        run: |
+          if ls *.apk 1> /dev/null 2>&1; then
+            BUCKET_NAME="qa-mytrainingapp-artifacts"
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            
+            for apk in *.apk; do
+              echo "📤 Uploading $apk to S3..."
+              aws s3 cp "$apk" s3://$BUCKET_NAME/MyTrainingApp-qa-latest.apk
+              aws s3 cp "$apk" s3://$BUCKET_NAME/MyTrainingApp-qa-$TIMESTAMP.apk
+              echo "🎉 APK uploaded: https://$BUCKET_NAME.s3.${{ env.AWS_REGION }}.amazonaws.com/MyTrainingApp-qa-latest.apk"
+              break  # Upload first APK found
+            done
+          else
+            echo "❌ No APK files to upload"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "📱 Simple Android Build Summary:"
+          if ls *.apk 1> /dev/null 2>&1; then
+            echo "✅ APK created successfully!"
+            echo "📁 Files created:"
+            ls -la *.apk
+            echo "🔗 Download: https://qa-mytrainingapp-artifacts.s3.ca-central-1.amazonaws.com/MyTrainingApp-qa-latest.apk"
+            echo "🎯 Ready for Android testing!"
+          else
+            echo "❌ No APK was created"
+            echo "💡 Try running the debug workflow to see specific errors"
+          fi
