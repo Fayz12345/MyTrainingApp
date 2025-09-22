@@ -112,7 +112,7 @@ jobs:
           echo "android.enableR8.fullMode=false" >> gradle.properties
           echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC" >> gradle.properties
           echo "org.gradle.parallel=false" >> gradle.properties
-          echo "android.enableDexingArtifactTransform=false" >> gradle.properties
+          echo "android.useFullClasspathForDexingTransform=true" >> gradle.properties
           
           echo "🔧 Building release APK with memory optimizations..."
           ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel
