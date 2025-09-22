@@ -58,27 +58,45 @@ jobs:
       - name: Update build.gradle for signing
         run: |
           cd android/app
-          # Check if signing config already exists
+          echo "🔧 Configuring build.gradle for release signing..."
+          
+          # Create a backup
+          cp build.gradle build.gradle.backup
+          
+          # Use cat to create signing config (simpler than sed)
           if ! grep -q "signingConfigs" build.gradle; then
-            # Add signing config after android {
-            sed -i '/android {/a\
-    signingConfigs {\
-        release {\
-            if (project.hasProperty("MYAPP_UPLOAD_STORE_FILE")) {\
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)\
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD\
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS\
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD\
-            }\
-        }\
-    }' build.gradle
+            echo "Adding signing configuration..."
             
-            # Update release buildType to use signing config
-            sed -i '/release {/,/}/ { 
-              /signingConfig/d
-              /}/i\            signingConfig signingConfigs.release
-            }' build.gradle
+            # Add signing config after android {
+            awk '/android \{/ {
+              print $0
+              print "    signingConfigs {"
+              print "        release {"
+              print "            if (project.hasProperty(\"MYAPP_UPLOAD_STORE_FILE\")) {"
+              print "                storeFile file(MYAPP_UPLOAD_STORE_FILE)"
+              print "                storePassword MYAPP_UPLOAD_STORE_PASSWORD"
+              print "                keyAlias MYAPP_UPLOAD_KEY_ALIAS"
+              print "                keyPassword MYAPP_UPLOAD_KEY_PASSWORD"
+              print "            }"
+              print "        }"
+              print "    }"
+              next
+            }
+            /release \{/ {
+              print $0
+              getline
+              while ($0 !~ /\}/) {
+                if ($0 !~ /signingConfig/) print $0
+                getline
+              }
+              print "            signingConfig signingConfigs.release"
+              print $0
+              next
+            }
+            { print }' build.gradle.backup > build.gradle
           fi
+          
+          echo "✅ Build.gradle updated for signing"
 
       - name: Build Release APK
         run: |
