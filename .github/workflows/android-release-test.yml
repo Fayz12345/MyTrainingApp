@@ -107,6 +107,10 @@ jobs:
           cd android
           chmod +x gradlew
           
+          # Use Gradle 8.6 (stable middle ground)
+          echo "🔧 Setting Gradle to version 8.6..."
+          ./gradlew wrapper --gradle-version 8.6
+          
           # Configure memory and performance optimizations
           echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC" >> gradle.properties
           echo "org.gradle.parallel=false" >> gradle.properties
@@ -122,8 +126,8 @@ jobs:
           echo "org.gradle.internal.http.connectionTimeout=600000" >> gradle.properties
           echo "org.gradle.internal.http.socketTimeout=600000" >> gradle.properties
           
-          echo "🔧 Building release APK with JS bundling fixes..."
-          ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel --info
+          echo "🔧 Building release APK with Gradle 8.6..."
+          ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel
         env:
           GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC"'
 
