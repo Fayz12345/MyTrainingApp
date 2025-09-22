@@ -1,21 +1,15 @@
-name: Android APK Build for QA
+name: Simple Android Build
 
 on:
   workflow_dispatch: # Manual trigger only
-  push:
-    branches: [qa]
-    paths: 
-      - 'android/**'
-      - 'src/**'
-      - 'package.json'
 
 env:
   AWS_REGION: ca-central-1
-  NODE_VERSION: '20'
+  NODE_VERSION: '18'  # Same as main workflow
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Build Android APK (Simple)
     runs-on: ubuntu-latest
     
     steps:
@@ -34,45 +28,40 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Setup Android SDK (simplified)
+        run: |
+          # Use sdkmanager that comes with GitHub Actions
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393"
 
       - name: Make Gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Clean Android build
+      - name: Build Android Release APK
         run: |
           cd android
-          ./gradlew clean
-
-      - name: Build Android APK (Release)
-        run: |
-          cd android
-          ./gradlew assembleRelease --stacktrace --info
+          ./gradlew assembleRelease --no-daemon --stacktrace
         env:
-          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"'
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx3g"'
+
+      - name: Check APK exists
+        run: |
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "✅ APK built successfully!"
+            ls -la android/app/build/outputs/apk/release/
+          else
+            echo "❌ APK not found"
+            find android/app/build -name "*.apk" -type f || echo "No APK files found"
+            exit 1
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
+          name: android-release-apk
           path: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Configure AWS credentials
@@ -87,21 +76,18 @@ jobs:
           APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
           BUCKET_NAME="qa-mytrainingapp-artifacts"
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          S3_KEY="MyTrainingApp-qa-$TIMESTAMP.apk"
           
           # Create bucket if it doesn't exist
           aws s3 mb s3://$BUCKET_NAME --region ${{ env.AWS_REGION }} || true
           
-          # Upload APK with timestamp
-          aws s3 cp $APK_PATH s3://$BUCKET_NAME/$S3_KEY
-          
-          # Upload as latest
+          # Upload APK
           aws s3 cp $APK_PATH s3://$BUCKET_NAME/MyTrainingApp-qa-latest.apk
+          aws s3 cp $APK_PATH s3://$BUCKET_NAME/MyTrainingApp-qa-$TIMESTAMP.apk
           
-          # Make bucket publicly readable
+          # Make bucket publicly accessible
           aws s3api put-public-access-block --bucket $BUCKET_NAME --public-access-block-configuration BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false || true
           
-          # Add bucket policy for public access
+          # Add bucket policy
           aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy '{
             "Version": "2012-10-17",
             "Statement": [
@@ -114,6 +100,12 @@ jobs:
             ]
           }' || true
           
-          echo "📱 APK uploaded successfully!"
-          echo "🔗 Download URL: https://$BUCKET_NAME.s3.${{ env.AWS_REGION }}.amazonaws.com/MyTrainingApp-qa-latest.apk"
-          echo "🕐 Timestamped: https://$BUCKET_NAME.s3.${{ env.AWS_REGION }}.amazonaws.com/$S3_KEY"
+          echo "🎉 Android APK deployed successfully!"
+          echo "📱 Download URL: https://$BUCKET_NAME.s3.${{ env.AWS_REGION }}.amazonaws.com/MyTrainingApp-qa-latest.apk"
+
+      - name: Summary
+        run: |
+          echo "📱 Android QA Build Summary:"
+          echo "✅ APK built and uploaded to S3"
+          echo "🔗 Latest: https://qa-mytrainingapp-artifacts.s3.ca-central-1.amazonaws.com/MyTrainingApp-qa-latest.apk"
+          echo "🎯 Ready for QA testing!"
