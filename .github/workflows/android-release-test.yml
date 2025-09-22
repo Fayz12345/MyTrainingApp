@@ -112,11 +112,18 @@ jobs:
           echo "org.gradle.parallel=false" >> gradle.properties
           echo "android.useFullClasspathForDexingTransform=true" >> gradle.properties
           
-          # Note: R8 is enabled by default in modern Android Gradle Plugin
-          # No need to disable it as the options were removed in AGP 7.0
+          # Fix React Native JS bundling issues
+          echo "react.bundleInRelease=true" >> gradle.properties
+          echo "react.enableHermes=false" >> gradle.properties
+          echo "react.bundleCommand=bundle" >> gradle.properties
           
-          echo "🔧 Building release APK with memory optimizations..."
-          ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel
+          # Increase timeouts for JS bundling
+          echo "org.gradle.daemon.idletimeout=600000" >> gradle.properties
+          echo "org.gradle.internal.http.connectionTimeout=600000" >> gradle.properties
+          echo "org.gradle.internal.http.socketTimeout=600000" >> gradle.properties
+          
+          echo "🔧 Building release APK with JS bundling fixes..."
+          ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=1 --no-parallel --info
         env:
           GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=2g -XX:+UseG1GC"'
 
