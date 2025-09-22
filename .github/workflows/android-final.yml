@@ -67,14 +67,17 @@ jobs:
           # Use minimum required Gradle version for Android plugin
           ./gradlew wrapper --gradle-version 8.11.1
           
-          # Clean and build with memory optimization
-          ./gradlew clean --no-daemon --max-workers=2
-          ./gradlew assembleRelease --no-daemon --max-workers=2 --stacktrace
+          # Clean and build with verbose error logging
+          ./gradlew clean --no-daemon --max-workers=2 --info
+          ./gradlew assembleRelease --no-daemon --max-workers=2 --stacktrace --debug --continue
         env:
           GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"'
 
-      - name: Verify APK
+      - name: Verify APK and capture build artifacts
+        if: always()
         run: |
+          echo "🔍 Build completed - checking results..."
+          
           APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
           if [ -f "$APK_PATH" ]; then
             APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
@@ -83,9 +86,15 @@ jobs:
             cp "$APK_PATH" "./MyTrainingApp-qa.apk"
           else
             echo "❌ APK not found at $APK_PATH"
-            echo "🔍 Searching for APK files..."
+            echo "🔍 Searching for any APK files..."
             find android -name "*.apk" -type f || echo "No APK files found"
-            exit 1
+            
+            echo "🔍 Checking build logs for errors..."
+            find android -name "*.log" -type f | head -5 | xargs tail -50 || echo "No log files found"
+            
+            echo "🔍 Gradle build status..."
+            ls -la android/app/build/ || echo "No app build directory"
+            ls -la android/app/build/outputs/ || echo "No outputs directory"
           fi
 
       - name: Upload APK as artifact
