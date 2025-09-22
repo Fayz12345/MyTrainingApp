@@ -43,14 +43,14 @@ jobs:
           # Accept licenses
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
           
-          # Install required components
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.0" "ndk;23.1.7779620"
+          # Install required components  
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;27.1.12297006"
 
       - name: Create simple local.properties
         run: |
           cd android
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "ndk.dir=$ANDROID_HOME/ndk/23.1.7779620" >> local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/27.1.12297006" >> local.properties
 
       - name: Disable problematic features
         run: |
@@ -64,12 +64,9 @@ jobs:
           cd android
           chmod +x gradlew
           
-          # Use older Gradle for better compatibility
-          ./gradlew wrapper --gradle-version 7.6.4
-          
-          # Clean and build
-          ./gradlew clean
-          ./gradlew assembleRelease --no-daemon --stacktrace --warning-mode all
+          # Clean and build (use existing Gradle version)
+          ./gradlew clean --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK
         run: |
