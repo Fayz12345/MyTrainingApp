@@ -1,0 +1,133 @@
+name: Android Build Debug
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+env:
+  AWS_REGION: ca-central-1
+  NODE_VERSION: '18'
+
+jobs:
+  debug-android:
+    name: Debug Android Build Issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Node dependencies
+        run: |
+          echo "📦 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed"
+
+      - name: Check React Native setup
+        run: |
+          echo "🔍 Checking React Native environment..."
+          echo "Node version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          echo "React Native version:"
+          npx react-native --version || echo "RN CLI not available"
+          echo "Package.json RN version:"
+          cat package.json | grep react-native || echo "No RN in package.json"
+
+      - name: Setup Android SDK (Basic)
+        run: |
+          echo "🔧 Setting up Android SDK..."
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "Available SDK components:"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list | head -20 || echo "SDK manager failed"
+          
+          # Accept licenses
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || echo "License acceptance completed"
+          
+          # Install essential components
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" || echo "SDK install completed"
+
+      - name: Check Android directory
+        run: |
+          echo "📁 Checking Android directory structure..."
+          ls -la android/ || echo "No android directory"
+          ls -la android/app/ || echo "No app directory"
+          ls -la android/app/build.gradle || echo "No build.gradle"
+
+      - name: Make Gradlew executable
+        run: |
+          cd android
+          chmod +x gradlew
+          echo "✅ Gradlew made executable"
+
+      - name: Test Gradle basics
+        run: |
+          echo "🔧 Testing basic Gradle functionality..."
+          cd android
+          ./gradlew --version || echo "Gradle version failed"
+          ./gradlew tasks --all | head -20 || echo "Gradle tasks failed"
+
+      - name: Try Android clean (safe operation)
+        run: |
+          echo "🧹 Attempting Android clean..."
+          cd android
+          ./gradlew clean --stacktrace || echo "Clean failed - this tells us about build issues"
+
+      - name: Check for autolinking issues
+        run: |
+          echo "🔍 Checking autolinking configuration..."
+          ls -la android/app/build/generated/autolinking/ || echo "No autolinking generated yet"
+          
+          echo "🔍 Checking for problematic native modules..."
+          cat android/app/build/generated/autolinking/src/main/jni/Android-autolinking.cmake || echo "No autolinking cmake file"
+
+      - name: Try simple debug build (most likely to succeed)
+        run: |
+          echo "🔧 Attempting debug build..."
+          cd android
+          ./gradlew assembleDebug --stacktrace --debug || echo "Debug build failed - check logs above"
+
+      - name: Check if any APK was created
+        run: |
+          echo "🔍 Searching for any APK files..."
+          find android -name "*.apk" -type f || echo "No APK files found"
+          
+          echo "🔍 Checking build output directories..."
+          ls -la android/app/build/outputs/ || echo "No build outputs directory"
+          ls -la android/app/build/outputs/apk/ || echo "No APK outputs directory"
+
+      - name: Upload any artifacts found
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-debug-artifacts
+          path: |
+            android/app/build/outputs/
+            android/app/build/generated/autolinking/
+            android/build/reports/
+          if-no-files-found: ignore
+
+      - name: Debug Summary
+        if: always()
+        run: |
+          echo "🔍 Android Build Debug Summary:"
+          echo "1. Dependencies: $([ -d node_modules ] && echo '✅ Installed' || echo '❌ Missing')"
+          echo "2. Android dir: $([ -d android ] && echo '✅ Present' || echo '❌ Missing')"
+          echo "3. Gradlew: $([ -x android/gradlew ] && echo '✅ Executable' || echo '❌ Not executable')"
+          echo "4. APK found: $(find android -name "*.apk" -type f | wc -l) files"
+          echo ""
+          echo "📋 Next steps based on results:"
+          echo "- If clean failed: Native module configuration issue"
+          echo "- If debug build failed: Check autolinking problems"
+          echo "- If no APK: Build process never completed successfully"
