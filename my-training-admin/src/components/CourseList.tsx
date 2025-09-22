@@ -92,15 +92,6 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
     }
   };
 
-  const getVideoPreview = async (videoKey: string) => {
-    try {
-      const url = await getUrl({ path: videoKey });
-      return url.url.toString();
-    } catch (err) {
-      console.error('Error getting video URL:', err);
-      return null;
-    }
-  };
 
   useEffect(() => {
     fetchCourses();

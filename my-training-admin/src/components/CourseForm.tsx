@@ -94,7 +94,7 @@ const CourseForm = () => {
       const timestamp = Date.now();
       const videoKey = `courses/videos/${timestamp}_${videoFile.name}`;
       
-      const uploadResult = await uploadData({
+      await uploadData({
         path: videoKey,
         data: videoFile,
         options: {
