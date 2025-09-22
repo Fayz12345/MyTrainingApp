@@ -1,0 +1,128 @@
+name: Android APK (Simple Build)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa]
+    paths: 
+      - 'android/**'
+      - 'src/**'
+      - 'package.json'
+
+env:
+  AWS_REGION: ca-central-1
+
+jobs:
+  build-android-simple:
+    name: Build Android APK (Simplified)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Setup Java 11 (for compatibility)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          
+      - name: Setup Android SDK
+        run: |
+          # Use built-in Android SDK
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          
+          # Accept licenses
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          
+          # Install required components
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.0" "ndk;23.1.7779620"
+
+      - name: Create simple local.properties
+        run: |
+          cd android
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/23.1.7779620" >> local.properties
+
+      - name: Disable problematic features
+        run: |
+          # Disable new architecture to avoid autolinking issues
+          cd android
+          echo "newArchEnabled=false" >> gradle.properties
+          echo "hermesEnabled=false" >> gradle.properties
+
+      - name: Build APK (direct approach)
+        run: |
+          cd android
+          chmod +x gradlew
+          
+          # Use older Gradle for better compatibility
+          ./gradlew wrapper --gradle-version 7.6.4
+          
+          # Clean and build
+          ./gradlew clean
+          ./gradlew assembleRelease --no-daemon --stacktrace --warning-mode all
+
+      - name: Verify APK
+        run: |
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          if [ -f "$APK_PATH" ]; then
+            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+            echo "✅ APK created successfully!"
+            echo "📏 Size: $APK_SIZE"
+            cp "$APK_PATH" "./MyTrainingApp-qa.apk"
+          else
+            echo "❌ APK not found at $APK_PATH"
+            echo "🔍 Searching for APK files..."
+            find android -name "*.apk" -type f || echo "No APK files found"
+            exit 1
+          fi
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-simple
+          path: MyTrainingApp-qa.apk
+          retention-days: 30
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload APK to S3
+        run: |
+          BUCKET_NAME="qa-mytrainingapp-artifacts"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          
+          echo "📤 Uploading APK to S3..."
+          
+          # Upload APK with timestamp
+          aws s3 cp MyTrainingApp-qa.apk s3://$BUCKET_NAME/MyTrainingApp-qa-$TIMESTAMP.apk
+          
+          # Upload as latest
+          aws s3 cp MyTrainingApp-qa.apk s3://$BUCKET_NAME/MyTrainingApp-qa-latest.apk
+          
+          echo "🎉 APK uploaded successfully!"
+          echo "🔗 Download: https://$BUCKET_NAME.s3.${{ env.AWS_REGION }}.amazonaws.com/MyTrainingApp-qa-latest.apk"
+
+      - name: Summary
+        run: |
+          echo "📱 Simple Android Build Summary:"
+          echo "✅ APK built successfully"
+          echo "🔗 Download: https://qa-mytrainingapp-artifacts.s3.ca-central-1.amazonaws.com/MyTrainingApp-qa-latest.apk"
+          echo "📱 Ready for Android testing!"
