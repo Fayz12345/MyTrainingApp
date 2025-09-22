@@ -10,7 +10,8 @@
     "test": "jest",
     "build:web": "webpack --mode production",
     "seed:qa": "node scripts/seed-qa-simple.js",
-    "deploy:qa": "npx @aws-amplify/backend-cli sandbox --identifier qa --once"
+    "deploy:qa": "npx @aws-amplify/backend-cli sandbox --identifier qa --once",
+    "build:android:qa": "scripts/build-android-qa.sh"
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",
