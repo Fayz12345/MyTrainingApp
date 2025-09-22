@@ -2,6 +2,10 @@ name: Test Android Release APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [qa]
+    paths:
+      - '.github/workflows/android-release-test.yml'
 
 env:
   AWS_REGION: ca-central-1
