@@ -35,6 +35,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Copy amplify_outputs.json for build
+        run: |
+          echo "🔧 Copying amplify_outputs.json to fix import error..."
+          if [ -f amplify_outputs.json ]; then
+            echo "✅ amplify_outputs.json exists in root"
+            ls -la amplify_outputs.json
+          else
+            echo "❌ amplify_outputs.json missing in root - this will cause build failure"
+            echo "🔍 Searching for amplify_outputs.json files..."
+            find . -name "amplify_outputs.json" -type f | head -5
+            exit 1
+          fi
+
       - name: Setup Android SDK
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
