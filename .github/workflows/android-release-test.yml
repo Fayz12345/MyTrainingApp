@@ -107,9 +107,10 @@ jobs:
           cd android
           chmod +x gradlew
           
-          # Use Gradle 9.1.0 (actual latest stable) with compatible Android Gradle Plugin
-          echo "🔧 Setting Gradle to version 9.1.0..."
-          ./gradlew wrapper --gradle-version 9.1.0
+          # Fix Gradle wrapper properties directly (bypassing the broken wrapper command)
+          echo "🔧 Updating Gradle wrapper to version 9.1.0..."
+          sed -i 's|gradle-8.14.1-bin.zip|gradle-9.1.0-bin.zip|' gradle/wrapper/gradle-wrapper.properties
+          cat gradle/wrapper/gradle-wrapper.properties
           
           # Fix Android Gradle Plugin version compatibility 
           echo "🔧 Setting compatible Android Gradle Plugin version..."
