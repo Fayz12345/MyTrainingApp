@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import type { Schema } from '../../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
 
@@ -40,8 +40,8 @@ const AssignmentForm: React.FC = () => {
 
       // Fetch courses and employees in parallel
       const [coursesResult, employeesResult] = await Promise.all([
-        client.models.Course.list(),
-        client.models.Employee.list()
+        client.models.Course.list({}),
+        client.models.Employee.list({})
       ]);
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {

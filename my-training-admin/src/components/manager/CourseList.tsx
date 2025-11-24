@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { getUrl, remove } from 'aws-amplify/storage';
-import type { Schema } from '../../../amplify/data/resource';
+import type { Schema } from '../../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
 
@@ -30,7 +30,7 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
       setLoading(true);
       setError(null);
       console.log('Fetching courses...');
-      const result = await client.models.Course.list();
+      const result = await client.models.Course.list({});
       console.log('Course list result:', result);
       
       // Check for GraphQL errors

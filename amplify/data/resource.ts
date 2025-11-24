@@ -1,6 +1,59 @@
 import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
 
 const schema = a.schema({
+  BusinessUnit: a
+    .model({
+      id: a.id(),
+      name: a.string().required(),
+      description: a.string(),
+      createdBy: a.string(), // userId of the SuperAdmin who created it
+      stores: a.hasMany('Store', 'businessUnitId'),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
+      allow.group('BusinessUnit').to(['read']),
+      allow.group('Store').to(['read']),
+      allow.group('Managers').to(['read'])
+    ]),
+  Store: a
+    .model({
+      id: a.id(),
+      name: a.string().required(),
+      description: a.string(),
+      businessUnitId: a.id().required(),
+      businessUnit: a.belongsTo('BusinessUnit', 'businessUnitId'),
+      createdBy: a.string(), // userId of the BusinessUnit person who created it
+      managers: a.hasMany('Manager', 'storeId'),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
+      allow.group('BusinessUnit').to(['create', 'read', 'update', 'delete']),
+      allow.group('Store').to(['read']),
+      allow.group('Managers').to(['read'])
+    ]),
+  Manager: a
+    .model({
+      id: a.id(),
+      userId: a.string().required(), // Cognito user ID
+      email: a.string().required(),
+      name: a.string().required(),
+      storeId: a.id().required(),
+      store: a.belongsTo('Store', 'storeId'),
+      createdBy: a.string(), // userId of the Store person who created it
+      employees: a.hasMany('Employee', 'managerId'),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
+      allow.group('BusinessUnit').to(['read']),
+      allow.group('Store').to(['create', 'read', 'update', 'delete']),
+      allow.group('Managers').to(['read'])
+    ]),
   Course: a
     .model({
       id: a.id(),
@@ -38,6 +91,9 @@ const schema = a.schema({
       email: a.string().required(),
       name: a.string().required(),
       department: a.string(),
+      managerId: a.id(), // Manager who created this employee
+      manager: a.belongsTo('Manager', 'managerId'),
+      createdBy: a.string(), // userId of the Manager who created it
       isActive: a.boolean().default(true),
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
       createdAt: a.datetime().required(),

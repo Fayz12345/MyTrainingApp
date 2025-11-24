@@ -1,0 +1,20 @@
+version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - echo "Backend deployment handled separately via Amplify Gen 2 CLI"
+        - echo "Deploy backend using: npx ampx pipeline-deploy --branch $AWS_BRANCH"
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "Skipping frontend build - Flutter app"
+    build:
+      commands:
+        - echo "Frontend build not required for backend deployment"
+  artifacts:
+    baseDirectory: /
+    files:
+      - '**/*'
+

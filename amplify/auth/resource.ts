@@ -8,5 +8,5 @@ export const auth = defineAuth({
   loginWith: {
     email: true,
   },
-  groups: ['Employees', 'Managers'] // Define user groups for roles
+  groups: ['Employees', 'Managers', 'Store', 'BusinessUnit', 'SuperAdmin'] // Define user groups for roles
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import type { Schema } from '../../../../amplify/data/resource';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import EmployeeForm from './EmployeeForm';
 
 const client = generateClient<Schema>();
@@ -11,6 +12,8 @@ type Employee = {
   readonly email: string;
   readonly name: string;
   readonly department?: string | null;
+  readonly managerId?: string | null;
+  readonly createdBy?: string | null;
   readonly isActive?: boolean | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -48,11 +51,15 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
       setLoading(true);
       setError(null);
 
+      // Get current user ID to filter employees
+      const session = await fetchAuthSession();
+      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
       // Fetch employees, assignments, and courses in parallel
       const [employeesResult, assignmentsResult, coursesResult] = await Promise.all([
-        client.models.Employee.list(),
-        client.models.Assignment.list(),
-        client.models.Course.list()
+        client.models.Employee.list({}),
+        client.models.Assignment.list({}),
+        client.models.Course.list({})
       ]);
 
       if (employeesResult.errors && employeesResult.errors.length > 0) {
@@ -67,7 +74,13 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
         console.warn('Warning fetching courses:', coursesResult.errors);
       }
 
-      setEmployees(employeesResult.data as Employee[]);
+      // Filter employees by createdBy - managers should only see employees they created
+      let filteredEmployees = employeesResult.data as Employee[];
+      if (userId) {
+        filteredEmployees = filteredEmployees.filter(emp => emp.createdBy === userId);
+      }
+
+      setEmployees(filteredEmployees);
       setAssignments(assignmentsResult.data as Assignment[] || []);
       setCourses(coursesResult.data as Course[] || []);
     } catch (err) {

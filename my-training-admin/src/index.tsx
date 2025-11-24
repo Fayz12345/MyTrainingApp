@@ -6,15 +6,20 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import '@aws-amplify/ui-react/styles.css';
 import './index.css';
 import outputs from './amplify_outputs.json';
-import ManagerDashboard from './components/ManagerDashboard';
+import SuperAdminDashboard from './components/superadmin/SuperAdminDashboard';
+import BusinessUnitDashboard from './components/businessunit/BusinessUnitDashboard';
+import StoreDashboard from './components/store/StoreDashboard';
+import ManagerDashboard from './components/manager/ManagerDashboard';
 
 Amplify.configure(outputs);
 
+type UserRole = 'SuperAdmin' | 'BusinessUnit' | 'Store' | 'Manager' | 'Employee' | null;
+
 const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; user: any }) => {
-  const [isManager, setIsManager] = useState<boolean | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>(null);
 
   useEffect(() => {
-    const checkManagerRole = async () => {
+    const checkUserRole = async () => {
       try {
         const session = await fetchAuthSession({ forceRefresh: true });
         let groups = session.tokens?.idToken?.payload['cognito:groups'];
@@ -23,19 +28,35 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
         } else if (!Array.isArray(groups)) {
           groups = [];
         }
-        setIsManager((groups as string[]).includes('Managers'));
+        
+        const groupArray = groups as string[];
+        
+        // Determine role based on hierarchy (highest to lowest)
+        if (groupArray.includes('SuperAdmin')) {
+          setUserRole('SuperAdmin');
+        } else if (groupArray.includes('BusinessUnit')) {
+          setUserRole('BusinessUnit');
+        } else if (groupArray.includes('Store')) {
+          setUserRole('Store');
+        } else if (groupArray.includes('Managers')) {
+          setUserRole('Manager');
+        } else if (groupArray.includes('Employees')) {
+          setUserRole('Employee');
+        } else {
+          setUserRole(null);
+        }
       } catch (error) {
         console.error('Error checking user groups:', error);
-        setIsManager(false);
+        setUserRole(null);
       }
     };
 
     if (user) {
-      checkManagerRole();
+      checkUserRole();
     }
   }, [user]);
 
-  if (isManager === null) {
+  if (userRole === null) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -48,7 +69,8 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
     );
   }
   
-  if (user && !isManager) {
+  // Employees can only login in Flutter, not web
+  if (user && userRole === 'Employee') {
     return (
       <div style={{ 
         display: 'flex', 
@@ -59,14 +81,49 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
         gap: '1rem'
       }}>
         <h2>Access Denied</h2>
-        <p>This portal is only accessible to managers.</p>
+        <p>Employees can only access the mobile app. This web portal is for administrators only.</p>
         <button onClick={() => signOut?.()} style={{ padding: '10px 20px' }}>
           Sign Out
         </button>
       </div>
     );
   }
-  return user ? <ManagerDashboard signOut={signOut} user={user} /> : null;
+
+  // No valid role
+  if (user && !userRole) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '1rem'
+      }}>
+        <h2>Access Denied</h2>
+        <p>You do not have permission to access this portal.</p>
+        <button onClick={() => signOut?.()} style={{ padding: '10px 20px' }}>
+          Sign Out
+        </button>
+      </div>
+    );
+  }
+
+  // Render appropriate dashboard based on role
+  if (!user) return null;
+
+  switch (userRole) {
+    case 'SuperAdmin':
+      return <SuperAdminDashboard signOut={signOut} user={user} />;
+    case 'BusinessUnit':
+      return <BusinessUnitDashboard signOut={signOut} user={user} />;
+    case 'Store':
+      return <StoreDashboard signOut={signOut} user={user} />;
+    case 'Manager':
+      return <ManagerDashboard signOut={signOut} user={user} />;
+    default:
+      return null;
+  }
 };
 
 const App = () => (

@@ -1,0 +1,7 @@
+{
+  "name": "mytrainingapp",
+  "version": "1.0.0",
+  "description": "MyTrainingApp - Flutter training application with Amplify backend",
+  "private": true
+}
+
