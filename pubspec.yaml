@@ -1,0 +1,47 @@
+name: my_training_app
+description: A Flutter training application with AWS Amplify backend
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # AWS Amplify
+  amplify_flutter: ^2.0.0
+  amplify_auth_cognito: ^2.0.0
+  amplify_authenticator: ^2.0.0
+  amplify_api: ^2.0.0
+  amplify_storage_s3: ^2.0.0
+  
+  # Video Player
+  video_player: ^2.8.0
+  chewie: ^1.7.0
+  
+  # UI
+  cupertino_icons: ^1.0.6
+  
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+  
+  # HTTP & Storage
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - amplify_outputs.json
+

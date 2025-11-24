@@ -1,38 +1,80 @@
-import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
+import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
 
-/* This is the schema for our Training App */
 const schema = a.schema({
-  // Course Model: The main training course
   Course: a
     .model({
+      id: a.id(),
       title: a.string().required(),
-      videoPath: a.string(),
-      questions: a.hasMany('Question', 'courseId'),
+      videoKey: a.string(), // S3 key for video
+      quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
+      assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
+      passingScore: a.integer(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
     })
-    // THIS IS THE CORRECT, SIMPLIFIED RULE
-    .authorization((allow) => [
-      allow.publicApiKey() // This one line grants all permissions (create, read, update, delete)
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
     ]),
-
-  // Question Model: A question within a course
-  Question: a
+  QuizQuestion: a
     .model({
+      id: a.id(),
+      courseId: a.id(), // Foreign key linking to Course
+      course: a.belongsTo('Course', 'courseId'), // Added: Reciprocal relationship
+      question: a.string().required(),
+      options: a.string().array().required(),
+      correctAnswer: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
+    ]),
+  Employee: a
+    .model({
+      id: a.id(),
+      userId: a.string().required(), // Cognito user ID
+      email: a.string().required(),
+      name: a.string().required(),
+      department: a.string(),
+      isActive: a.boolean().default(true),
+      assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
+    ]),
+  Assignment: a
+    .model({
+      id: a.id(),
+      employeeId: a.id().required(),
       courseId: a.id().required(),
+      employee: a.belongsTo('Employee', 'employeeId'),
       course: a.belongsTo('Course', 'courseId'),
-      questionText: a.string().required(),
-      choices: a.hasMany('Choice', 'questionId'),
+      status: a.enum(['assigned', 'completed']),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
     })
-    .authorization((allow) => [allow.publicApiKey()]), // Using the same simple rule
-
-  // Choice Model: An answer choice for a question
-  Choice: a
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'update', 'delete', 'read']),
+      allow.group('Employees').to(['read'])
+    ]),
+  Result: a
     .model({
-      questionId: a.id().required(),
-      question: a.belongsTo('Question', 'questionId'),
-      choiceText: a.string().required(),
-      isCorrect: a.boolean().required(),
+      id: a.id(),
+      assignmentId: a.id().required(),
+      score: a.integer().required(),
+      passed: a.boolean().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
     })
-    .authorization((allow) => [allow.publicApiKey()]), // And here
+    .authorization(allow => [
+      allow.group('Managers').to(['read', 'update']),
+      allow.group('Employees').to(['create', 'read'])
+    ])
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -40,9 +82,6 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'apiKey',
-    apiKeyAuthorizationMode: {
-      expiresInDays: 30,
-    },
-  },
+    defaultAuthorizationMode: 'userPool' // Use Cognito for auth
+  }
 });
