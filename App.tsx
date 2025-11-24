@@ -11,6 +11,7 @@ import outputs from './amplify_outputs.json';
 import { Authenticator, useAuthenticator } from '@aws-amplify/ui-react-native';
 import { CourseList } from './CourseList';
 
+
 // This line configures Amplify with the backend info from your sandbox
 Amplify.configure(outputs);
 
