@@ -1,0 +1,1 @@
+ /Users/webtechsoft/Desktop/MyTrainingApp/.dart_tool/flutter_build/11d0836f25fd717d3992f0ba6e884e21/native_assets.json: 
