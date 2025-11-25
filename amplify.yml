@@ -5,12 +5,29 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo 'Frontend build phase'
+        - echo 'Copying amplify_outputs.json to React app...'
+        - cp amplify_outputs.json my-training-admin/src/amplify_outputs.json || echo 'Warning: amplify_outputs.json not found in root'
+        - echo 'Installing Node.js dependencies...'
+        - cd my-training-admin
+        - npm ci
     build:
       commands:
-        - echo 'Build complete'
+        - echo 'Building React admin app...'
+        - cd my-training-admin
+        - npm run build
+        - echo 'Build completed. Listing build directory:'
+        - ls -la build/ || echo 'Build directory not found!'
   artifacts:
-    baseDirectory: /
+    baseDirectory: my-training-admin/build
     files:
       - '**/*'
+  customHeaders:
+    - pattern: '**/*'
+      headers:
+        - key: 'X-Content-Type-Options'
+          value: 'nosniff'
+        - key: 'X-Frame-Options'
+          value: 'DENY'
+        - key: 'X-XSS-Protection'
+          value: '1; mode=block'
 
