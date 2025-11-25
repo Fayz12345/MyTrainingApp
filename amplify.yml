@@ -1,6 +1,4 @@
 version: 1
-# Note: For Amplify Gen 2, backend deployment is done via CLI, not through amplify.yml
-# Deploy backend using: npx @aws-amplify/backend-cli pipeline-deploy --branch <branch-name>
 
 frontend:
   phases:
@@ -10,27 +8,22 @@ frontend:
         - pwd
         - echo "Root directory contents:"
         - ls -la
-        - echo "Checking if my-training-admin exists:"
-        - find . -maxdepth 1 -name "my-training-admin" -type d || (echo "ERROR: my-training-admin folder not found" && exit 1)
+        - echo "Checking if my-training-admin folder exists"
+        - "find . -maxdepth 1 -name 'my-training-admin' -type d || (echo 'ERROR: Folder not found' && exit 1)"
 
-        # Copy amplify_outputs.json into React app
-        - echo "Copying amplify_outputs.json to React app..."
-        - |
-          if [ -f amplify_outputs.json ]; then
-            cp amplify_outputs.json my-training-admin/src/amplify_outputs.json
-            echo "Copied amplify_outputs.json successfully"
-          else
-            echo "ERROR: amplify_outputs.json not found in root directory"
-            exit 1
-          fi
+        # Copy amplify_outputs.json
+        - echo "Copying amplify_outputs.json into React app..."
+        - "if [ -f amplify_outputs.json ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json; else echo 'ERROR: amplify_outputs.json missing'; exit 1; fi"
 
+        # Install dependencies
         - echo "Installing React dependencies..."
-        - cd my-training-admin && npm ci
+        - "cd my-training-admin && npm ci"
 
     build:
       commands:
         - echo "Building React app..."
-        - cd my-training-admin && npm run build
+        - "cd my-training-admin && npm run build"
+        - echo "Build complete."
 
   artifacts:
     baseDirectory: my-training-admin/build
@@ -40,9 +33,9 @@ frontend:
   customHeaders:
     - pattern: '**/*'
       headers:
-        - key: 'X-Content-Type-Options'
-          value: 'nosniff'
-        - key: 'X-Frame-Options'
-          value: 'DENY'
-        - key: 'X-XSS-Protection'
-          value: '1; mode=block'
+        - key: "X-Content-Type-Options"
+          value: "nosniff"
+        - key: "X-Frame-Options"
+          value: "DENY"
+        - key: "X-XSS-Protection"
+          value: "1; mode=block"
