@@ -4,18 +4,10 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "=== PreBuild Phase - Debugging ==="
+        - echo "=== PreBuild Phase ==="
         - pwd
-        - echo "Root directory contents:"
         - ls -la
-        - echo "Checking if my-training-admin folder exists"
-        - "find . -maxdepth 1 -name 'my-training-admin' -type d || (echo 'ERROR: Folder not found' && exit 1)"
 
-        # Copy amplify_outputs.json
-        - echo "Copying amplify_outputs.json into React app..."
-        - "if [ -f amplify_outputs.json ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json; else echo 'ERROR: amplify_outputs.json missing'; exit 1; fi"
-
-        # Install dependencies
         - echo "Installing React dependencies..."
         - "cd my-training-admin && npm ci"
 
@@ -23,7 +15,6 @@ frontend:
       commands:
         - echo "Building React app..."
         - "cd my-training-admin && npm run build"
-        - echo "Build complete."
 
   artifacts:
     baseDirectory: my-training-admin/build
