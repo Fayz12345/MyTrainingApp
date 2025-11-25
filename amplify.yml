@@ -17,18 +17,12 @@ frontend:
         - "if [ -d my-training-admin ]; then cd my-training-admin && npm ci && echo 'Dependencies installed'; else echo 'ERROR: my-training-admin not found' && exit 1; fi"
     build:
       commands:
-        - echo "=== Build Phase - Debugging ==="
-        - pwd
-        - echo "Directory contents:"
-        - ls -la
-        - echo "Checking for my-training-admin:"
-        - "if [ -d my-training-admin ]; then echo 'Directory found'; ls -la my-training-admin/ | head -5; else echo 'ERROR: Directory not found'; find . -name 'my-training-admin' -type d; exit 1; fi"
         - echo "Building React app..."
-        - "if [ -d my-training-admin ]; then cd my-training-admin && npm run build && echo 'Build successful'; else echo 'ERROR: Cannot find my-training-admin directory'; exit 1; fi"
-        - echo "Verifying build output:"
-        - "if [ -d my-training-admin/build ]; then echo 'Build directory exists'; ls -la my-training-admin/build/ | head -10; else echo 'ERROR: Build directory not found'; exit 1; fi"
+        - npm run build
+        - echo "Build completed. Verifying build output:"
+        - "if [ -d build ]; then echo 'Build directory exists'; ls -la build/ | head -10; else echo 'ERROR: Build directory not found'; exit 1; fi"
   artifacts:
-    baseDirectory: my-training-admin/build
+    baseDirectory: build
     files:
       - '**/*'
   customHeaders:
