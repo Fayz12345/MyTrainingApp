@@ -1,30 +1,42 @@
 version: 1
 # Note: For Amplify Gen 2, backend deployment is done via CLI, not through amplify.yml
 # Deploy backend using: npx @aws-amplify/backend-cli pipeline-deploy --branch <branch-name>
+
 frontend:
   phases:
     preBuild:
       commands:
         - echo "=== PreBuild Phase - Debugging ==="
         - pwd
-        - echo "Directory contents:"
+        - echo "Root directory contents:"
         - ls -la
-        - echo "Looking for my-training-admin:"
-        - find . -maxdepth 2 -name "my-training-admin" -type d 2>/dev/null || echo "Not found in current or parent"
-        - echo "Copying amplify_outputs.json..."
-        - "if [ -f amplify_outputs.json ] && [ -d my-training-admin/src ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json && echo 'Copied successfully'; else echo 'Warning: Files not found'; fi"
-        - echo "Installing dependencies..."
-        - "if [ -d my-training-admin ]; then cd my-training-admin && npm ci && echo 'Dependencies installed'; else echo 'ERROR: my-training-admin not found' && exit 1; fi"
+        - echo "Checking if my-training-admin exists:"
+        - find . -maxdepth 1 -name "my-training-admin" -type d || (echo "ERROR: my-training-admin folder not found" && exit 1)
+
+        # Copy amplify_outputs.json into React app
+        - echo "Copying amplify_outputs.json to React app..."
+        - |
+          if [ -f amplify_outputs.json ]; then
+            cp amplify_outputs.json my-training-admin/src/amplify_outputs.json
+            echo "Copied amplify_outputs.json successfully"
+          else
+            echo "ERROR: amplify_outputs.json not found in root directory"
+            exit 1
+          fi
+
+        - echo "Installing React dependencies..."
+        - cd my-training-admin && npm ci
+
     build:
       commands:
         - echo "Building React app..."
-        - npm run build
-        - echo "Build completed. Verifying build output:"
-        - "if [ -d build ]; then echo 'Build directory exists'; ls -la build/ | head -10; else echo 'ERROR: Build directory not found'; exit 1; fi"
+        - cd my-training-admin && npm run build
+
   artifacts:
-    baseDirectory: build
+    baseDirectory: my-training-admin/build
     files:
       - '**/*'
+
   customHeaders:
     - pattern: '**/*'
       headers:
@@ -34,4 +46,3 @@ frontend:
           value: 'DENY'
         - key: 'X-XSS-Protection'
           value: '1; mode=block'
-
