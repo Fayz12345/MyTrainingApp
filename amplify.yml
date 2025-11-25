@@ -5,18 +5,21 @@ frontend:
   phases:
     preBuild:
       commands:
+        - echo "Current directory and contents:"
+        - pwd
+        - ls -la
+        - echo "Looking for my-training-admin directory:"
+        - find . -name "my-training-admin" -type d 2>/dev/null || echo "Directory not found in current location"
         - echo "Copying amplify_outputs.json to React app..."
-        - "cp amplify_outputs.json my-training-admin/src/amplify_outputs.json || echo 'Warning: amplify_outputs.json not found in root'"
+        - "if [ -f amplify_outputs.json ] && [ -d my-training-admin/src ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json && echo 'Copied successfully'; else echo 'Warning: Files not found - amplify_outputs.json or my-training-admin/src'; fi"
         - echo "Installing Node.js dependencies..."
-        - cd my-training-admin
-        - npm ci
+        - "cd my-training-admin && npm ci"
     build:
       commands:
         - echo "Building React admin app..."
-        - cd my-training-admin
-        - npm run build
-        - echo "Build completed. Listing build directory"
-        - "ls -la build/ || echo 'Build directory not found'"
+        - "cd my-training-admin && npm run build"
+        - echo "Build completed. Verifying build output:"
+        - "if [ -d my-training-admin/build ]; then ls -la my-training-admin/build/ | head -20; else echo 'Build directory not found'; exit 1; fi"
   artifacts:
     baseDirectory: my-training-admin/build
     files:
