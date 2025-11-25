@@ -5,21 +5,28 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "Current directory and contents:"
+        - echo "=== PreBuild Phase - Debugging ==="
         - pwd
+        - echo "Directory contents:"
         - ls -la
-        - echo "Looking for my-training-admin directory:"
-        - find . -name "my-training-admin" -type d 2>/dev/null || echo "Directory not found in current location"
-        - echo "Copying amplify_outputs.json to React app..."
-        - "if [ -f amplify_outputs.json ] && [ -d my-training-admin/src ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json && echo 'Copied successfully'; else echo 'Warning: Files not found - amplify_outputs.json or my-training-admin/src'; fi"
-        - echo "Installing Node.js dependencies..."
-        - "cd my-training-admin && npm ci"
+        - echo "Looking for my-training-admin:"
+        - find . -maxdepth 2 -name "my-training-admin" -type d 2>/dev/null || echo "Not found in current or parent"
+        - echo "Copying amplify_outputs.json..."
+        - "if [ -f amplify_outputs.json ] && [ -d my-training-admin/src ]; then cp amplify_outputs.json my-training-admin/src/amplify_outputs.json && echo 'Copied successfully'; else echo 'Warning: Files not found'; fi"
+        - echo "Installing dependencies..."
+        - "if [ -d my-training-admin ]; then cd my-training-admin && npm ci && echo 'Dependencies installed'; else echo 'ERROR: my-training-admin not found' && exit 1; fi"
     build:
       commands:
-        - echo "Building React admin app..."
-        - "cd my-training-admin && npm run build"
-        - echo "Build completed. Verifying build output:"
-        - "if [ -d my-training-admin/build ]; then ls -la my-training-admin/build/ | head -20; else echo 'Build directory not found'; exit 1; fi"
+        - echo "=== Build Phase - Debugging ==="
+        - pwd
+        - echo "Directory contents:"
+        - ls -la
+        - echo "Checking for my-training-admin:"
+        - "if [ -d my-training-admin ]; then echo 'Directory found'; ls -la my-training-admin/ | head -5; else echo 'ERROR: Directory not found'; find . -name 'my-training-admin' -type d; exit 1; fi"
+        - echo "Building React app..."
+        - "if [ -d my-training-admin ]; then cd my-training-admin && npm run build && echo 'Build successful'; else echo 'ERROR: Cannot find my-training-admin directory'; exit 1; fi"
+        - echo "Verifying build output:"
+        - "if [ -d my-training-admin/build ]; then echo 'Build directory exists'; ls -la my-training-admin/build/ | head -10; else echo 'ERROR: Build directory not found'; exit 1; fi"
   artifacts:
     baseDirectory: my-training-admin/build
     files:
