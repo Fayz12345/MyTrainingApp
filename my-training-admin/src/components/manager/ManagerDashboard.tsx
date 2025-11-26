@@ -4,17 +4,41 @@ import CourseForm from './CourseForm';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
 import EmployeeList from './EmployeeList';
+import TrainingAnalytics from './TrainingAnalytics';
 
 interface ManagerDashboardProps {
   signOut: (() => void) | undefined;
   user: AuthUser;
 }
 
-type ViewMode = 'dashboard' | 'courses' | 'create-course' | 'employees' | 'assignments';
+type ViewMode =
+  | 'dashboard'
+  | 'courses'
+  | 'create-course'
+  | 'edit-course'
+  | 'employees'
+  | 'assignments'
+  | 'analytics';
+
+type CourseSummary = {
+  readonly id: string;
+  readonly title: string;
+  readonly videoKey?: string | null;
+  readonly passingScore?: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
 
 const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) => {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [selectedCourse, setSelectedCourse] = useState<CourseSummary | null>(null);
+
+  const navigateToCourses = () => {
+    setCurrentView('courses');
+    setSelectedCourse(null);
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   const renderContent = () => {
     switch (currentView) {
@@ -40,9 +64,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             </div>
             <CourseList 
               refreshTrigger={refreshTrigger}
-              onEditCourse={(_course) => {
-                // TODO: Implement course editing
-                alert('Course editing will be implemented in the next version');
+              onEditCourse={(course) => {
+                setSelectedCourse(course);
+                setCurrentView('edit-course');
               }}
             />
           </div>
@@ -54,8 +78,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             <div style={{ marginBottom: '1rem' }}>
               <button
                 onClick={() => {
-                  setCurrentView('courses');
-                  setRefreshTrigger(prev => prev + 1); // Trigger course list refresh
+                  navigateToCourses();
                 }}
                 style={{
                   padding: '0.5rem 1rem',
@@ -68,7 +91,67 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 ← Back to Courses
               </button>
             </div>
-            <CourseForm />
+            <CourseForm
+              onSuccess={() => {
+                navigateToCourses();
+              }}
+              onCancel={() => {
+                setCurrentView('courses');
+              }}
+            />
+          </div>
+        );
+
+      case 'edit-course':
+        if (!selectedCourse) {
+          return (
+            <div>
+              <p>No course selected. Please go back to the course list.</p>
+              <button
+                onClick={() => setCurrentView('courses')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back to Courses
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div>
+            <div style={{ marginBottom: '1rem' }}>
+              <button
+                onClick={() => {
+                  setCurrentView('courses');
+                  setSelectedCourse(null);
+                }}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back to Courses
+              </button>
+            </div>
+            <CourseForm
+              course={selectedCourse}
+              onSuccess={() => {
+                navigateToCourses();
+              }}
+              onCancel={() => {
+                setCurrentView('courses');
+                setSelectedCourse(null);
+              }}
+            />
           </div>
         );
 
@@ -100,6 +183,27 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
               </button>
             </div>
             <AssignmentForm />
+          </div>
+        );
+
+      case 'analytics':
+        return (
+          <div>
+            <div style={{ marginBottom: '1rem' }}>
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back to Dashboard
+              </button>
+            </div>
+            <TrainingAnalytics />
           </div>
         );
 
@@ -152,14 +256,18 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
               }}>
                 <h3>Training Analytics</h3>
                 <p>View training completion rates and progress reports.</p>
-                <button disabled style={{ 
-                  padding: '8px 16px',
-                  backgroundColor: '#ccc',
-                  color: '#666',
-                  border: 'none',
-                  borderRadius: '4px'
-                }}>
-                  Coming Soon
+                <button 
+                  onClick={() => setCurrentView('analytics')}
+                  style={{ 
+                    padding: '8px 16px',
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Analytics
                 </button>
               </div>
 
@@ -252,8 +360,18 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 onClick={() => setCurrentView('courses')}
                 style={{
                   padding: '0.5rem 1rem',
-                  backgroundColor: currentView === 'courses' || currentView === 'create-course' ? '#1976d2' : '#f5f5f5',
-                  color: currentView === 'courses' || currentView === 'create-course' ? 'white' : '#333',
+                  backgroundColor:
+                    currentView === 'courses' ||
+                    currentView === 'create-course' ||
+                    currentView === 'edit-course'
+                      ? '#1976d2'
+                      : '#f5f5f5',
+                  color:
+                    currentView === 'courses' ||
+                    currentView === 'create-course' ||
+                    currentView === 'edit-course'
+                      ? 'white'
+                      : '#333',
                   border: '1px solid #ccc',
                   borderRadius: '4px',
                   cursor: 'pointer'
@@ -286,6 +404,19 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 }}
               >
                 Assignments
+              </button>
+              <button
+                onClick={() => setCurrentView('analytics')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: currentView === 'analytics' ? '#1976d2' : '#f5f5f5',
+                  color: currentView === 'analytics' ? 'white' : '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Analytics
               </button>
             </nav>
           )}

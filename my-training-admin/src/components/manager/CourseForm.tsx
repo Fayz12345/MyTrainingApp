@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
-import { uploadData } from 'aws-amplify/storage';
+import { uploadData, remove } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
@@ -11,16 +11,77 @@ interface QuizQuestion {
   correctAnswer: number;
 }
 
-const CourseForm = () => {
-  const [title, setTitle] = useState('');
+type CourseFormProps = {
+  course?: {
+    readonly id: string;
+    readonly title: string;
+    readonly videoKey?: string | null;
+    readonly passingScore?: number | null;
+    readonly duration?: string | null;
+    readonly category?: string | null;
+  };
+  onSuccess?: () => void;
+  onCancel?: () => void;
+};
+
+const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) => {
+  const isEditMode = Boolean(course);
+  const [title, setTitle] = useState(course?.title ?? '');
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [passingScore, setPassingScore] = useState(80);
+  const [existingVideoKey, setExistingVideoKey] = useState<string | null>(
+    course?.videoKey ?? null
+  );
+  const [passingScore, setPassingScore] = useState(course?.passingScore ?? 80);
+  const [duration, setDuration] = useState(course?.duration ?? '');
+  const [category, setCategory] = useState(course?.category ?? '');
   const [quiz, setQuiz] = useState<QuizQuestion[]>([
     { question: '', options: ['', '', '', ''], correctAnswer: 0 }
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
+
+  const loadExistingQuiz = async (courseId: string) => {
+    setIsLoadingQuiz(true);
+    try {
+      const quizResult = await client.models.QuizQuestion.list({
+        filter: { courseId: { eq: courseId } }
+      });
+
+      if (quizResult.data && quizResult.data.length > 0) {
+        setQuiz(
+          quizResult.data.map((question: { question: string; options: unknown; correctAnswer: number }) => ({
+            question: question.question,
+            options: question.options as string[],
+            correctAnswer: question.correctAnswer
+          }))
+        );
+      } else {
+        setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+      }
+    } catch (error) {
+      console.error('Failed to load quiz questions:', error);
+      setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+    } finally {
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  useEffect(() => {
+    setTitle(course?.title ?? '');
+    setPassingScore(course?.passingScore ?? 80);
+    setDuration(course?.duration ?? '');
+    setCategory(course?.category ?? '');
+    setExistingVideoKey(course?.videoKey ?? null);
+    setVideoFile(null);
+    setUploadProgress(0);
+    if (course?.id) {
+      loadExistingQuiz(course.id);
+    } else {
+      setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+    }
+  }, [course]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -70,8 +131,13 @@ const CourseForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !videoFile) {
-      alert('Please provide a title and video file');
+    if (!title.trim()) {
+      alert('Please provide a course title');
+      return;
+    }
+
+    if (!isEditMode && !videoFile) {
+      alert('Please provide a video file');
       return;
     }
 
@@ -90,73 +156,122 @@ const CourseForm = () => {
     setIsSubmitting(true);
 
     try {
-      // Upload video to S3
-      const timestamp = Date.now();
-      const videoKey = `courses/videos/${timestamp}_${videoFile.name}`;
-      
-      const uploadResult = await uploadData({
-        path: videoKey,
-        data: videoFile,
-        options: {
-          onProgress: ({ transferredBytes, totalBytes }) => {
-            if (totalBytes) {
-              setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+      let resolvedVideoKey = existingVideoKey;
+
+      if (videoFile) {
+        // Upload video to S3
+        const timestamp = Date.now();
+        const videoKey = `courses/videos/${timestamp}_${videoFile.name}`;
+
+        await uploadData({
+          path: videoKey,
+          data: videoFile,
+          options: {
+            onProgress: ({ transferredBytes, totalBytes }) => {
+              if (totalBytes) {
+                setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+              }
             }
           }
+        });
+
+        if (isEditMode && existingVideoKey) {
+          try {
+            await remove({ path: existingVideoKey });
+          } catch (storageError) {
+            console.warn('Failed to delete existing video. Continuing update.', storageError);
+          }
         }
-      });
 
-      // Create course in database
-      console.log('Creating course with data:', {
-        title: title.trim(),
-        videoKey: videoKey,
-        passingScore,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+        resolvedVideoKey = videoKey;
+      }
 
-      const courseResult = await client.models.Course.create({
-        title: title.trim(),
-        videoKey: videoKey,
-        passingScore,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      if (!resolvedVideoKey) {
+        alert('Please provide a course video before saving');
+        return;
+      }
 
-      console.log('Course creation result:', courseResult);
+      if (isEditMode && course) {
+        await client.models.Course.update({
+          id: course.id,
+          title: title.trim(),
+          videoKey: resolvedVideoKey,
+          passingScore,
+          duration: duration.trim() || null,
+          category: category.trim() || null,
+          updatedAt: new Date().toISOString()
+        });
 
-      if (courseResult.data) {
-        console.log('Created course with ID:', courseResult.data.id);
-        
-        // Create quiz questions
-        console.log('Creating quiz questions:', validQuestions.length);
+        const existingQuestions = await client.models.QuizQuestion.list({
+          filter: { courseId: { eq: course.id } }
+        });
+
+        if (existingQuestions.data) {
+          for (const question of existingQuestions.data) {
+            await client.models.QuizQuestion.delete({ id: question.id });
+          }
+        }
+
         for (const question of validQuestions) {
-          const questionResult = await client.models.QuizQuestion.create({
-            courseId: courseResult.data.id,
+          await client.models.QuizQuestion.create({
+            courseId: course.id,
             question: question.question.trim(),
             options: question.options.map(opt => opt.trim()),
             correctAnswer: question.correctAnswer,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
-          console.log('Created quiz question:', questionResult);
+        }
+
+        alert('Course updated successfully!');
+        onSuccess?.();
+        return;
+      }
+
+      // Create course in database
+      const courseResult = await client.models.Course.create({
+        title: title.trim(),
+        videoKey: resolvedVideoKey,
+        passingScore,
+        duration: duration.trim() || null,
+        category: category.trim() || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      if (courseResult.data) {
+        // Type assertion: create() returns a single Course object, not an array
+        const courseData = courseResult.data as unknown as { id: string };
+        for (const question of validQuestions) {
+          await client.models.QuizQuestion.create({
+            courseId: courseData.id,
+            question: question.question.trim(),
+            options: question.options.map(opt => opt.trim()),
+            correctAnswer: question.correctAnswer,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
         }
 
         alert('Course created successfully!');
-        
+
         // Reset form
         setTitle('');
         setVideoFile(null);
         setPassingScore(80);
+        setDuration('');
+        setCategory('');
         setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
         setUploadProgress(0);
+        setExistingVideoKey(null);
+        onSuccess?.();
       } else {
         console.error('No course data returned from creation');
         alert('Course creation failed - no data returned');
       }
     } catch (error) {
-      console.error('Error creating course:', error);
-      alert('Failed to create course. Please try again.');
+      console.error(isEditMode ? 'Error updating course:' : 'Error creating course:', error);
+      alert('Failed to save course. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -164,7 +279,24 @@ const CourseForm = () => {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <h2>Create New Course</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>{isEditMode ? 'Edit Course' : 'Create New Course'}</h2>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#f5f5f5',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
       
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Course Title */}
@@ -191,7 +323,7 @@ const CourseForm = () => {
         {/* Video Upload */}
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Course Video *
+            Course Video {isEditMode ? '(leave empty to keep current video)' : '*'}
           </label>
           <div
             onDragOver={handleDragOver}
@@ -219,6 +351,11 @@ const CourseForm = () => {
               </div>
             ) : (
               <div>
+                {isEditMode && existingVideoKey && (
+                  <p style={{ marginBottom: '0.5rem', color: '#555' }}>
+                    Current video key: <code>{existingVideoKey}</code>
+                  </p>
+                )}
                 <p>Drag and drop a video file here, or click to select</p>
                 <input
                   type="file"
@@ -273,26 +410,71 @@ const CourseForm = () => {
           />
         </div>
 
+        {/* Duration and Category */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Duration
+            </label>
+            <input
+              type="text"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="e.g., 45 min, 1 hr 30 min, 2 hr"
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '1rem'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Category
+            </label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="e.g., Leadership, Marketing, IT"
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '1rem'
+              }}
+            />
+          </div>
+        </div>
+
         {/* Quiz Questions */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h3>Quiz Questions</h3>
-            <button
-              type="button"
-              onClick={addQuizQuestion}
-              disabled={quiz.length >= 10}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: '#1976d2',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: quiz.length >= 10 ? 'not-allowed' : 'pointer',
-                opacity: quiz.length >= 10 ? 0.6 : 1
-              }}
-            >
-              Add Question
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              {isLoadingQuiz && (
+                <span style={{ color: '#666', fontSize: '0.9rem' }}>Loading existing questions...</span>
+              )}
+              <button
+                type="button"
+                onClick={addQuizQuestion}
+                disabled={quiz.length >= 10}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#1976d2',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: quiz.length >= 10 ? 'not-allowed' : 'pointer',
+                  opacity: quiz.length >= 10 ? 0.6 : 1
+                }}
+              >
+                Add Question
+              </button>
+            </div>
           </div>
 
           {quiz.map((question, questionIndex) => (
@@ -383,7 +565,13 @@ const CourseForm = () => {
             marginTop: '1rem'
           }}
         >
-          {isSubmitting ? 'Creating Course...' : 'Create Course'}
+          {isSubmitting
+            ? isEditMode
+              ? 'Updating Course...'
+              : 'Creating Course...'
+            : isEditMode
+                ? 'Update Course'
+                : 'Create Course'}
         </button>
       </form>
     </div>

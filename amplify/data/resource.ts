@@ -62,6 +62,8 @@ const schema = a.schema({
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
       assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
       passingScore: a.integer(),
+      duration: a.string(), // Course duration (e.g., "45 min", "1 hr 30 min", "2 hr")
+      category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

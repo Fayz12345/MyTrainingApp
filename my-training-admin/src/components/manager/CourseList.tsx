@@ -10,6 +10,8 @@ type Course = {
   readonly title: string;
   readonly videoKey?: string | null;
   readonly passingScore?: number | null;
+  readonly duration?: string | null;
+  readonly category?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly quiz?: any;
@@ -175,9 +177,38 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2', fontSize: '1.25rem', fontWeight: 'bold' }}>
                   {course.title}
                 </h4>
+                
+                {/* Duration and Category Tags */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  {course.duration && (
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      backgroundColor: '#e3f2fd',
+                      color: '#1976d2',
+                      borderRadius: '16px',
+                      fontSize: '0.875rem',
+                      fontWeight: '500'
+                    }}>
+                      {course.duration}
+                    </span>
+                  )}
+                  {course.category && (
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      backgroundColor: '#e3f2fd',
+                      color: '#1976d2',
+                      borderRadius: '16px',
+                      fontSize: '0.875rem',
+                      fontWeight: '500'
+                    }}>
+                      {course.category}
+                    </span>
+                  )}
+                </div>
+                
                 <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
                   <p style={{ margin: 0, color: '#666' }}>
                     <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
