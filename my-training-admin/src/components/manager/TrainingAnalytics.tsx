@@ -1,8 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
+
+type Assignment = {
+  readonly id: string;
+  readonly employeeId: string;
+  readonly courseId: string;
+  readonly status?: 'assigned' | 'completed' | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type Result = {
+  readonly id: string;
+  readonly assignmentId: string;
+  readonly score: number;
+  readonly passed: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type Course = {
+  readonly id: string;
+  readonly title: string;
+  readonly videoKey?: string | null;
+  readonly passingScore?: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type Employee = {
+  readonly id: string;
+  readonly userId: string;
+  readonly email: string;
+  readonly name: string;
+  readonly department?: string | null;
+  readonly managerId?: string | null;
+  readonly createdBy?: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type Manager = {
+  readonly id: string;
+  readonly userId: string;
+  readonly email: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
 
 interface AnalyticsData {
   totalAssignments: number;
@@ -31,6 +80,7 @@ interface EmployeeProgress {
   employeeId: string;
   employeeName: string;
   employeeEmail: string;
+  managerName: string;
   totalAssignments: number;
   completedAssignments: number;
   completionRate: number;
@@ -55,6 +105,10 @@ const TrainingAnalytics: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // Get current user ID to filter employees
+      const session = await fetchAuthSession();
+      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
       // Fetch all assignments with related data
       const assignments = await client.models.Assignment.list({
         authMode: 'userPool'
@@ -75,16 +129,57 @@ const TrainingAnalytics: React.FC = () => {
         authMode: 'userPool'
       });
 
-      if (!assignments.data || !results.data || !courses.data || !employees.data) {
+      // Fetch all managers
+      const managers = await client.models.Manager.list({
+        authMode: 'userPool'
+      });
+
+      if (!assignments.data || !results.data || !courses.data || !employees.data || !managers.data) {
         throw new Error('Failed to fetch analytics data');
       }
 
+      // Cast data to proper types
+      const coursesData = courses.data as Course[];
+      let employeesData = employees.data as Employee[];
+      const managersData = managers.data as Manager[];
+
+      // Filter employees by createdBy - managers should only see employees they created
+      if (userId) {
+        employeesData = employeesData.filter(emp => emp.createdBy === userId);
+      }
+
+      // Get employee IDs for filtering assignments and results
+      const employeeIds = new Set(employeesData.map(emp => emp.id));
+
+      // Filter assignments to only include those for employees created by this manager
+      const assignmentsData = (assignments.data as Assignment[]).filter(
+        assignment => employeeIds.has(assignment.employeeId)
+      );
+
+      // Filter results to only include those for assignments of employees created by this manager
+      const assignmentIds = new Set(assignmentsData.map(a => a.id));
+      const resultsData = (results.data as Result[]).filter(
+        result => assignmentIds.has(result.assignmentId)
+      );
+
+      // Create a map of managers for easy lookup by ID and by userId
+      const managerMap: Record<string, Manager> = {};
+      const managerByUserIdMap: Record<string, Manager> = {};
+      managersData.forEach(manager => {
+        managerMap[manager.id] = manager;
+        managerByUserIdMap[manager.userId] = manager;
+      });
+
+      // Get current manager info
+      const currentManager = userId ? managerByUserIdMap[userId] : null;
+      const currentManagerName = currentManager ? currentManager.name : 'Current Manager';
+
       // Calculate overall statistics
-      const totalAssignments = assignments.data.length;
+      const totalAssignments = assignmentsData.length;
       // Count assignments as completed if they have a result (quiz taken) OR status is 'completed'
-      const assignmentIdsWithResults = new Set(results.data.map((r: Schema['Result']['listItem']) => r.assignmentId));
-      const completedAssignments = assignments.data.filter(
-        (a: Schema['Assignment']['listItem']) => 
+      const assignmentIdsWithResults = new Set(resultsData.map((r: Result) => r.assignmentId));
+      const completedAssignments = assignmentsData.filter(
+        (a: Assignment) => 
           a.status === 'completed' || assignmentIdsWithResults.has(a.id)
       ).length;
       const completionRate = totalAssignments > 0 
@@ -92,41 +187,41 @@ const TrainingAnalytics: React.FC = () => {
         : 0;
 
       // Calculate average score and pass rate
-      const allScores = results.data.map((r: Schema['Result']['listItem']) => r.score);
+      const allScores = resultsData.map((r: Result) => r.score);
       const averageScore = allScores.length > 0
         ? allScores.reduce((sum: number, score: number) => sum + score, 0) / allScores.length
         : 0;
       
-      const passedResults = results.data.filter((r: Schema['Result']['listItem']) => r.passed);
-      const passRate = results.data.length > 0
-        ? (passedResults.length / results.data.length) * 100
+      const passedResults = resultsData.filter((r: Result) => r.passed);
+      const passRate = resultsData.length > 0
+        ? (passedResults.length / resultsData.length) * 100
         : 0;
 
       // Calculate course statistics
-      const courseStats: CourseStat[] = courses.data.map((course: Schema['Course']['listItem']) => {
-        const courseAssignments = assignments.data.filter(
-          (a: Schema['Assignment']['listItem']) => a.courseId === course.id
+      const courseStats: CourseStat[] = coursesData.map((course: Course) => {
+        const courseAssignments = assignmentsData.filter(
+          (a: Assignment) => a.courseId === course.id
         );
         // Get assignment IDs with results for this course
-        const courseAssignmentIds = courseAssignments.map((a: Schema['Assignment']['listItem']) => a.id);
-        const courseResults = results.data.filter((r: Schema['Result']['listItem']) => 
+        const courseAssignmentIds = courseAssignments.map((a: Assignment) => a.id);
+        const courseResults = resultsData.filter((r: Result) => 
           courseAssignmentIds.includes(r.assignmentId)
         );
-        const courseAssignmentIdsWithResults = new Set(courseResults.map((r: Schema['Result']['listItem']) => r.assignmentId));
+        const courseAssignmentIdsWithResults = new Set(courseResults.map((r: Result) => r.assignmentId));
         // Count as completed if status is 'completed' OR has a result
         const courseCompleted = courseAssignments.filter(
-          (a: Schema['Assignment']['listItem']) => 
+          (a: Assignment) => 
             a.status === 'completed' || courseAssignmentIdsWithResults.has(a.id)
         );
         
         // courseResults already calculated above
         
-        const courseScores = courseResults.map((r: Schema['Result']['listItem']) => r.score);
+        const courseScores = courseResults.map((r: Result) => r.score);
         const courseAverageScore = courseScores.length > 0
           ? courseScores.reduce((sum: number, score: number) => sum + score, 0) / courseScores.length
           : 0;
         
-        const coursePassed = courseResults.filter((r: Schema['Result']['listItem']) => r.passed);
+        const coursePassed = courseResults.filter((r: Result) => r.passed);
         const coursePassRate = courseResults.length > 0
           ? (coursePassed.length / courseResults.length) * 100
           : 0;
@@ -145,33 +240,46 @@ const TrainingAnalytics: React.FC = () => {
       });
 
       // Calculate employee progress
-      const employeeProgress: EmployeeProgress[] = employees.data.map((employee: Schema['Employee']['listItem']) => {
-        const employeeAssignments = assignments.data.filter(
-          (a: Schema['Assignment']['listItem']) => a.employeeId === employee.id
+      const employeeProgress: EmployeeProgress[] = employeesData.map((employee: Employee) => {
+        const employeeAssignments = assignmentsData.filter(
+          (a: Assignment) => a.employeeId === employee.id
         );
         
         // Get results for this employee's assignments
-        const employeeAssignmentIds = employeeAssignments.map((a: Schema['Assignment']['listItem']) => a.id);
-        const employeeResults = results.data.filter((r: Schema['Result']['listItem']) => 
+        const employeeAssignmentIds = employeeAssignments.map((a: Assignment) => a.id);
+        const employeeResults = resultsData.filter((r: Result) => 
           employeeAssignmentIds.includes(r.assignmentId)
         );
         
         // Count as completed if status is 'completed' OR has a result (quiz taken)
-        const employeeAssignmentIdsWithResults = new Set(employeeResults.map((r: Schema['Result']['listItem']) => r.assignmentId));
+        const employeeAssignmentIdsWithResults = new Set(employeeResults.map((r: Result) => r.assignmentId));
         const employeeCompleted = employeeAssignments.filter(
-          (a: Schema['Assignment']['listItem']) => 
+          (a: Assignment) => 
             a.status === 'completed' || employeeAssignmentIdsWithResults.has(a.id)
         );
         
-        const employeeScores = employeeResults.map((r: Schema['Result']['listItem']) => r.score);
+        const employeeScores = employeeResults.map((r: Result) => r.score);
         const employeeAverageScore = employeeScores.length > 0
           ? employeeScores.reduce((sum: number, score: number) => sum + score, 0) / employeeScores.length
           : 0;
+
+        // Get manager name who created this employee
+        // Since we filter by createdBy, all employees are created by the current manager
+        // But we can also check if there's a managerId assigned
+        let managerName = currentManagerName;
+        if (employee.managerId && managerMap[employee.managerId]) {
+          // If employee has a managerId, show that manager's name
+          managerName = managerMap[employee.managerId].name;
+        } else if (employee.createdBy && managerByUserIdMap[employee.createdBy]) {
+          // Otherwise, show the manager who created this employee
+          managerName = managerByUserIdMap[employee.createdBy].name;
+        }
 
         return {
           employeeId: employee.id,
           employeeName: employee.name,
           employeeEmail: employee.email,
+          managerName: managerName,
           totalAssignments: employeeAssignments.length,
           completedAssignments: employeeCompleted.length,
           completionRate: employeeAssignments.length > 0
@@ -182,13 +290,13 @@ const TrainingAnalytics: React.FC = () => {
       });
 
       // Get recent completions (last 10)
-      const recentCompletions: RecentCompletion[] = results.data
-        .map((result: Schema['Result']['listItem']) => {
-          const assignment = assignments.data.find((a: Schema['Assignment']['listItem']) => a.id === result.assignmentId);
+      const recentCompletions: RecentCompletion[] = resultsData
+        .map((result: Result) => {
+          const assignment = assignmentsData.find((a: Assignment) => a.id === result.assignmentId);
           if (!assignment) return null;
           
-          const employee = employees.data.find((e: Schema['Employee']['listItem']) => e.id === assignment.employeeId);
-          const course = courses.data.find((c: Schema['Course']['listItem']) => c.id === assignment.courseId);
+          const employee = employeesData.find((e: Employee) => e.id === assignment.employeeId);
+          const course = coursesData.find((c: Course) => c.id === assignment.courseId);
           
           if (!employee || !course) return null;
           
@@ -208,8 +316,8 @@ const TrainingAnalytics: React.FC = () => {
         totalAssignments,
         completedAssignments,
         completionRate,
-        totalEmployees: employees.data.length,
-        totalCourses: courses.data.length,
+        totalEmployees: employeesData.length,
+        totalCourses: coursesData.length,
         averageScore: Math.round(averageScore * 10) / 10,
         passRate: Math.round(passRate * 10) / 10,
         courseStats: courseStats.sort((a: CourseStat, b: CourseStat) => b.completionRate - a.completionRate),
@@ -427,6 +535,7 @@ const TrainingAnalytics: React.FC = () => {
               <tr style={{ backgroundColor: '#f5f5f5' }}>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Employee</th>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Email</th>
+                <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Manager</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Completed</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Completion Rate</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Avg Score</th>
@@ -437,6 +546,7 @@ const TrainingAnalytics: React.FC = () => {
                 <tr key={employee.employeeId} style={{ borderBottom: '1px solid #f0f0f0' }}>
                   <td style={{ padding: '1rem' }}>{employee.employeeName}</td>
                   <td style={{ padding: '1rem', color: '#666' }}>{employee.employeeEmail}</td>
+                  <td style={{ padding: '1rem', color: '#666' }}>{employee.managerName}</td>
                   <td style={{ padding: '1rem', textAlign: 'center' }}>
                     {employee.completedAssignments} / {employee.totalAssignments}
                   </td>

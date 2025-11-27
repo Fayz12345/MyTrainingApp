@@ -2,6 +2,13 @@
   "name": "mytrainingapp",
   "version": "1.0.0",
   "description": "MyTrainingApp - Flutter training application with Amplify backend",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@aws-amplify/backend": "^1.18.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.940.0",
+    "@aws-sdk/client-sns": "^3.940.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0"
+  }
 }
-
