@@ -1,0 +1,75 @@
+name: Amplify Backend CI/CD
+
+on:
+  push:
+    branches:
+      - develop
+      - dev
+
+jobs:
+  deploy-amplify-backend:
+    runs-on: ubuntu-latest
+    
+    # Determine app ID based on branch
+    env:
+      DEVELOP_APP_ID: d6c38s8spsb1t
+      DEV_APP_ID: d1pvmv1j5xi2c9
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: amplify/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ca-central-1
+
+      - name: Install dependencies
+        working-directory: ./amplify
+        run: npm ci
+
+      - name: Install Amplify Gen 2 CLI
+        run: npm install -g @aws-amplify/backend-cli
+
+      - name: Determine App ID
+        id: app-id
+        run: |
+          if [ "${{ github.ref_name }}" == "develop" ]; then
+            echo "app_id=${{ env.DEVELOP_APP_ID }}" >> $GITHUB_OUTPUT
+            echo "Deploying to DEVELOP app: ${{ env.DEVELOP_APP_ID }}"
+          elif [ "${{ github.ref_name }}" == "dev" ]; then
+            echo "app_id=${{ env.DEV_APP_ID }}" >> $GITHUB_OUTPUT
+            echo "Deploying to DEV app: ${{ env.DEV_APP_ID }}"
+          else
+            echo "Unknown branch: ${{ github.ref_name }}"
+            exit 1
+          fi
+
+      - name: Deploy backend (pipeline-deploy)
+        run: |
+          echo "🚀 Deploying backend for branch: ${{ github.ref_name }}"
+          echo "📦 App ID: ${{ steps.app-id.outputs.app_id }}"
+          
+          npx ampx pipeline-deploy \
+            --branch ${{ github.ref_name }} \
+            --app-id ${{ steps.app-id.outputs.app_id }}
+
+      - name: Deployment Summary
+        run: |
+          echo "✅ Backend deployment completed!"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "App ID: ${{ steps.app-id.outputs.app_id }}"
+          echo ""
+          echo "Next steps:"
+          echo "1. Generate outputs: npx ampx generate outputs --app-id ${{ steps.app-id.outputs.app_id }} --branch ${{ github.ref_name }}"
+          echo "2. Copy outputs to admin app: cp amplify_outputs.json my-training-admin/src/amplify_outputs.json"
+
