@@ -25,4 +25,4 @@ jobs:
       # Step 3: Deploy Amplify backend
       - name: Deploy Amplify backend
         run: npx ampx pipeline-deploy --branch dev --app-id d6c38s8spsb1t
-        working-directory: .MyTrainingApp/amplify
+        working-directory: ./amplify
