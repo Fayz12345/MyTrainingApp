@@ -4,6 +4,7 @@ import { data } from './data/resource';
 import { storage } from './storage/resource';
 import { quizCompletion } from './functions/quizCompletion/resource';
 import { assignEmployeeGroup } from './functions/assignEmployeeGroup/resource';
+import { createCognitoGroups } from './functions/createCognitoGroups/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -13,6 +14,7 @@ defineBackend({
   data,
   storage,
   quizCompletion,
-  assignEmployeeGroup
+  assignEmployeeGroup,
+  createCognitoGroups
 });
 

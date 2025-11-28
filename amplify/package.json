@@ -7,7 +7,8 @@
   },
   "dependencies": {
     "@aws-amplify/backend": "latest",
-    "@aws-amplify/backend-cli": "latest"
+    "@aws-amplify/backend-cli": "latest",
+    "@aws-sdk/client-cognito-identity-provider": "^3.0.0"
   },
   "devDependencies": {
     "esbuild": "^0.27.0",

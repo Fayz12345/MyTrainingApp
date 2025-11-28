@@ -10,5 +10,16 @@
   },
   "devDependencies": {
     "esbuild": "^0.27.0"
-  }
+  },
+  "main": ".eslintrc.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
