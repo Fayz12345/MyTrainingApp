@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - dev
-      - develop
 
 jobs:
   deploy-backend:
@@ -20,14 +19,10 @@ jobs:
           node-version: 20
 
       # Step 2: Install Amplify CLI globally
-      - run: npm install -g @aws-amplify/backend-cli
+      - name: Install Amplify CLI
+        run: npm install -g @aws-amplify/backend-cli
 
-      # Step 3: Install dependencies in React folder
-      - name: Install React dependencies
-        run: npm ci
-        working-directory: ./my-training-admin
-
-      # Step 4: Deploy Amplify backend
+      # Step 3: Deploy Amplify backend
       - name: Deploy Amplify backend
-        run: npx ampx pipeline-deploy --branch ${{ github.ref_name }} --app-id ${{ secrets.AMPLIFY_APP_ID }}
-        working-directory: ./my-training-admin
+        run: npx ampx pipeline-deploy --branch dev --app-id d6c38s8spsb1t
+        working-directory: ./amplify
