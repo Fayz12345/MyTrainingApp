@@ -28,18 +28,51 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
       setLoading(true);
       setError(null);
 
-      // Verify user is authenticated before making request
-      const { fetchAuthSession } = await import('aws-amplify/auth');
-      const session = await fetchAuthSession({ forceRefresh: true });
+      // Import auth functions
+      const { fetchAuthSession, getCurrentUser } = await import('aws-amplify/auth');
       
-      if (!session.tokens || !session.tokens.idToken) {
+      // First verify user is authenticated
+      try {
+        await getCurrentUser();
+      } catch (error) {
         throw new Error('User is not authenticated. Please sign in again.');
       }
 
-      // Generate client inside function to ensure Amplify is configured
-      // Set authMode to 'userPool' at client level
+      // Get fresh auth session with token
+      const session = await fetchAuthSession({ forceRefresh: true });
+      
+      if (!session.tokens || !session.tokens.idToken) {
+        throw new Error('No authentication token found. Please sign in again.');
+      }
+
+      // Verify token is not expired
+      const tokenExp = session.tokens.idToken.payload?.exp;
+      if (tokenExp && Date.now() > tokenExp * 1000) {
+        throw new Error('Authentication token has expired. Please sign in again.');
+      }
+
+      // Debug: Log token to verify it exists BEFORE generating client
+      console.log('Auth session:', {
+        hasToken: !!session.tokens?.idToken,
+        tokenExp: tokenExp ? new Date(tokenExp * 1000).toISOString() : 'N/A',
+        tokenExpired: tokenExp ? Date.now() > tokenExp * 1000 : 'N/A',
+        groups: session.tokens?.idToken?.payload?.['cognito:groups'],
+        userId: session.tokens?.idToken?.payload?.sub,
+        tokenString: session.tokens?.idToken?.toString() ? 'Token exists (string)' : 'No token string'
+      });
+
+      // Generate client - Amplify should automatically use the current auth session
+      // The authMode tells it to use Cognito User Pool authentication
+      // IMPORTANT: Client must be generated AFTER we have confirmed the session exists
       const client = generateClient<Schema>({
         authMode: 'userPool'
+      });
+      
+      // Additional debug: Check if client has auth configured
+      console.log('Client generated:', {
+        hasClient: !!client,
+        hasModels: !!client?.models,
+        hasBusinessUnit: !!client?.models?.BusinessUnit
       });
 
       // Check if client and models are available

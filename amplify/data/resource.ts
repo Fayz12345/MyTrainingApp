@@ -3,7 +3,8 @@ import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
 // Schema includes all 8 models: BusinessUnit, Store, Manager, Course, QuizQuestion, Employee, Assignment, Result
 // CRITICAL FIX: Reordered models to ensure BusinessUnit, Store, Manager are recognized by AppSync
 // These models must be defined first to ensure proper schema generation
-// FORCE SYNC: Updated to ensure AppSync authorization rules are synced (2025-11-28 - v2)
+// FORCE SYNC: Updated to ensure AppSync authorization rules are synced (2025-11-28 - v3)
+// CRITICAL: Authorization rules must be synced to AppSync for group-based access to work
 const schema = a.schema({
   // Hierarchy models - defined first to ensure AppSync includes them
   BusinessUnit: a
@@ -145,6 +146,10 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'userPool' // Use Cognito for auth
+    defaultAuthorizationMode: 'userPool', // Use Cognito for auth
+    // Explicitly configure authorization to ensure @auth directives are synced
+    apiKeyAuthorizationMode: {
+      expiresInDays: 30
+    }
   }
 });
