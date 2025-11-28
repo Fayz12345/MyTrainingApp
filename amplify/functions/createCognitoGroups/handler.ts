@@ -24,7 +24,7 @@ export const handler = async (event: any) => {
   console.log('Creating Cognito groups event:', JSON.stringify(event, null, 2));
 
   // Get User Pool ID from environment or event
-  const userPoolId = process.env.USER_POOL_ID || event.userPoolId;
+  const userPoolId = event.userPoolId;
 
   if (!userPoolId) {
     const error = 'User Pool ID not found in environment or event';
