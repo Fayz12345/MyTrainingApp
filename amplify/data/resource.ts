@@ -1,5 +1,6 @@
 import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
 
+
 // Schema includes all 8 models: BusinessUnit, Store, Manager, Course, QuizQuestion, Employee, Assignment, Result
 // CRITICAL FIX: Reordered models to ensure BusinessUnit, Store, Manager are recognized by AppSync
 // These models must be defined first to ensure proper schema generation
@@ -146,6 +147,4 @@ export const data = defineData({
   authorizationModes: {
     defaultAuthorizationMode: 'userPool' // Use Cognito for auth
   }
-  // Explicitly ensure all models are included in AppSync schema
-  // BusinessUnit, Store, Manager must be synced from DynamoDB to AppSync
 });
