@@ -87,13 +87,29 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
 
       if (!client.models.BusinessUnit) {
         console.error('Available models:', Object.keys(client.models));
-        throw new Error('BusinessUnit model not found. Available models: ' + Object.keys(client.models).join(', '));
+        throw new Error('BusinessUnit model not found. Available models: ' + Object.keys(client.models).join(', ') + '. Please push your schema changes and wait for deployment to complete.');
       }
 
+      // TEMPORARY: Check if API has BusinessUnit model
+      // This error occurs when the dev API hasn't been updated with BusinessUnit yet
+      // The model exists in amplify_outputs.json but not in the actual AppSync API
+      // Solution: Push schema changes (git push origin dev) and wait for deployment
       const result = await client.models.BusinessUnit.list();
 
       if (result.errors && result.errors.length > 0) {
-        throw new Error('Failed to fetch business units: ' + result.errors.map((e: any) => e.message).join(', '));
+        const errorMessages = result.errors.map((e: any) => e.message).join(', ');
+        
+        // Check if this is the "listBusinessUnits is undefined" error
+        if (errorMessages.includes('listBusinessUnits') || errorMessages.includes('Unknown type ModelBusinessUnitFilterInput')) {
+          throw new Error(
+            'BusinessUnit model is not available in the API yet. ' +
+            'This happens when schema changes are not deployed. ' +
+            'Please push your changes (git push origin dev) and wait for deployment to complete (5-10 minutes). ' +
+            'Original error: ' + errorMessages
+          );
+        }
+        
+        throw new Error('Failed to fetch business units: ' + errorMessages);
       }
 
       setBusinessUnits(result.data as BusinessUnit[]);
