@@ -21,14 +21,26 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingBusinessUnit, setEditingBusinessUnit] = useState<BusinessUnit | null>(null);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      // Verify user is authenticated before making request
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      const session = await fetchAuthSession({ forceRefresh: true });
+      
+      if (!session.tokens || !session.tokens.idToken) {
+        throw new Error('User is not authenticated. Please sign in again.');
+      }
+
       // Generate client inside function to ensure Amplify is configured
-      const client = generateClient<Schema>();
+      // Set authMode to 'userPool' at client level
+      const client = generateClient<Schema>({
+        authMode: 'userPool'
+      });
 
       // Check if client and models are available
       if (!client) {
@@ -45,7 +57,7 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
         throw new Error('BusinessUnit model not found. Available models: ' + Object.keys(client.models).join(', '));
       }
 
-      const result = await client.models.BusinessUnit.list({});
+      const result = await client.models.BusinessUnit.list();
 
       if (result.errors && result.errors.length > 0) {
         throw new Error('Failed to fetch business units: ' + result.errors.map((e: any) => e.message).join(', '));
@@ -66,8 +78,20 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
     }
 
     try {
-      const client = generateClient<Schema>();
-      await client.models.BusinessUnit.delete({ id });
+      // Verify user is authenticated
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      const session = await fetchAuthSession({ forceRefresh: true });
+      
+      if (!session.tokens || !session.tokens.idToken) {
+        throw new Error('User is not authenticated. Please sign in again.');
+      }
+
+      const client = generateClient<Schema>({
+        authMode: 'userPool'
+      });
+      await client.models.BusinessUnit.delete({ 
+        id 
+      });
       alert('Business Unit deleted successfully');
       fetchData();
     } catch (err) {
@@ -109,14 +133,19 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
     );
   }
 
-  if (showCreateForm) {
+  if (showCreateForm || editingBusinessUnit) {
     return (
       <BusinessUnitForm 
-        onCancel={() => setShowCreateForm(false)}
+        onCancel={() => {
+          setShowCreateForm(false);
+          setEditingBusinessUnit(null);
+        }}
         onBusinessUnitCreated={() => {
           setShowCreateForm(false);
+          setEditingBusinessUnit(null);
           fetchData();
         }}
+        businessUnit={editingBusinessUnit}
       />
     );
   }
@@ -203,6 +232,20 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
+                <button
+                  onClick={() => setEditingBusinessUnit(businessUnit)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  ✏️ Edit
+                </button>
                 <button
                   onClick={() => deleteBusinessUnit(businessUnit.id, businessUnit.name)}
                   style={{

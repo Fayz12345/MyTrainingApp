@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
 import BusinessUnitList from './BusinessUnitList';
 import OrganizationHierarchy from './OrganizationHierarchy';
+import AuthDebug from '../debug/AuthDebug';
 
 interface SuperAdminDashboardProps {
   signOut: (() => void) | undefined;
@@ -22,6 +23,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ signOut, user
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
               <h2>Business Unit Management</h2>
             </div>
+            <AuthDebug />
             <BusinessUnitList refreshTrigger={refreshTrigger} />
           </div>
         );

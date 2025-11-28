@@ -3,17 +3,26 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
 
-const client = generateClient<Schema>();
+const client = generateClient<Schema>({
+  authMode: 'userPool'
+});
 
 interface BusinessUnitFormProps {
   onCancel: () => void;
   onBusinessUnitCreated: () => void;
+  businessUnit?: {
+    id: string;
+    name: string;
+    description?: string | null;
+  } | null;
 }
 
-const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusinessUnitCreated }) => {
+const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusinessUnitCreated, businessUnit }) => {
+  const isEditMode = !!businessUnit;
+  
   const [formData, setFormData] = useState({
-    name: '',
-    description: ''
+    name: businessUnit?.name || '',
+    description: businessUnit?.description || ''
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,24 +47,41 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusines
     setError(null);
 
     try {
-      // Get current user ID
-      const session = await fetchAuthSession();
+      // Get current user ID and verify authentication
+      const session = await fetchAuthSession({ forceRefresh: true });
+      
+      if (!session.tokens || !session.tokens.idToken) {
+        throw new Error('User is not authenticated. Please sign in again.');
+      }
+      
       const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
       
       if (!userId) {
         throw new Error('Unable to identify current user');
       }
 
-      const now = new Date().toISOString();
-      await client.models.BusinessUnit.create({
-        name: formData.name,
-        description: formData.description || null,
-        createdBy: userId,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      alert(`✅ Business Unit "${formData.name}" created successfully!`);
+      if (isEditMode && businessUnit) {
+        // Update existing business unit
+        const now = new Date().toISOString();
+        await client.models.BusinessUnit.update({
+          id: businessUnit.id,
+          name: formData.name,
+          description: formData.description || null,
+          updatedAt: now
+        });
+        alert(`✅ Business Unit "${formData.name}" updated successfully!`);
+      } else {
+        // Create new business unit
+        const now = new Date().toISOString();
+        await client.models.BusinessUnit.create({
+          name: formData.name,
+          description: formData.description || null,
+          createdBy: userId,
+          createdAt: now,
+          updatedAt: now
+        });
+        alert(`✅ Business Unit "${formData.name}" created successfully!`);
+      }
       onBusinessUnitCreated();
     } catch (err) {
       console.error('Error creating business unit:', err);
@@ -67,7 +93,7 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusines
 
   return (
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-      <h2>Create New Business Unit</h2>
+      <h2>{isEditMode ? 'Edit Business Unit' : 'Create New Business Unit'}</h2>
       
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && (
@@ -153,7 +179,7 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusines
               fontSize: '1rem'
             }}
           >
-            {submitting ? 'Creating...' : 'Create Business Unit'}
+            {submitting ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Business Unit' : 'Create Business Unit')}
           </button>
         </div>
       </form>
