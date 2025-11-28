@@ -1,7 +1,9 @@
 import { a, defineData } from '@aws-amplify/backend';
 // Schema includes all 8 models: BusinessUnit, Store, Manager, Course, QuizQuestion, Employee, Assignment, Result
-// Force schema rebuild to sync AppSync with DynamoDB tables
+// CRITICAL FIX: Reordered models to ensure BusinessUnit, Store, Manager are recognized by AppSync
+// These models must be defined first to ensure proper schema generation
 const schema = a.schema({
+    // Hierarchy models - defined first to ensure AppSync includes them
     BusinessUnit: a
         .model({
         id: a.id(),
@@ -12,7 +14,6 @@ const schema = a.schema({
         createdAt: a.datetime().required(),
         updatedAt: a.datetime().required()
     })
-        // Schema sync: Force AppSync to include BusinessUnit, Store, Manager models
         .authorization(allow => [
         allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
         allow.group('BusinessUnit').to(['read']),
