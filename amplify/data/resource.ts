@@ -5,6 +5,7 @@ import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
 // These models must be defined first to ensure proper schema generation
 // FORCE SYNC: Updated to ensure AppSync authorization rules are synced (2025-11-28 - v3)
 // CRITICAL: Authorization rules must be synced to AppSync for group-based access to work
+// DEPLOYMENT TRIGGER: Force update dev API with all 8 models (2025-11-28 - v4)
 const schema = a.schema({
   // Hierarchy models - defined first to ensure AppSync includes them
   BusinessUnit: a
