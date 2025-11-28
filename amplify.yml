@@ -1,23 +1,13 @@
 version: 1
 frontend:
   phases:
-    preBuild:
-      commands:
-        - corepack enable
-        - npm ci
+    # IMPORTANT - Please verify your build commands
     build:
-      commands:[]
+      commands: []
   artifacts:
-    baseDirectory: dist
+    # IMPORTANT - Please verify your build output directory
+    baseDirectory: /
     files:
       - '**/*'
   cache:
-    paths:
-      - node_modules/**
-
-backend:
-  phases:
-    build:
-      commands:
-        - npx ampx generate
-        - npx ampx deploy --branch dev --app-id d6c38s8spsb1t
+    paths: []
