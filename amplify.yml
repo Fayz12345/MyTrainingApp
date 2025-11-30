@@ -17,7 +17,9 @@ frontend:
               with tarfile.open(fileobj=f) as tar:
                   tar.extractall(dest)
           PY
-        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter config --enable-web'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter config --no-analytics --enable-web'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && dart --disable-analytics'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter precache --web --no-android --no-ios'
         - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter pub get'
     build:
       commands:
