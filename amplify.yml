@@ -3,12 +3,12 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "Working dir before build: $PWD"
-        - ls -la
-        - APP_DIR="my-training-admin"; if [ ! -d "$APP_DIR" ]; then APP_DIR="MyTrainingApp/my-training-admin"; fi; if [ ! -d "$APP_DIR" ]; then echo "❌ my-training-admin folder not found"; ls -la; exit 1; fi; cd "$APP_DIR"; npm ci
+        - "echo \"Working dir before build: $PWD\""
+        - "ls -la"
+        - "APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm ci"
     build:
       commands:
-        - APP_DIR="my-training-admin"; if [ ! -d "$APP_DIR" ]; then APP_DIR="MyTrainingApp/my-training-admin"; fi; if [ ! -d "$APP_DIR" ]; then echo "❌ my-training-admin folder not found"; ls -la; exit 1; fi; cd "$APP_DIR"; npm run build
+        - "APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm run build"
   artifacts:
     baseDirectory: my-training-admin/build
     files:
