@@ -5,7 +5,7 @@ frontend:
       commands:
         - 'echo "Working dir: $PWD"'
         - "ls -la"
-        - 'FLUTTER_VERSION=3.24.3'
+        - 'FLUTTER_VERSION=3.38.3'
         - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; if [ ! -d "$APP_DIR" ]; then echo "Flutter app dir not found"; ls -la; exit 1; fi; echo "Using APP_DIR=$APP_DIR"'
         - 'cd "$APP_DIR" && curl -L "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" -o /tmp/flutter.tar.xz'
         - |
