@@ -32,7 +32,7 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
-  intl: ^0.20.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
@@ -44,4 +44,3 @@ flutter:
   
   assets:
     - amplify_outputs.json
-
