@@ -1,13 +1,18 @@
 version: 1
 frontend:
   phases:
-    # IMPORTANT - Please verify your build commands
+    preBuild:
+      commands:
+        - cd my-training-admin
+        - npm ci
     build:
-      commands: []
+      commands:
+        - cd my-training-admin
+        - npm run build
   artifacts:
-    # IMPORTANT - Please verify your build output directory
-    baseDirectory: /
+    baseDirectory: my-training-admin/build
     files:
-      - '**/*'
+      - "**/*"
   cache:
-    paths: []
+    paths:
+      - my-training-admin/node_modules/**/*
