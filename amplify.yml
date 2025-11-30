@@ -24,9 +24,8 @@ frontend:
     build:
       commands:
         - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; if [ ! -d "$APP_DIR" ]; then echo "Flutter app dir not found"; ls -la; exit 1; fi; cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter build web --release'
-        - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; cd "$APP_DIR" && OUT_DIR="$CODEBUILD_SRC_DIR/build" && rm -rf "$OUT_DIR" && mkdir -p "$OUT_DIR" && cp -R build/web/. "$OUT_DIR"/'
   artifacts:
-    baseDirectory: build
+    baseDirectory: build/web
     files:
       - "**/*"
   cache:
