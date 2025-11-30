@@ -5,12 +5,12 @@ frontend:
       commands:
         - "echo \"Working dir before build: $PWD\""
         - "ls -la"
-        - "APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm ci"
+        - "APP_DIR=\".\"; if [ ! -f package.json ] || [ ! -d src ] || [ ! -d public ]; then APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm ci"
     build:
       commands:
-        - "APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm run build"
+        - "APP_DIR=\".\"; if [ ! -f package.json ] || [ ! -d src ] || [ ! -d public ]; then APP_DIR=\"my-training-admin\"; if [ ! -d \"$APP_DIR\" ]; then APP_DIR=\"MyTrainingApp/my-training-admin\"; fi; fi; if [ ! -d \"$APP_DIR\" ]; then echo \"my-training-admin folder not found\"; ls -la; exit 1; fi; cd \"$APP_DIR\"; npm run build; OUTPUT_DIR=\"$CODEBUILD_SRC_DIR/build\"; rm -rf \"$OUTPUT_DIR\"; mkdir -p \"$OUTPUT_DIR\"; cp -R build/. \"$OUTPUT_DIR\""
   artifacts:
-    baseDirectory: my-training-admin/build
+    baseDirectory: build
     files:
       - "**/*"
   cache:
