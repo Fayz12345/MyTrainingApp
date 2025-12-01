@@ -97,8 +97,21 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
   };
 
   const createCognitoUser = async (email: string, name: string, temporaryPassword: string, role: string) => {
+    const logPrefix = '[MANAGER_CREATION_LAMBDA]';
+    const timestamp = new Date().toISOString();
+    
     try {
-      console.log('Calling Lambda Function URL to create manager:', { email, name, role });
+      console.log(`${logPrefix} ========================================`);
+      console.log(`${logPrefix} 📞 CALLING EXTERNAL LAMBDA FUNCTION`);
+      console.log(`${logPrefix} Timestamp: ${timestamp}`);
+      console.log(`${logPrefix} Function URL: https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/`);
+      console.log(`${logPrefix} Request data:`, { 
+        email, 
+        name, 
+        role,
+        hasPassword: !!temporaryPassword,
+        passwordLength: temporaryPassword?.length || 0
+      });
       
       const requestBody = {
         email,
@@ -108,6 +121,9 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         role
       };
       
+      const requestStartTime = Date.now();
+      console.log(`${logPrefix} [REQUEST] Sending POST request...`);
+      
       const response = await fetch('https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/', {
         method: 'POST',
         headers: {
@@ -116,6 +132,13 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         body: JSON.stringify(requestBody)
       });
 
+      const requestEndTime = Date.now();
+      const requestDuration = requestEndTime - requestStartTime;
+      
+      console.log(`${logPrefix} [RESPONSE] Received in ${requestDuration}ms`);
+      console.log(`${logPrefix} [RESPONSE] Status: ${response.status} ${response.statusText}`);
+      console.log(`${logPrefix} [RESPONSE] Headers:`, Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
         let errorData;
         try {
@@ -123,22 +146,67 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         } catch (e) {
           errorData = { error: `HTTP ${response.status} ${response.statusText}` };
         }
+        console.error(`${logPrefix} [ERROR] Lambda returned error:`, errorData);
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
+      console.log(`${logPrefix} [RESPONSE] Lambda response data:`, result);
+      console.log(`${logPrefix} [RESPONSE] Success: ${result.success}`);
+      
+      if (result.employee) {
+        console.log(`${logPrefix} [RESPONSE] Employee/Manager data:`, {
+          id: result.employee.id,
+          userId: result.employee.userId,
+          email: result.employee.email,
+          name: result.employee.name
+        });
+      }
 
       if (!result.success) {
+        console.error(`${logPrefix} [ERROR] Lambda returned success=false`);
+        console.error(`${logPrefix} [ERROR] Error message:`, result.error);
         throw new Error(result.error || 'Unknown error from Lambda');
       }
 
+      // Validate response structure
+      if (!result.employee) {
+        console.error(`${logPrefix} [ERROR] Lambda response missing 'employee' field`);
+        console.error(`${logPrefix} [ERROR] Full response:`, JSON.stringify(result, null, 2));
+        throw new Error('Lambda response is missing employee data');
+      }
+
+      if (!result.employee.userId) {
+        console.error(`${logPrefix} [ERROR] Lambda response missing 'employee.userId' field`);
+        console.error(`${logPrefix} [ERROR] Employee data:`, result.employee);
+        throw new Error('Lambda response is missing userId');
+      }
+
+      if (!result.employee.id) {
+        console.error(`${logPrefix} [ERROR] Lambda response missing 'employee.id' field`);
+        console.error(`${logPrefix} [ERROR] Employee data:`, result.employee);
+        throw new Error('Lambda response is missing employee id');
+      }
+
+      console.log(`${logPrefix} ✅ Lambda call successful`);
+      console.log(`${logPrefix} ✅ Response validation passed`);
+      console.log(`${logPrefix} ========================================`);
+      
       return {
         userId: result.employee.userId,
         userCreated: true,
         managerId: result.employee.id
       };
     } catch (error) {
-      console.error('Detailed error creating user via Lambda:', error);
+      console.error(`${logPrefix} ========================================`);
+      console.error(`${logPrefix} ❌ LAMBDA CALL FAILED`);
+      console.error(`${logPrefix} Error type:`, typeof error);
+      console.error(`${logPrefix} Error name:`, error instanceof Error ? error.name : 'Unknown');
+      console.error(`${logPrefix} Error message:`, error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
+        console.error(`${logPrefix} Stack trace:`, error.stack);
+      }
+      console.error(`${logPrefix} ========================================`);
       throw new Error('Failed to create user account: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
@@ -146,34 +214,61 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const logPrefix = '[MANAGER_CREATION]';
+    const timestamp = new Date().toISOString();
+    
+    console.log(`${logPrefix} ========================================`);
+    console.log(`${logPrefix} 🚀 MANAGER CREATION PROCESS STARTED`);
+    console.log(`${logPrefix} Timestamp: ${timestamp}`);
+    console.log(`${logPrefix} ========================================`);
+    
     if (!formData.email || !formData.name) {
+      console.error(`${logPrefix} ❌ Validation failed: Email and name are required`);
       setError('Email and name are required');
       return;
     }
 
     if (!formData.storeId) {
+      console.error(`${logPrefix} ❌ Validation failed: Store is required`);
       setError('Store is required');
       return;
     }
 
     if (!formData.temporaryPassword) {
+      console.error(`${logPrefix} ❌ Validation failed: Temporary password is required`);
       setError('Temporary password is required');
       return;
     }
+
+    console.log(`${logPrefix} [STEP 1] Form validation passed`);
+    console.log(`${logPrefix} [STEP 1] Manager Data:`, {
+      email: formData.email,
+      name: formData.name,
+      storeId: formData.storeId,
+      role: 'manager',
+      hasPassword: !!formData.temporaryPassword
+    });
 
     setSubmitting(true);
     setError(null);
 
     try {
       // Get current user ID
+      console.log(`${logPrefix} [STEP 2] Getting current user information...`);
       const session = await fetchAuthSession();
       const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+      console.log(`${logPrefix} [STEP 2] Current user (creator) ID: ${userId}`);
       
       if (!userId) {
+        console.error(`${logPrefix} [STEP 2] ❌ No userId found in session!`);
         throw new Error('Unable to identify current user');
       }
 
       // Create Cognito user with Manager role
+      console.log(`${logPrefix} [STEP 3] Calling external Lambda to create Cognito user...`);
+      console.log(`${logPrefix} [STEP 3] ⚠️ CRITICAL: External Lambda must use User Pool ID: ca-central-1_aKCLbCdhj`);
+      console.log(`${logPrefix} [STEP 3] ⚠️ If Lambda uses wrong pool, user won't appear in Amplify Console`);
+      
       const result = await createCognitoUser(
         formData.email,
         formData.name,
@@ -181,9 +276,24 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         'manager'
       );
 
+      console.log(`${logPrefix} [STEP 3] ✅ Lambda call completed`);
+      console.log(`${logPrefix} [STEP 3] Result:`, {
+        userId: result.userId,
+        managerId: result.managerId,
+        userCreated: result.userCreated
+      });
+
+      // CRITICAL: Verify the user was actually created in Cognito
+      console.log(`${logPrefix} [STEP 3.1] ⚠️ IMPORTANT: Verify user exists in Cognito`);
+      console.log(`${logPrefix} [STEP 3.1] User ID from Lambda: ${result.userId}`);
+      console.log(`${logPrefix} [STEP 3.1] Email: ${formData.email}`);
+      console.log(`${logPrefix} [STEP 3.1] ⚠️ If user is NOT in Cognito User Management, the Lambda may have failed silently`);
+      console.log(`${logPrefix} [STEP 3.1] ⚠️ Check AWS Cognito Console → User Management → Users for: ${formData.email}`);
+
       // Create Manager record in database
+      console.log(`${logPrefix} [STEP 4] Creating Manager record in database...`);
       const now = new Date().toISOString();
-      await client.models.Manager.create({
+      const managerData = {
         id: result.managerId,
         userId: result.userId,
         email: formData.email,
@@ -192,15 +302,77 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         createdBy: userId,
         createdAt: now,
         updatedAt: now
-      });
+      };
+      
+      console.log(`${logPrefix} [STEP 4] Manager data to create:`, managerData);
+      
+      await client.models.Manager.create(managerData);
+      console.log(`${logPrefix} [STEP 4] ✅ Manager record created in database`);
 
-      alert(`🎉 Manager created successfully!\n\n👤 Manager: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n🆔 Manager ID: ${result.managerId}\n\n✅ The manager can now log in to the admin portal!`);
+      // IMPORTANT: The external Lambda creates the user but may not add them to Managers group
+      // We need to add them manually or wait for post-confirmation trigger
+      console.log(`${logPrefix} [STEP 5] Waiting for post-confirmation trigger to run...`);
+      console.log(`${logPrefix} [STEP 5] User details:`, { 
+        userId: result.userId, 
+        email: formData.email,
+        managerId: result.managerId 
+      });
+      
+      // Wait a moment for post-confirmation trigger to run (if it will)
+      const waitStartTime = Date.now();
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const waitEndTime = Date.now();
+      console.log(`${logPrefix} [STEP 5] Wait completed (${waitEndTime - waitStartTime}ms)`);
+      
+      // Note: The user should be added to Managers group by post-confirmation trigger
+      // If the external Lambda sets custom:role="manager", the trigger will add them
+      // If not, they need to be manually added
+      console.log(`${logPrefix} [STEP 6] ⚠️ CRITICAL: Verify manager was created in Cognito:`);
+      console.log(`${logPrefix} [STEP 6]    ✅ Step 1: Check AWS Cognito Console → User Pools → ca-central-1_aKCLbCdhj → Users`);
+      console.log(`${logPrefix} [STEP 6]       Look for email: ${formData.email}`);
+      console.log(`${logPrefix} [STEP 6]       Look for User ID: ${result.userId}`);
+      console.log(`${logPrefix} [STEP 6]       ⚠️ If NOT found in ca-central-1_aKCLbCdhj:`);
+      console.log(`${logPrefix} [STEP 6]          → Lambda is using WRONG User Pool ID!`);
+      console.log(`${logPrefix} [STEP 6]          → Check Lambda logs for User Pool ID it's using`);
+      console.log(`${logPrefix} [STEP 6]          → Lambda MUST use: ca-central-1_aKCLbCdhj`);
+      console.log(`${logPrefix} [STEP 6]    ✅ Step 2: If user exists in correct pool, check Groups → Managers`);
+      console.log(`${logPrefix} [STEP 6]       If NOT in group → Post-confirmation trigger may have failed`);
+      console.log(`${logPrefix} [STEP 6]    ✅ Step 3: Check CloudWatch logs:`);
+      console.log(`${logPrefix} [STEP 6]       - Lambda function logs (external Lambda) - check User Pool ID`);
+      console.log(`${logPrefix} [STEP 6]       - assignEmployeeGroup function logs (post-confirmation trigger)`);
+      console.log(`${logPrefix} [STEP 6]    ✅ Step 4: If user exists but not in group:`);
+      console.log(`${logPrefix} [STEP 6]       Run: npm run add-manager-to-group -- ${formData.email}`);
+
+      console.log(`${logPrefix} [STEP 7] ✅ MANAGER CREATION COMPLETED SUCCESSFULLY`);
+      console.log(`${logPrefix} [STEP 7] Summary:`, {
+        managerId: result.managerId,
+        userId: result.userId,
+        email: formData.email,
+        name: formData.name,
+        storeId: formData.storeId,
+        createdBy: userId,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`${logPrefix} ========================================`);
+      console.log(`${logPrefix} ✅ PROCESS COMPLETE`);
+      console.log(`${logPrefix} ========================================`);
+
+      alert(`🎉 Manager created successfully!\n\n👤 Manager: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n🆔 Manager ID: ${result.managerId}\n🆔 User ID (Cognito): ${result.userId}\n\n✅ The manager can now log in to the admin portal!\n\n⚠️ IMPORTANT: Verify in AWS Cognito Console:\n   1. User Management → Users (should see ${formData.email})\n   2. User Management → Groups → Managers (should see ${formData.email})\n   3. If not in group, check CloudWatch logs for assignEmployeeGroup function\n   4. Or run: npm run add-manager-to-group -- ${formData.email}`);
       onManagerCreated();
     } catch (err) {
-      console.error('Error creating manager:', err);
+      console.error(`${logPrefix} ========================================`);
+      console.error(`${logPrefix} ❌ MANAGER CREATION FAILED`);
+      console.error(`${logPrefix} Error:`, err);
+      console.error(`${logPrefix} Error type:`, err instanceof Error ? err.constructor.name : typeof err);
+      console.error(`${logPrefix} Error message:`, err instanceof Error ? err.message : String(err));
+      if (err instanceof Error && err.stack) {
+        console.error(`${logPrefix} Stack trace:`, err.stack);
+      }
+      console.error(`${logPrefix} ========================================`);
       setError(err instanceof Error ? err.message : 'Failed to create manager');
     } finally {
       setSubmitting(false);
+      console.log(`${logPrefix} [CLEANUP] Form submission state reset`);
     }
   };
 

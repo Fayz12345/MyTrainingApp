@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminGetUserCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import https from 'https';
 
 const cognitoClient = new CognitoIdentityProviderClient({});
@@ -375,20 +375,85 @@ export const handler = async (event) => {
             reason: shouldCheckDatabase ? 'Database check' : 'Role attribute'
         });
         
+        // CRITICAL: Check if user is already in a group (Lambda might have added them)
+        console.log(`${logPrefix} [STEP 3.1] Checking if user is already in a group...`);
+        let userAlreadyInGroup = false;
+        let existingGroups = [];
+        let shouldSkipAssignment = false;
+        
+        try {
+            const listGroupsCommand = new AdminListGroupsForUserCommand({
+                UserPoolId: userPoolId,
+                Username: username
+            });
+            const groupsResponse = await cognitoClient.send(listGroupsCommand);
+            existingGroups = groupsResponse.Groups?.map(g => g.GroupName) || [];
+            console.log(`${logPrefix} [STEP 3.1] User is currently in groups:`, existingGroups);
+            
+            // CRITICAL: If user is already in Managers group, NEVER remove them or reassign
+            if (existingGroups.includes('Managers')) {
+                console.log(`${logPrefix} [STEP 3.1] ✅✅✅ USER IS ALREADY IN MANAGERS GROUP`);
+                console.log(`${logPrefix} [STEP 3.1] ✅ This was likely added by the external Lambda`);
+                console.log(`${logPrefix} [STEP 3.1] ✅ Keeping user in Managers group - NOT reassigning`);
+                
+                // If we determined Employees but user is in Managers, keep Managers
+                if (groupName === 'Employees') {
+                    console.log(`${logPrefix} [STEP 3.1] ⚠️ Database check suggested Employees, but user is in Managers`);
+                    console.log(`${logPrefix} [STEP 3.1] ⚠️ This is likely a timing issue - Manager record not found yet`);
+                    console.log(`${logPrefix} [STEP 3.1] ✅ Keeping Managers group assignment (correct)`);
+                    groupName = 'Managers';
+                }
+                
+                userAlreadyInGroup = true;
+                shouldSkipAssignment = true; // Don't try to add again
+            } else if (existingGroups.includes('Managers') && groupName === 'Managers') {
+                console.log(`${logPrefix} [STEP 3.1] ✅ User is already in Managers group (likely added by Lambda)`);
+                console.log(`${logPrefix} [STEP 3.1] ✅ No need to reassign - keeping Managers group`);
+                userAlreadyInGroup = true;
+                shouldSkipAssignment = true;
+            } else if (existingGroups.length > 0) {
+                console.log(`${logPrefix} [STEP 3.1] User is in groups: ${existingGroups.join(', ')}`);
+                console.log(`${logPrefix} [STEP 3.1] Will add to ${groupName} group (user can be in multiple groups)`);
+            } else {
+                console.log(`${logPrefix} [STEP 3.1] User is not in any groups yet`);
+            }
+        } catch (groupsError) {
+            console.warn(`${logPrefix} [STEP 3.1] ⚠️ Could not check user's existing groups:`, groupsError.message);
+            console.warn(`${logPrefix} [STEP 3.1] Proceeding with group assignment...`);
+        }
+        
         console.log(`${logPrefix} [STEP 4] Assigning user ${username} (${userEmail}) to ${groupName} group...`);
         
-        // Add user to the appropriate group
-        const command = new AdminAddUserToGroupCommand({
-            UserPoolId: userPoolId,
-            Username: username,
-            GroupName: groupName
-        });
-        
-        const assignStartTime = Date.now();
-        await cognitoClient.send(command);
-        const assignEndTime = Date.now();
-        
-        console.log(`${logPrefix} [STEP 4] ✅ Successfully added user ${username} to ${groupName} group (took ${assignEndTime - assignStartTime}ms)`);
+        // CRITICAL: If user is already in Managers group, NEVER reassign
+        if (shouldSkipAssignment) {
+            console.log(`${logPrefix} [STEP 4] ⚠️ SKIPPING GROUP ASSIGNMENT`);
+            console.log(`${logPrefix} [STEP 4] ⚠️ User is already in Managers group (added by Lambda)`);
+            console.log(`${logPrefix} [STEP 4] ⚠️ Keeping existing group assignment to avoid conflicts`);
+            console.log(`${logPrefix} [STEP 4] ✅ User will remain in Managers group`);
+        } else if (!userAlreadyInGroup || !existingGroups.includes(groupName)) {
+            // Add user to the appropriate group
+            const command = new AdminAddUserToGroupCommand({
+                UserPoolId: userPoolId,
+                Username: username,
+                GroupName: groupName
+            });
+            
+            const assignStartTime = Date.now();
+            try {
+                await cognitoClient.send(command);
+                const assignEndTime = Date.now();
+                console.log(`${logPrefix} [STEP 4] ✅ Successfully added user ${username} to ${groupName} group (took ${assignEndTime - assignStartTime}ms)`);
+            } catch (addError) {
+                // If user is already in the group, that's okay
+                if (addError.name === 'InvalidParameterException' && addError.message?.includes('already exists')) {
+                    console.log(`${logPrefix} [STEP 4] ℹ️ User ${username} is already in ${groupName} group`);
+                } else {
+                    throw addError;
+                }
+            }
+        } else {
+            console.log(`${logPrefix} [STEP 4] ℹ️ User ${username} is already in ${groupName} group - skipping assignment`);
+        }
         console.log(`${logPrefix} ========================================`);
         console.log(`${logPrefix} ✅ PROCESS COMPLETE`);
         console.log(`${logPrefix} Summary:`, {

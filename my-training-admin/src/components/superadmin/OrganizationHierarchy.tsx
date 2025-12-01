@@ -23,6 +23,7 @@ type Manager = {
   readonly email: string;
   readonly name: string;
   readonly storeId: string;
+  readonly createdBy?: string | null;
 };
 
 type Employee = {
@@ -32,6 +33,7 @@ type Employee = {
   readonly name: string;
   readonly department?: string | null;
   readonly managerId?: string | null;
+  readonly createdBy?: string | null;
   readonly isActive?: boolean | null;
 };
 
@@ -136,7 +138,58 @@ const OrganizationHierarchy: React.FC<OrganizationHierarchyProps> = ({ refreshTr
   };
 
   const getEmployeesForManager = (managerId: string) => {
-    return employees.filter(employee => employee.managerId === managerId);
+    if (!managerId) {
+      return [];
+    }
+    
+    // Normalize the managerId for comparison
+    // Extract just the ID part if it's in a composite format (e.g., "userId-id")
+    const extractId = (id: string): string => {
+      const str = String(id).trim();
+      // If it contains a dash and looks like a composite (userId-id format), extract the ID part
+      // Check if it ends with a pattern like "-emp_..." or similar
+      const lastDashIndex = str.lastIndexOf('-');
+      if (lastDashIndex > 0 && lastDashIndex < str.length - 1) {
+        const afterLastDash = str.substring(lastDashIndex + 1);
+        // If the part after last dash looks like an ID (starts with common ID prefixes)
+        if (afterLastDash.startsWith('emp_') || afterLastDash.match(/^[a-zA-Z0-9_-]+$/)) {
+          return afterLastDash;
+        }
+      }
+      return str;
+    };
+    
+    const normalizedManagerId = extractId(managerId);
+    
+    return employees.filter(employee => {
+      // Handle null/undefined/empty managerId
+      if (!employee.managerId) {
+        return false;
+      }
+      
+      // Extract and normalize employee's managerId
+      const normalizedEmployeeManagerId = extractId(String(employee.managerId).trim());
+      
+      // Try exact match first
+      if (normalizedEmployeeManagerId === normalizedManagerId) {
+        return true;
+      }
+      
+      // Also try matching the original values (in case extraction changed something)
+      const originalEmployeeManagerId = String(employee.managerId).trim();
+      const originalManagerId = String(managerId).trim();
+      if (originalEmployeeManagerId === originalManagerId) {
+        return true;
+      }
+      
+      // Try matching if one contains the other (for partial matches)
+      if (originalEmployeeManagerId.includes(originalManagerId) || 
+          originalManagerId.includes(originalEmployeeManagerId)) {
+        return true;
+      }
+      
+      return false;
+    });
   };
 
   useEffect(() => {
@@ -387,6 +440,11 @@ const OrganizationHierarchy: React.FC<OrganizationHierarchyProps> = ({ refreshTr
                                                     {employee.department && (
                                                       <p style={{ margin: '0.25rem 0 0 0', color: '#999', fontSize: '0.75rem' }}>
                                                         Department: {employee.department}
+                                                      </p>
+                                                    )}
+                                                    {employee.createdBy && (
+                                                      <p style={{ margin: '0.25rem 0 0 0', color: '#999', fontSize: '0.7rem' }}>
+                                                        Created by: {employee.createdBy.substring(0, 8)}...
                                                       </p>
                                                     )}
                                                   </div>

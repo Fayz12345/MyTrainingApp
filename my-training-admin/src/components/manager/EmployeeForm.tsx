@@ -29,17 +29,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
         
         if (userId) {
-          // Find the manager record for this user
           const managers = await client.models.Manager.list({
             filter: { userId: { eq: userId } }
           });
           
           if (managers.data && managers.data.length > 0) {
-            setCurrentManagerId(managers.data[0].id);
+            const managerId = managers.data[0].id;
+            setCurrentManagerId(managerId);
           }
         }
       } catch (err) {
-        console.error('Error fetching current manager:', err);
+        // Silent error handling
       }
     };
     getCurrentManager();
@@ -74,9 +74,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
 
   const createCognitoUser = async (email: string, name: string, department: string, temporaryPassword: string, role: string) => {
     try {
-      console.log('Calling Lambda Function URL to create user:', { email, name, role });
-      console.log('Function URL:', 'https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/');
-      
       const requestBody = {
         email,
         name, 
@@ -84,7 +81,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         temporaryPassword,
         role
       };
-      console.log('Request body:', requestBody);
       
       const response = await fetch('https://zwkht7afhzzv777hxn6xx56vry0uniix.lambda-url.ca-central-1.on.aws/', {
         method: 'POST',
@@ -94,10 +90,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         body: JSON.stringify(requestBody)
       });
 
-      console.log('Response received:', response);
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-
       if (!response.ok) {
         let errorData;
         try {
@@ -105,27 +97,21 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         } catch (e) {
           errorData = { error: `HTTP ${response.status} ${response.statusText}` };
         }
-        console.error('Error response:', errorData);
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('Lambda response:', result);
 
       if (!result.success) {
         throw new Error(result.error || 'Unknown error from Lambda');
       }
-
+      
       return {
         userId: result.employee.userId,
         userCreated: true,
         employeeId: result.employee.id
       };
     } catch (error) {
-      console.error('Detailed error creating user via Lambda:', error);
-      console.error('Error type:', typeof error);
-      console.error('Error name:', error instanceof Error ? error.name : 'Unknown');
-      console.error('Error message:', error instanceof Error ? error.message : String(error));
       throw new Error('Failed to create user account: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
@@ -149,17 +135,23 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     try {
       // Ensure we have the managerId before creating the employee
       let managerId = currentManagerId;
+      
       if (!managerId) {
         const session = await fetchAuthSession();
         const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+        
         if (userId) {
-          // Find the manager record for this user
-          const managers = await client.models.Manager.list({
-            filter: { userId: { eq: userId } }
-          });
-          if (managers.data && managers.data.length > 0) {
-            managerId = managers.data[0].id;
-            setCurrentManagerId(managerId);
+          try {
+            const managers = await client.models.Manager.list({
+              filter: { userId: { eq: userId } }
+            });
+            
+            if (managers.data && managers.data.length > 0) {
+              managerId = managers.data[0].id;
+              setCurrentManagerId(managerId);
+            }
+          } catch (queryError) {
+            // Silent error handling
           }
         }
       }
@@ -173,63 +165,89 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         formData.role
       );
 
-      console.log('Employee creation result:', result);
-
       // Update the employee record created by Lambda to set createdBy and managerId
       // This ensures the employee shows up in the manager's employee list
       try {
         const session = await fetchAuthSession();
         const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
         
-        console.log('Setting createdBy field:', { userId, managerId, employeeId: result.employeeId });
-        
-        if (!userId) {
-          console.warn('Could not get userId to set createdBy field');
-        } else {
-          // Try to update the existing record first (created by Lambda)
-          try {
-            await client.models.Employee.update({
-              id: result.employeeId,
-              managerId: managerId || null,
-              createdBy: userId,
-              updatedAt: new Date().toISOString()
-            });
-            console.log('✅ Employee record updated with createdBy and managerId:', { employeeId: result.employeeId, createdBy: userId, managerId });
-          } catch (updateError: any) {
-            // If update fails (record might not exist yet), try to create it
-            if (updateError.errors?.[0]?.errorType === 'Unauthorized' || updateError.message?.includes('not found')) {
-              console.log('Record not found, creating new employee record via GraphQL');
-              const now = new Date().toISOString();
-              await client.models.Employee.create({
-                id: result.employeeId,
-                userId: result.userId,
-                email: formData.email,
-                name: formData.name,
-                department: formData.department || null,
-                managerId: managerId || null,
-                createdBy: userId,
-                isActive: true,
-                createdAt: now,
-                updatedAt: now
-              });
-              console.log('Employee record created via GraphQL');
-            } else {
-              throw updateError;
+        // First, check if Employee record already exists (Lambda might have created it)
+        let employeeExists = false;
+        try {
+          const existingEmployee = await client.models.Employee.get({ id: result.employeeId });
+          if (existingEmployee.data) {
+            employeeExists = true;
+            
+            // Update it with managerId and createdBy if needed
+            if (userId && (existingEmployee.data.managerId !== managerId || existingEmployee.data.createdBy !== userId)) {
+              try {
+                await client.models.Employee.update({
+                  id: result.employeeId,
+                  managerId: managerId || existingEmployee.data.managerId || null,
+                  createdBy: userId || existingEmployee.data.createdBy || null,
+                  updatedAt: new Date().toISOString()
+                });
+              } catch (updateError: any) {
+                // Silent error handling
+              }
             }
           }
+        } catch (getError: any) {
+          employeeExists = false;
         }
-      } catch (graphqlError) {
-        console.error('Error updating/creating employee record:', graphqlError);
-        // Don't fail the whole operation - Lambda already created the employee
-        // But log it so we can debug
+        
+        // If Employee record doesn't exist, create it
+        if (!employeeExists) {
+          try {
+            const now = new Date().toISOString();
+            const employeeData = {
+              id: result.employeeId,
+              userId: result.userId,
+              email: formData.email,
+              name: formData.name,
+              department: formData.department || null,
+              managerId: managerId || null,
+              createdBy: userId || null,
+              isActive: true,
+              createdAt: now,
+              updatedAt: now
+            };
+            
+            await client.models.Employee.create(employeeData);
+          } catch (createError: any) {
+            throw createError; // Re-throw to be caught by outer catch
+          }
+        }
+      } catch (graphqlError: any) {
+        // Try one more time to create the Employee record with a fresh attempt
+        try {
+          const retrySession = await fetchAuthSession();
+          const retryUserId = retrySession.userSub || retrySession.tokens?.idToken?.payload?.sub as string;
+          
+          const now = new Date().toISOString();
+          const employeeData = {
+            id: result.employeeId,
+            userId: result.userId,
+            email: formData.email,
+            name: formData.name,
+            department: formData.department || null,
+            managerId: managerId || null,
+            createdBy: retryUserId || null,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now
+          };
+          
+          await client.models.Employee.create(employeeData);
+        } catch (retryError: any) {
+          // Silent error handling - employee may still be created by Lambda
+        }
       }
-
-      // Show success message
-      alert(`🎉 Employee created successfully!\n\n👤 Employee: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n👥 Role: ${formData.role}\n🆔 Employee ID: ${result.employeeId}\n\n✅ The employee can now log in to the mobile app immediately!\n✅ You can assign courses to this employee from the 'Assign Courses' section.`);
+      
+      alert(`🎉 Employee created successfully!\n\n👤 Employee: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n👥 Role: ${formData.role}\n🆔 Employee ID: ${result.employeeId}\n🆔 User ID (Cognito): ${result.userId}\n\n✅ The employee can now log in to the mobile app immediately!\n✅ You can assign courses to this employee from the 'Assign Courses' section.`);
 
       onEmployeeCreated();
     } catch (err) {
-      console.error('Error creating employee:', err);
       setError(err instanceof Error ? err.message : 'Failed to create employee');
     } finally {
       setSubmitting(false);

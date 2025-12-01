@@ -110,6 +110,7 @@ const schema = a.schema({
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
+      allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read'])
     ]),
