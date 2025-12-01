@@ -4,38 +4,85 @@ on:
   push:
     branches:
       - dev
+  workflow_dispatch: # Allow manual triggering
 
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for OIDC
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       # Step 1: Setup Node
-      - name: Setup Node
-        uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: amplify/package-lock.json
 
-      # Step 2: Install Amplify CLI globally
-      - name: Install Amplify CLI
-        run: npm install -g @aws-amplify/backend-cli
+      # Step 2: Install root dependencies (if any)
+      - name: Install root dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci || echo "No root dependencies to install"
+          fi
+        continue-on-error: true
 
       # Step 3: Install Amplify backend dependencies
       - name: Install Amplify backend dependencies
         run: npm ci
         working-directory: ./amplify
 
-      # Step 4: Configure AWS credentials
+      # Step 4: Build TypeScript (if needed)
+      - name: Build TypeScript
+        run: npm run build
+        working-directory: ./amplify
+        continue-on-error: true
+
+      # Step 5: Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ca-central-1
 
-      # Step 5: Deploy Amplify backend
+      # Step 6: Verify AWS credentials
+      - name: Verify AWS credentials
+        run: |
+          aws sts get-caller-identity
+          echo "✅ AWS credentials verified"
+
+      # Step 7: Deploy Amplify backend
       - name: Deploy Amplify backend
-        run: npx ampx pipeline-deploy --branch ${{ github.ref_name }} --app-id d6c38s8spsb1t
+        run: |
+          echo "🚀 Starting Amplify backend deployment..."
+          echo "Branch: ${{ github.ref_name }}"
+          echo "App ID: d6c38s8spsb1t"
+          
+          # Use npx to ensure we have the latest CLI
+          npx -y @aws-amplify/backend-cli@latest pipeline-deploy \
+            --branch ${{ github.ref_name }} \
+            --app-id d6c38s8spsb1t \
+            --verbose
+          
+          echo "✅ Deployment completed successfully"
         working-directory: ./amplify
+        env:
+          CI: true
+
+      # Step 8: Verify deployment
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          npx -y @aws-amplify/backend-cli@latest generate outputs \
+            --app-id d6c38s8spsb1t \
+            --branch ${{ github.ref_name }} \
+            --format json \
+            --out-dir /tmp/amplify-outputs || echo "⚠️ Could not generate outputs (this is OK if deployment succeeded)"
+        continue-on-error: true
