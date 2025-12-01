@@ -41,6 +41,12 @@ jobs:
           echo "📦 Installing dependencies..."
           npm install --legacy-peer-deps
           echo "✅ Dependencies installed successfully"
+          
+          # Verify aws-cdk-lib is installed (required by backend-cli)
+          if [ ! -d "node_modules/aws-cdk-lib" ]; then
+            echo "⚠️  aws-cdk-lib not found, installing explicitly..."
+            npm install aws-cdk-lib@^2.230.0 --legacy-peer-deps
+          fi
         working-directory: ./amplify
 
       # Step 4: Build TypeScript (if needed)
@@ -65,13 +71,30 @@ jobs:
 
       # Step 7: Deploy Amplify backend
       - name: Deploy Amplify backend
+        timeout-minutes: 30
         run: |
+          set -e
+          
+          # Verify we're in the correct directory
+          if [ ! -f "package.json" ] || [ ! -d "node_modules" ]; then
+            echo "❌ Error: Not in amplify directory"
+            echo "Current directory: $(pwd)"
+            echo "Directory contents:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "📁 Deployment directory: $(pwd)"
+          echo "📁 Absolute path: $(realpath .)"
+          echo ""
           echo "🚀 Starting Amplify backend deployment..."
           echo "Branch: ${{ github.ref_name }}"
           echo "App ID: d6c38s8spsb1t"
+          echo ""
           
-          # Use npx to ensure we have the latest CLI
-          npx -y @aws-amplify/backend-cli@latest pipeline-deploy \
+          # Use ampx from local node_modules to avoid path resolution issues
+          # This ensures we use the installed version and avoid npx path problems
+          npx ampx pipeline-deploy \
             --branch ${{ github.ref_name }} \
             --app-id d6c38s8spsb1t \
             --verbose
@@ -80,14 +103,17 @@ jobs:
         working-directory: ./amplify
         env:
           CI: true
+          AWS_REGION: ca-central-1
+          AWS_DEFAULT_REGION: ca-central-1
 
       # Step 8: Verify deployment
       - name: Verify deployment
         run: |
           echo "🔍 Verifying deployment..."
-          npx -y @aws-amplify/backend-cli@latest generate outputs \
+          npx ampx generate outputs \
             --app-id d6c38s8spsb1t \
             --branch ${{ github.ref_name }} \
             --format json \
             --out-dir /tmp/amplify-outputs || echo "⚠️ Could not generate outputs (this is OK if deployment succeeded)"
+        working-directory: ./amplify
         continue-on-error: true
