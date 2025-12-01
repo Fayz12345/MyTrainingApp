@@ -15,7 +15,9 @@ type CourseFormProps = {
   course?: {
     readonly id: string;
     readonly title: string;
+    readonly description?: string | null;
     readonly videoKey?: string | null;
+    readonly imageKey?: string | null;
     readonly passingScore?: number | null;
     readonly duration?: string | null;
     readonly category?: string | null;
@@ -27,9 +29,14 @@ type CourseFormProps = {
 const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) => {
   const isEditMode = Boolean(course);
   const [title, setTitle] = useState(course?.title ?? '');
+  const [description, setDescription] = useState(course?.description ?? '');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [existingVideoKey, setExistingVideoKey] = useState<string | null>(
     course?.videoKey ?? null
+  );
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [existingImageKey, setExistingImageKey] = useState<string | null>(
+    course?.imageKey ?? null
   );
   const [passingScore, setPassingScore] = useState(course?.passingScore ?? 80);
   const [duration, setDuration] = useState(course?.duration ?? '');
@@ -39,7 +46,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [imageDragActive, setImageDragActive] = useState(false);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
 
   const loadExistingQuiz = async (courseId: string) => {
@@ -70,12 +79,16 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
   useEffect(() => {
     setTitle(course?.title ?? '');
+    setDescription(course?.description ?? '');
     setPassingScore(course?.passingScore ?? 80);
     setDuration(course?.duration ?? '');
     setCategory(course?.category ?? '');
     setExistingVideoKey(course?.videoKey ?? null);
+    setExistingImageKey(course?.imageKey ?? null);
     setVideoFile(null);
+    setImageFile(null);
     setUploadProgress(0);
+    setImageUploadProgress(0);
     if (course?.id) {
       loadExistingQuiz(course.id);
     } else {
@@ -98,6 +111,24 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
     const files = e.dataTransfer.files;
     if (files[0] && files[0].type.startsWith('video/')) {
       setVideoFile(files[0]);
+    }
+  };
+
+  const handleImageDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setImageDragActive(true);
+  };
+
+  const handleImageDragLeave = () => {
+    setImageDragActive(false);
+  };
+
+  const handleImageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setImageDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files[0] && (files[0].type.startsWith('image/') || files[0].type === 'image/jpeg' || files[0].type === 'image/png' || files[0].type === 'image/jpg')) {
+      setImageFile(files[0]);
     }
   };
 
@@ -157,6 +188,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
     try {
       let resolvedVideoKey = existingVideoKey;
+      let resolvedImageKey = existingImageKey;
 
       if (videoFile) {
         // Upload video to S3
@@ -186,6 +218,34 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         resolvedVideoKey = videoKey;
       }
 
+      if (imageFile) {
+        // Upload image to S3
+        const timestamp = Date.now();
+        const imageKey = `courses/images/${timestamp}_${imageFile.name}`;
+
+        await uploadData({
+          path: imageKey,
+          data: imageFile,
+          options: {
+            onProgress: ({ transferredBytes, totalBytes }) => {
+              if (totalBytes) {
+                setImageUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+              }
+            }
+          }
+        });
+
+        if (isEditMode && existingImageKey) {
+          try {
+            await remove({ path: existingImageKey });
+          } catch (storageError) {
+            console.warn('Failed to delete existing image. Continuing update.', storageError);
+          }
+        }
+
+        resolvedImageKey = imageKey;
+      }
+
       if (!resolvedVideoKey) {
         alert('Please provide a course video before saving');
         return;
@@ -195,7 +255,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         await client.models.Course.update({
           id: course.id,
           title: title.trim(),
+          description: description.trim() || null,
           videoKey: resolvedVideoKey,
+          imageKey: resolvedImageKey || null,
           passingScore,
           duration: duration.trim() || null,
           category: category.trim() || null,
@@ -231,7 +293,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       // Create course in database
       const courseResult = await client.models.Course.create({
         title: title.trim(),
+        description: description.trim() || null,
         videoKey: resolvedVideoKey,
+        imageKey: resolvedImageKey || null,
         passingScore,
         duration: duration.trim() || null,
         category: category.trim() || null,
@@ -257,13 +321,17 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
         // Reset form
         setTitle('');
+        setDescription('');
         setVideoFile(null);
+        setImageFile(null);
         setPassingScore(80);
         setDuration('');
         setCategory('');
         setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
         setUploadProgress(0);
+        setImageUploadProgress(0);
         setExistingVideoKey(null);
+        setExistingImageKey(null);
         onSuccess?.();
       } else {
         console.error('No course data returned from creation');
@@ -317,6 +385,28 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
               fontSize: '1rem'
             }}
             required
+          />
+        </div>
+
+        {/* Course Description */}
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Course Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Enter course description"
+            rows={4}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '1rem',
+              fontFamily: 'inherit',
+              resize: 'vertical'
+            }}
           />
         </div>
 
@@ -384,6 +474,85 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
               </div>
               <p style={{ textAlign: 'center', margin: '0.5rem 0' }}>
                 Uploading: {uploadProgress}%
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Image Upload */}
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Course Image/Thumbnail {isEditMode ? '(leave empty to keep current image)' : '(optional)'}
+          </label>
+          <div
+            onDragOver={handleImageDragOver}
+            onDragLeave={handleImageDragLeave}
+            onDrop={handleImageDrop}
+            style={{
+              border: `2px dashed ${imageDragActive ? '#1976d2' : '#ccc'}`,
+              borderRadius: '8px',
+              padding: '2rem',
+              textAlign: 'center',
+              backgroundColor: imageDragActive ? '#f5f5f5' : 'white',
+              cursor: 'pointer'
+            }}
+          >
+            {imageFile ? (
+              <div>
+                <p>✅ {imageFile.name}</p>
+                {imageFile.type.startsWith('image/') && (
+                  <img 
+                    src={URL.createObjectURL(imageFile)} 
+                    alt="Preview" 
+                    style={{ maxWidth: '200px', maxHeight: '200px', marginTop: '1rem', borderRadius: '4px' }}
+                  />
+                )}
+                <button 
+                  type="button" 
+                  onClick={() => setImageFile(null)}
+                  style={{ color: 'red', background: 'none', border: 'none', cursor: 'pointer', marginTop: '0.5rem' }}
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div>
+                {isEditMode && existingImageKey && (
+                  <p style={{ marginBottom: '0.5rem', color: '#555' }}>
+                    Current image key: <code>{existingImageKey}</code>
+                  </p>
+                )}
+                <p>Drag and drop an image file here, or click to select</p>
+                <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>
+                  Supported formats: JPG, PNG, GIF
+                </p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  style={{ marginTop: '1rem' }}
+                />
+              </div>
+            )}
+          </div>
+          
+          {imageUploadProgress > 0 && imageUploadProgress < 100 && (
+            <div style={{ marginTop: '1rem' }}>
+              <div style={{ 
+                width: '100%', 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: '4px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${imageUploadProgress}%`,
+                  backgroundColor: '#1976d2',
+                  height: '8px',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+              <p style={{ textAlign: 'center', margin: '0.5rem 0' }}>
+                Uploading image: {imageUploadProgress}%
               </p>
             </div>
           )}

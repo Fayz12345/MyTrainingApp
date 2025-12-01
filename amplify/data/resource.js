@@ -62,7 +62,9 @@ const schema = a.schema({
         .model({
         id: a.id(),
         title: a.string().required(),
+        description: a.string(), // Course description
         videoKey: a.string(), // S3 key for video
+        imageKey: a.string(), // S3 key for course image/thumbnail
         quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
         assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
         passingScore: a.integer(),
