@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
 import ManagerList from './ManagerList';
+import StoreList from './StoreList';
 
 interface StoreDashboardProps {
   signOut: (() => void) | undefined;
   user: AuthUser;
 }
 
-type ViewMode = 'dashboard' | 'managers';
+type ViewMode = 'dashboard' | 'stores' | 'managers';
 
 const StoreDashboard: React.FC<StoreDashboardProps> = ({ signOut, user }) => {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
@@ -15,6 +16,16 @@ const StoreDashboard: React.FC<StoreDashboardProps> = ({ signOut, user }) => {
 
   const renderContent = () => {
     switch (currentView) {
+      case 'stores':
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <h2>Store Management</h2>
+            </div>
+            <StoreList refreshTrigger={refreshTrigger} />
+          </div>
+        );
+
       case 'managers':
         return (
           <div>
@@ -35,7 +46,7 @@ const StoreDashboard: React.FC<StoreDashboardProps> = ({ signOut, user }) => {
               marginBottom: '2rem'
             }}>
               <h2>Welcome, Store Administrator!</h2>
-              <p>You can create and manage managers for your store.</p>
+              <p>You can create and manage stores and managers.</p>
             </div>
 
             <div style={{ 
@@ -49,8 +60,31 @@ const StoreDashboard: React.FC<StoreDashboardProps> = ({ signOut, user }) => {
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}>
+                <h3>Stores</h3>
+                <p>Create and manage stores across business units.</p>
+                <button 
+                  onClick={() => setCurrentView('stores')}
+                  style={{ 
+                    padding: '8px 16px',
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    marginTop: '0.5rem'
+                  }}
+                >
+                  Manage Stores
+                </button>
+              </div>
+              <div style={{ 
+                backgroundColor: 'white',
+                padding: '1.5rem',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}>
                 <h3>Managers</h3>
-                <p>Create and manage managers for your store.</p>
+                <p>Create and manage managers for your stores.</p>
                 <button 
                   onClick={() => setCurrentView('managers')}
                   style={{ 
@@ -105,6 +139,19 @@ const StoreDashboard: React.FC<StoreDashboardProps> = ({ signOut, user }) => {
                 }}
               >
                 Dashboard
+              </button>
+              <button
+                onClick={() => setCurrentView('stores')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: currentView === 'stores' ? '#1976d2' : '#f5f5f5',
+                  color: currentView === 'stores' ? 'white' : '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Stores
               </button>
               <button
                 onClick={() => setCurrentView('managers')}

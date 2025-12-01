@@ -55,6 +55,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
       const session = await fetchAuthSession();
       const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
 
+      console.log('Fetching employees for userId:', userId);
+
       // Fetch employees, assignments, and courses in parallel
       const [employeesResult, assignmentsResult, coursesResult] = await Promise.all([
         client.models.Employee.list({}),
@@ -76,8 +78,18 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
 
       // Filter employees by createdBy - managers should only see employees they created
       let filteredEmployees = employeesResult.data as Employee[];
+      console.log('Total employees fetched:', filteredEmployees.length);
       if (userId) {
+        console.log('Filtering employees by createdBy:', userId);
         filteredEmployees = filteredEmployees.filter(emp => emp.createdBy === userId);
+        console.log('Filtered employees count:', filteredEmployees.length);
+        // Log employees that don't match for debugging
+        const nonMatching = (employeesResult.data as Employee[]).filter(emp => emp.createdBy !== userId);
+        if (nonMatching.length > 0) {
+          console.log('Employees not matching createdBy filter:', nonMatching.map(emp => ({ id: emp.id, name: emp.name, createdBy: emp.createdBy })));
+        }
+      } else {
+        console.warn('No userId found, showing all employees');
       }
 
       setEmployees(filteredEmployees);

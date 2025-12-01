@@ -32,7 +32,7 @@ const schema = a.schema({
       description: a.string(),
       businessUnitId: a.id().required(),
       businessUnit: a.belongsTo('BusinessUnit', 'businessUnitId'),
-      createdBy: a.string(), // userId of the BusinessUnit person who created it
+      createdBy: a.string(), // userId of the BusinessUnit or Store person who created it
       managers: a.hasMany('Manager', 'storeId'),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
@@ -40,7 +40,7 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('BusinessUnit').to(['create', 'read', 'update', 'delete']),
-      allow.group('Store').to(['read']),
+      allow.group('Store').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['read'])
     ]),
   Manager: a

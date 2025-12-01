@@ -147,6 +147,23 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     setError(null);
 
     try {
+      // Ensure we have the managerId before creating the employee
+      let managerId = currentManagerId;
+      if (!managerId) {
+        const session = await fetchAuthSession();
+        const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+        if (userId) {
+          // Find the manager record for this user
+          const managers = await client.models.Manager.list({
+            filter: { userId: { eq: userId } }
+          });
+          if (managers.data && managers.data.length > 0) {
+            managerId = managers.data[0].id;
+            setCurrentManagerId(managerId);
+          }
+        }
+      }
+
       // Call Lambda Function URL to create complete employee (Cognito + DynamoDB)
       const result = await createCognitoUser(
         formData.email,
@@ -158,27 +175,53 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
 
       console.log('Employee creation result:', result);
 
-      // Also create the record via GraphQL for immediate visibility in the UI
+      // Update the employee record created by Lambda to set createdBy and managerId
+      // This ensures the employee shows up in the manager's employee list
       try {
         const session = await fetchAuthSession();
         const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
         
-        const now = new Date().toISOString();
-        await client.models.Employee.create({
-          id: result.employeeId,
-          userId: result.userId,
-          email: formData.email,
-          name: formData.name,
-          department: formData.department || null,
-          managerId: currentManagerId || null,
-          createdBy: userId,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now
-        });
-        console.log('Employee record also created via GraphQL');
+        console.log('Setting createdBy field:', { userId, managerId, employeeId: result.employeeId });
+        
+        if (!userId) {
+          console.warn('Could not get userId to set createdBy field');
+        } else {
+          // Try to update the existing record first (created by Lambda)
+          try {
+            await client.models.Employee.update({
+              id: result.employeeId,
+              managerId: managerId || null,
+              createdBy: userId,
+              updatedAt: new Date().toISOString()
+            });
+            console.log('✅ Employee record updated with createdBy and managerId:', { employeeId: result.employeeId, createdBy: userId, managerId });
+          } catch (updateError: any) {
+            // If update fails (record might not exist yet), try to create it
+            if (updateError.errors?.[0]?.errorType === 'Unauthorized' || updateError.message?.includes('not found')) {
+              console.log('Record not found, creating new employee record via GraphQL');
+              const now = new Date().toISOString();
+              await client.models.Employee.create({
+                id: result.employeeId,
+                userId: result.userId,
+                email: formData.email,
+                name: formData.name,
+                department: formData.department || null,
+                managerId: managerId || null,
+                createdBy: userId,
+                isActive: true,
+                createdAt: now,
+                updatedAt: now
+              });
+              console.log('Employee record created via GraphQL');
+            } else {
+              throw updateError;
+            }
+          }
+        }
       } catch (graphqlError) {
-        console.warn('GraphQL record creation failed (Lambda record still exists):', graphqlError);
+        console.error('Error updating/creating employee record:', graphqlError);
+        // Don't fail the whole operation - Lambda already created the employee
+        // But log it so we can debug
       }
 
       // Show success message
