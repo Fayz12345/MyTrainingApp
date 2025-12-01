@@ -35,7 +35,12 @@ jobs:
 
       # Step 3: Install Amplify backend dependencies
       - name: Install Amplify backend dependencies
-        run: npm ci
+        run: |
+          # Use npm install with legacy-peer-deps to handle peer dependency conflicts
+          # This is more flexible than npm ci when lock file might be out of sync
+          echo "📦 Installing dependencies..."
+          npm install --legacy-peer-deps
+          echo "✅ Dependencies installed successfully"
         working-directory: ./amplify
 
       # Step 4: Build TypeScript (if needed)
