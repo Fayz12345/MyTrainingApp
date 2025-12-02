@@ -6,7 +6,7 @@ import { defineFunction } from '@aws-amplify/backend';
  */
 export const assignEmployeeGroup = defineFunction({
   name: 'assignEmployeeGroup',
-  entry: './handler.ts'
+  // Use the existing JavaScript handler file
+  entry: './handler.js'
 });
-
 
