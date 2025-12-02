@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
-import { uploadData, remove } from 'aws-amplify/storage';
+import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
+import CourseDebugPanel from './CourseDebugPanel';
 
 const client = generateClient<Schema>();
 
@@ -50,6 +51,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const [dragActive, setDragActive] = useState(false);
   const [imageDragActive, setImageDragActive] = useState(false);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [isLoadingExistingImage, setIsLoadingExistingImage] = useState(false);
 
   const loadExistingQuiz = async (courseId: string) => {
     setIsLoadingQuiz(true);
@@ -77,24 +80,145 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
     }
   };
 
-  useEffect(() => {
-    setTitle(course?.title ?? '');
-    setDescription(course?.description ?? '');
-    setPassingScore(course?.passingScore ?? 80);
-    setDuration(course?.duration ?? '');
-    setCategory(course?.category ?? '');
-    setExistingVideoKey(course?.videoKey ?? null);
-    setExistingImageKey(course?.imageKey ?? null);
-    setVideoFile(null);
-    setImageFile(null);
-    setUploadProgress(0);
-    setImageUploadProgress(0);
-    if (course?.id) {
-      loadExistingQuiz(course.id);
-    } else {
-      setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+  const loadExistingImage = async (imageKey: string) => {
+    if (!imageKey || imageKey.trim() === '') {
+      console.warn('[CourseForm] loadExistingImage called with empty imageKey');
+      setExistingImageUrl(null);
+      setIsLoadingExistingImage(false);
+      return;
     }
-  }, [course]);
+    
+    setIsLoadingExistingImage(true);
+    setExistingImageUrl(null);
+    
+    try {
+      console.log('[CourseForm] Fetching image URL for:', imageKey);
+      const urlResult = await getUrl({ path: imageKey });
+      const imageUrl = urlResult.url.toString();
+      console.log('[CourseForm] Image URL fetched successfully:', imageUrl.substring(0, 100) + '...');
+      setExistingImageUrl(imageUrl);
+    } catch (error) {
+      console.error('[CourseForm] Failed to load existing image:', error);
+      console.error('[CourseForm] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        imageKey: imageKey,
+        error: error
+      });
+      setExistingImageUrl(null);
+    } finally {
+      setIsLoadingExistingImage(false);
+    }
+  };
+
+  useEffect(() => {
+    const initializeForm = async () => {
+      console.log('[CourseForm] Course data received:', course);
+      console.log('[CourseForm] Course data details:', {
+        id: course?.id,
+        title: course?.title,
+        description: course?.description,
+        descriptionType: typeof course?.description,
+        descriptionValue: course?.description,
+        imageKey: course?.imageKey,
+        imageKeyType: typeof course?.imageKey,
+        imageKeyValue: course?.imageKey,
+        videoKey: course?.videoKey,
+        duration: course?.duration,
+        category: course?.category,
+        fullCourse: JSON.stringify(course, null, 2)
+      });
+      
+      if (course && course.id) {
+        // Check if we need to fetch full course data
+        const needsFullData = course.description === undefined || 
+                             course.imageKey === undefined ||
+                             (course.description === null && course.imageKey === null);
+        
+        let courseData = course;
+        
+        if (needsFullData) {
+          console.log('[CourseForm] Missing description or imageKey, fetching full course data...');
+          try {
+            const fullCourse = await client.models.Course.get({ id: course.id });
+            if (fullCourse.data) {
+              console.log('[CourseForm] Full course data fetched:', fullCourse.data);
+              // Map the full course data to match the expected type
+              courseData = {
+                id: fullCourse.data.id || course.id,
+                title: fullCourse.data.title || course.title,
+                description: fullCourse.data.description ?? course.description,
+                videoKey: fullCourse.data.videoKey ?? course.videoKey,
+                imageKey: fullCourse.data.imageKey ?? course.imageKey,
+                passingScore: fullCourse.data.passingScore ?? course.passingScore,
+                duration: fullCourse.data.duration ?? course.duration,
+                category: fullCourse.data.category ?? course.category
+              };
+            } else {
+              console.warn('[CourseForm] Could not fetch full course data, using provided data');
+            }
+          } catch (error) {
+            console.error('[CourseForm] Error fetching full course data:', error);
+            // Continue with provided course data
+          }
+        }
+        
+        // Handle description - check for null, undefined, or empty string
+        const courseDescription = courseData.description !== null && courseData.description !== undefined 
+          ? courseData.description 
+          : '';
+        
+        console.log('[CourseForm] Setting form values:', {
+          title: courseData.title,
+          description: courseDescription,
+          imageKey: courseData.imageKey,
+          videoKey: courseData.videoKey,
+          duration: courseData.duration,
+          category: courseData.category
+        });
+        
+        setTitle(courseData.title ?? '');
+        setDescription(courseDescription);
+        setPassingScore(courseData.passingScore ?? 80);
+        setDuration(courseData.duration ?? '');
+        setCategory(courseData.category ?? '');
+        setExistingVideoKey(courseData.videoKey ?? null);
+        setExistingImageKey(courseData.imageKey ?? null);
+        
+        // Load image if imageKey exists
+        if (courseData.imageKey && courseData.imageKey.trim() !== '') {
+          console.log('[CourseForm] Loading existing image:', courseData.imageKey);
+          loadExistingImage(courseData.imageKey);
+        } else {
+          console.log('[CourseForm] No image key found or image key is empty');
+          setExistingImageUrl(null);
+          setIsLoadingExistingImage(false);
+        }
+        
+        if (courseData.id) {
+          loadExistingQuiz(courseData.id);
+        }
+      } else {
+        // Reset form for new course
+        setTitle('');
+        setDescription('');
+        setPassingScore(80);
+        setDuration('');
+        setCategory('');
+        setExistingVideoKey(null);
+        setExistingImageKey(null);
+        setExistingImageUrl(null);
+        setIsLoadingExistingImage(false);
+        setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+      }
+      
+      setVideoFile(null);
+      setImageFile(null);
+      setUploadProgress(0);
+      setImageUploadProgress(0);
+    };
+    
+    initializeForm();
+  }, [course?.id]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -363,6 +487,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+      {/* Debug Panel - Remove this after debugging */}
+      {isEditMode && course?.id && (
+        <CourseDebugPanel courseId={course.id} />
+      )}
+      
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>{isEditMode ? 'Edit Course' : 'Create New Course'}</h2>
         {onCancel && (
@@ -534,9 +663,35 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
             ) : (
               <div>
                 {isEditMode && existingImageKey && (
-                  <p style={{ marginBottom: '0.5rem', color: '#555' }}>
-                    Current image key: <code>{existingImageKey}</code>
-                  </p>
+                  <div style={{ marginBottom: '1rem' }}>
+                    {isLoadingExistingImage ? (
+                      <p style={{ color: '#666' }}>Loading existing image...</p>
+                    ) : existingImageUrl ? (
+                      <div>
+                        <p style={{ marginBottom: '0.5rem', color: '#555', fontWeight: 'bold' }}>
+                          Current Image:
+                        </p>
+                        <img 
+                          src={existingImageUrl} 
+                          alt="Current course image" 
+                          style={{ 
+                            maxWidth: '200px', 
+                            maxHeight: '200px', 
+                            borderRadius: '4px',
+                            border: '1px solid #e0e0e0',
+                            marginBottom: '0.5rem'
+                          }}
+                        />
+                        <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>
+                          Image key: <code>{existingImageKey}</code>
+                        </p>
+                      </div>
+                    ) : (
+                      <p style={{ marginBottom: '0.5rem', color: '#d32f2f' }}>
+                        ⚠️ Could not load existing image (key: <code>{existingImageKey}</code>)
+                      </p>
+                    )}
+                  </div>
                 )}
                 <p>Drag and drop an image file here, or click to select</p>
                 <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>

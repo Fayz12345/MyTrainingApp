@@ -45,7 +45,91 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
       
       if (result.data) {
         console.log('Found courses:', result.data.length, result.data);
-        setCourses(result.data as Course[]);
+        console.log('[CourseList] Sample course from list():', result.data[0]);
+        console.log('[CourseList] Has description?', result.data[0]?.description !== undefined);
+        console.log('[CourseList] Has imageKey?', result.data[0]?.imageKey !== undefined);
+        
+        // Since list() doesn't return description and imageKey, fetch full details for ALL courses
+        // Use Promise.allSettled to handle individual failures gracefully
+        console.log('[CourseList] Fetching full details for all courses...');
+        const coursesWithFullData = await Promise.allSettled(
+          result.data.map(async (course: any) => {
+            try {
+              console.log(`[CourseList] Fetching full details for course ${course.id}...`);
+              const fullCourse = await client.models.Course.get({ id: course.id });
+              console.log(`[CourseList] Raw get() response for ${course.id}:`, fullCourse);
+              console.log(`[CourseList] Raw get() data:`, fullCourse.data);
+              console.log(`[CourseList] Raw get() errors:`, fullCourse.errors);
+              
+              if (fullCourse.data) {
+                console.log(`[CourseList] Full course data for ${course.id}:`, {
+                  id: fullCourse.data.id,
+                  title: fullCourse.data.title,
+                  description: fullCourse.data.description,
+                  descriptionType: typeof fullCourse.data.description,
+                  descriptionIsUndefined: fullCourse.data.description === undefined,
+                  descriptionIsNull: fullCourse.data.description === null,
+                  imageKey: fullCourse.data.imageKey,
+                  imageKeyType: typeof fullCourse.data.imageKey,
+                  imageKeyIsUndefined: fullCourse.data.imageKey === undefined,
+                  imageKeyIsNull: fullCourse.data.imageKey === null,
+                  videoKey: fullCourse.data.videoKey,
+                  fullDataKeys: Object.keys(fullCourse.data)
+                });
+                console.log(`[CourseList] Full course data (JSON):`, JSON.stringify(fullCourse.data, null, 2));
+                
+                // Map to Course type, ensuring all fields are included
+                const mappedCourse = {
+                  id: fullCourse.data.id || course.id,
+                  title: fullCourse.data.title || course.title,
+                  description: fullCourse.data.description ?? course.description ?? null,
+                  videoKey: fullCourse.data.videoKey ?? course.videoKey ?? null,
+                  imageKey: fullCourse.data.imageKey ?? course.imageKey ?? null,
+                  passingScore: fullCourse.data.passingScore ?? course.passingScore ?? null,
+                  duration: fullCourse.data.duration ?? course.duration ?? null,
+                  category: fullCourse.data.category ?? course.category ?? null,
+                  createdAt: fullCourse.data.createdAt || course.createdAt,
+                  updatedAt: fullCourse.data.updatedAt || course.updatedAt
+                } as Course;
+                
+                console.log(`[CourseList] Mapped course for ${course.id}:`, {
+                  description: mappedCourse.description,
+                  imageKey: mappedCourse.imageKey,
+                  fullMapped: mappedCourse
+                });
+                
+                return mappedCourse;
+              } else {
+                console.warn(`[CourseList] No data returned for course ${course.id}, using list data`);
+                return course as Course;
+              }
+            } catch (err) {
+              console.error(`[CourseList] Could not fetch full details for course ${course.id}:`, err);
+              // Return original course if fetch fails
+              return course as Course;
+            }
+          })
+        );
+        
+        // Extract successful results from Promise.allSettled
+        const successfulCourses = coursesWithFullData
+          .map((result) => {
+            if (result.status === 'fulfilled') {
+              return result.value;
+            } else {
+              console.error('[CourseList] Failed to process course:', result.reason);
+              return null;
+            }
+          })
+          .filter((course): course is Course => course !== null);
+        
+        console.log('[CourseList] Final courses with full data:', successfulCourses.length);
+        console.log('[CourseList] Sample final course:', successfulCourses[0]);
+        console.log('[CourseList] Sample final course - has description?', successfulCourses[0]?.description !== undefined && successfulCourses[0]?.description !== null);
+        console.log('[CourseList] Sample final course - has imageKey?', successfulCourses[0]?.imageKey !== undefined && successfulCourses[0]?.imageKey !== null);
+        console.log('[CourseList] Sample final course - description value:', successfulCourses[0]?.description);
+        console.log('[CourseList] Sample final course - imageKey value:', successfulCourses[0]?.imageKey);
+        setCourses(successfulCourses);
       } else {
         console.log('No course data in result');
         setCourses([]);
@@ -260,7 +344,23 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
                 {onEditCourse && (
                   <button
-                    onClick={() => onEditCourse(course)}
+                    onClick={() => {
+                      console.log('[CourseList] ========== EDIT BUTTON CLICKED ==========');
+                      console.log('[CourseList] Course object being passed:', course);
+                      console.log('[CourseList] Course ID:', course.id);
+                      console.log('[CourseList] Course title:', course.title);
+                      console.log('[CourseList] Course description:', course.description);
+                      console.log('[CourseList] Course description type:', typeof course.description);
+                      console.log('[CourseList] Course description === undefined?', course.description === undefined);
+                      console.log('[CourseList] Course description === null?', course.description === null);
+                      console.log('[CourseList] Course imageKey:', course.imageKey);
+                      console.log('[CourseList] Course imageKey type:', typeof course.imageKey);
+                      console.log('[CourseList] Course imageKey === undefined?', course.imageKey === undefined);
+                      console.log('[CourseList] Course imageKey === null?', course.imageKey === null);
+                      console.log('[CourseList] Full course object (JSON):', JSON.stringify(course, null, 2));
+                      console.log('[CourseList] ===========================================');
+                      onEditCourse(course);
+                    }}
                     style={{
                       padding: '0.5rem 1rem',
                       backgroundColor: '#1976d2',
@@ -301,20 +401,33 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
 const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchImageUrl = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        if (!imageKey) {
+          throw new Error('Image key is empty');
+        }
         const url = await getUrl({ path: imageKey });
         setImageUrl(url.url.toString());
       } catch (err) {
-        console.error('Error loading image:', err);
+        console.error('[ImagePreview] Error loading image:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load image');
+        setImageUrl(null);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchImageUrl();
+    if (imageKey) {
+      fetchImageUrl();
+    } else {
+      setLoading(false);
+      setError('No image key provided');
+    }
   }, [imageKey]);
 
   if (loading) {
@@ -335,7 +448,7 @@ const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
     );
   }
 
-  if (!imageUrl) {
+  if (error || !imageUrl) {
     return (
       <div style={{ 
         width: '150px', 
@@ -348,14 +461,14 @@ const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
         fontSize: '0.8rem',
         color: '#d32f2f'
       }}>
-        Image not available
+        {error || 'Image not available'}
       </div>
     );
   }
 
   return (
     <img 
-      src={imageUrl} 
+      src={imageUrl || undefined} 
       alt="Course thumbnail" 
       style={{ 
         width: '150px', 
@@ -363,6 +476,11 @@ const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
         objectFit: 'cover',
         borderRadius: '4px',
         border: '1px solid #e0e0e0'
+      }}
+      onError={(e) => {
+        console.error('[ImagePreview] Image failed to load:', imageUrl, e);
+        setError('Image failed to load');
+        setImageUrl(null);
       }}
     />
   );

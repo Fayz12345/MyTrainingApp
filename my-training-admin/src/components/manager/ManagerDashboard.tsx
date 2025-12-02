@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../../amplify/data/resource';
 import CourseForm from './CourseForm';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
 import EmployeeList from './EmployeeList';
 import TrainingAnalytics from './TrainingAnalytics';
+
+const client = generateClient<Schema>();
 
 interface ManagerDashboardProps {
   signOut: (() => void) | undefined;
@@ -23,8 +27,12 @@ type ViewMode =
 type CourseSummary = {
   readonly id: string;
   readonly title: string;
+  readonly description?: string | null;
   readonly videoKey?: string | null;
+  readonly imageKey?: string | null;
   readonly passingScore?: number | null;
+  readonly duration?: string | null;
+  readonly category?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -64,8 +72,33 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             </div>
             <CourseList 
               refreshTrigger={refreshTrigger}
-              onEditCourse={(course) => {
-                setSelectedCourse(course);
+              onEditCourse={async (course) => {
+                console.log('[ManagerDashboard] Course received for editing:', {
+                  id: course.id,
+                  title: course.title,
+                  description: course.description,
+                  imageKey: course.imageKey,
+                  videoKey: course.videoKey,
+                  duration: course.duration,
+                  category: course.category,
+                  fullCourse: course
+                });
+                
+                // Fetch full course details to ensure we have all fields
+                try {
+                  const fullCourse = await client.models.Course.get({ id: course.id });
+                  if (fullCourse.data) {
+                    console.log('[ManagerDashboard] Full course data fetched:', fullCourse.data);
+                    setSelectedCourse(fullCourse.data as CourseSummary);
+                  } else {
+                    console.warn('[ManagerDashboard] Could not fetch full course, using list data');
+                    setSelectedCourse(course);
+                  }
+                } catch (error) {
+                  console.error('[ManagerDashboard] Error fetching full course:', error);
+                  setSelectedCourse(course);
+                }
+                
                 setCurrentView('edit-course');
               }}
             />
