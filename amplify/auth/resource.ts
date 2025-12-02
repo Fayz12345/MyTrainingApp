@@ -8,6 +8,20 @@ import { assignEmployeeGroup } from '../functions/assignEmployeeGroup/resource';
 export const auth = defineAuth({
   loginWith: {
     email: true,
+    oauth: {
+      providers: ['Google', 'Apple'],
+      scopes: ['email', 'profile', 'openid'],
+      redirectSignIn: [
+        'com.mytrainingapp://',
+        'com.myTrainingApp://',
+        'http://localhost:3000/'
+      ],
+      redirectSignOut: [
+        'com.mytrainingapp://',
+        'com.myTrainingApp://',
+        'http://localhost:3000/'
+      ],
+    },
   },
   groups: ['Employees', 'Managers', 'Store', 'BusinessUnit', 'SuperAdmin'], // Define user groups for roles
   triggers: {

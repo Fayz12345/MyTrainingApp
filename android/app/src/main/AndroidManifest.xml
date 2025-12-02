@@ -22,6 +22,15 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- OAuth redirect intent filter for social login -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.mytrainingapp"
+                    android:host="oauth" />
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"

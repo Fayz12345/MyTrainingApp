@@ -126,6 +126,7 @@ const schema = a.schema({
       employee: a.belongsTo('Employee', 'employeeId'),
       course: a.belongsTo('Course', 'courseId'),
       status: a.enum(['assigned', 'completed']),
+      isTrainingComplete: a.boolean().default(false),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

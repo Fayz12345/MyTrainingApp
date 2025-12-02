@@ -337,7 +337,10 @@
                     "provider": "userPools",
                     "allow": "groups",
                     "operations": [
-                      "read"
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
                     ],
                     "groups": [
                       "Store"
@@ -551,8 +554,22 @@
               "isRequired": true,
               "attributes": []
             },
+            "description": {
+              "name": "description",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "videoKey": {
               "name": "videoKey",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "imageKey": {
+              "name": "imageKey",
               "isArray": false,
               "type": "String",
               "isRequired": false,
@@ -606,6 +623,20 @@
             },
             "category": {
               "name": "category",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "tag": {
+              "name": "tag",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "status": {
+              "name": "status",
               "isArray": false,
               "type": "String",
               "isRequired": false,
@@ -938,6 +969,20 @@
                       "delete"
                     ],
                     "groups": [
+                      "SuperAdmin"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ],
+                    "groups": [
                       "Managers"
                     ]
                   },
@@ -1228,6 +1273,18 @@
             ]
           },
           "courses/videos/*": {
+            "groupsManagers": [
+              "get",
+              "list",
+              "write",
+              "delete"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list"
+            ]
+          },
+          "courses/images/*": {
             "groupsManagers": [
               "get",
               "list",

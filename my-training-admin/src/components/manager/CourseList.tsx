@@ -581,6 +581,7 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
         width="300" 
         height="180" 
         controls 
+        preload="metadata"
         style={{ 
           borderRadius: '4px',
           maxWidth: '100%',
@@ -588,7 +589,36 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
         }}
         onError={(e) => {
           console.error('[VideoPreview] Video playback error:', e);
-          setError('Video playback failed. Check browser console for details.');
+          const videoElement = e.target as HTMLVideoElement;
+          const error = videoElement.error;
+          let errorMessage = 'Video playback failed.';
+          
+          if (error) {
+            switch (error.code) {
+              case error.MEDIA_ERR_ABORTED:
+                errorMessage = 'Video loading aborted.';
+                break;
+              case error.MEDIA_ERR_NETWORK:
+                errorMessage = 'Network error while loading video.';
+                break;
+              case error.MEDIA_ERR_DECODE:
+                errorMessage = 'Video decoding error.';
+                break;
+              case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                errorMessage = 'Video format not supported.';
+                break;
+              default:
+                errorMessage = `Video error (code: ${error.code}).`;
+            }
+          }
+          
+          console.error('[VideoPreview] Video error details:', {
+            code: error?.code,
+            message: error?.message,
+            videoUrl: videoUrl?.substring(0, 100)
+          });
+          
+          setError(errorMessage);
         }}
         onLoadStart={() => {
           console.log('[VideoPreview] Video started loading');
@@ -596,15 +626,21 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
         onCanPlay={() => {
           console.log('[VideoPreview] Video can play');
         }}
+        onWaiting={() => {
+          console.log('[VideoPreview] Video buffering...');
+        }}
+        onPlaying={() => {
+          console.log('[VideoPreview] Video playing');
+        }}
+        onLoadedMetadata={() => {
+          console.log('[VideoPreview] Video metadata loaded');
+        }}
       >
         <source src={videoUrl} type="video/mp4" />
         <source src={videoUrl} type="video/webm" />
         <source src={videoUrl} type="video/ogg" />
         Your browser does not support the video tag.
       </video>
-      <p style={{ color: '#999', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-        Video key: <code>{videoKey}</code>
-      </p>
     </div>
   );
 };

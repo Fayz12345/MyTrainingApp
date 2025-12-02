@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
-import CourseDebugPanel from './CourseDebugPanel';
 
 const client = generateClient<Schema>();
 
@@ -487,10 +486,6 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      {/* Debug Panel - Remove this after debugging */}
-      {isEditMode && course?.id && (
-        <CourseDebugPanel courseId={course.id} />
-      )}
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>{isEditMode ? 'Edit Course' : 'Create New Course'}</h2>
@@ -576,6 +571,14 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
             {videoFile ? (
               <div>
                 <p>✅ {videoFile.name}</p>
+                <p style={{ fontSize: '0.9rem', color: '#666', margin: '0.5rem 0' }}>
+                  Size: {(videoFile.size / (1024 * 1024)).toFixed(2)} MB
+                  {videoFile.size > 50 * 1024 * 1024 && (
+                    <span style={{ color: '#ff9800', marginLeft: '0.5rem' }}>
+                      ⚠️ Large file - may take longer to upload and play
+                    </span>
+                  )}
+                </p>
                 <button 
                   type="button" 
                   onClick={() => setVideoFile(null)}
