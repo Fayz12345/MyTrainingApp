@@ -8,7 +8,9 @@ const client = generateClient<Schema>();
 type Course = {
   readonly id: string;
   readonly title: string;
+  readonly description?: string | null;
   readonly videoKey?: string | null;
+  readonly imageKey?: string | null;
   readonly passingScore?: number | null;
   readonly duration?: string | null;
   readonly category?: string | null;
@@ -56,7 +58,7 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
     }
   };
 
-  const deleteCourse = async (courseId: string, videoKey?: string | null) => {
+  const deleteCourse = async (courseId: string, videoKey?: string | null, imageKey?: string | null) => {
     if (!window.confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
       return;
     }
@@ -82,6 +84,15 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
           await remove({ path: videoKey });
         } catch (storageError) {
           console.warn('Failed to delete video from storage:', storageError);
+        }
+      }
+
+      // Delete image from S3 if it exists
+      if (imageKey) {
+        try {
+          await remove({ path: imageKey });
+        } catch (storageError) {
+          console.warn('Failed to delete image from storage:', storageError);
         }
       }
 
@@ -176,53 +187,74 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                  {course.title}
-                </h4>
-                
-                {/* Duration and Category Tags */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                  {course.duration && (
-                    <span style={{
-                      padding: '0.25rem 0.75rem',
-                      backgroundColor: '#e3f2fd',
-                      color: '#1976d2',
-                      borderRadius: '16px',
-                      fontSize: '0.875rem',
-                      fontWeight: '500'
-                    }}>
-                      {course.duration}
-                    </span>
-                  )}
-                  {course.category && (
-                    <span style={{
-                      padding: '0.25rem 0.75rem',
-                      backgroundColor: '#e3f2fd',
-                      color: '#1976d2',
-                      borderRadius: '16px',
-                      fontSize: '0.875rem',
-                      fontWeight: '500'
-                    }}>
-                      {course.category}
-                    </span>
-                  )}
-                </div>
-                
-                <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
-                  <p style={{ margin: 0, color: '#666' }}>
-                    <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
-                  </p>
-                  <p style={{ margin: 0, color: '#666' }}>
-                    <strong>Created:</strong> {new Date(course.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                
-                {course.videoKey && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <VideoPreview videoKey={course.videoKey} />
+              <div style={{ flex: 1, display: 'flex', gap: '1rem' }}>
+                {/* Image Preview */}
+                {course.imageKey && (
+                  <div style={{ flexShrink: 0 }}>
+                    <ImagePreview imageKey={course.imageKey} />
                   </div>
                 )}
+                
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                    {course.title}
+                  </h4>
+                  
+                  {/* Description */}
+                  {course.description && (
+                    <p style={{ 
+                      margin: '0 0 1rem 0', 
+                      color: '#555', 
+                      fontSize: '0.95rem',
+                      lineHeight: '1.5'
+                    }}>
+                      {course.description}
+                    </p>
+                  )}
+                  
+                  {/* Duration and Category Tags */}
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                    {course.duration && (
+                      <span style={{
+                        padding: '0.25rem 0.75rem',
+                        backgroundColor: '#e3f2fd',
+                        color: '#1976d2',
+                        borderRadius: '16px',
+                        fontSize: '0.875rem',
+                        fontWeight: '500'
+                      }}>
+                        {course.duration}
+                      </span>
+                    )}
+                    {course.category && (
+                      <span style={{
+                        padding: '0.25rem 0.75rem',
+                        backgroundColor: '#e3f2fd',
+                        color: '#1976d2',
+                        borderRadius: '16px',
+                        fontSize: '0.875rem',
+                        fontWeight: '500'
+                      }}>
+                        {course.category}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
+                    <p style={{ margin: 0, color: '#666' }}>
+                      <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
+                    </p>
+                    <p style={{ margin: 0, color: '#666' }}>
+                      <strong>Created:</strong> {new Date(course.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  
+                  {course.videoKey && (
+                    <div style={{ marginBottom: '1rem' }}>
+                      <VideoPreview videoKey={course.videoKey} />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
@@ -243,7 +275,7 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                   </button>
                 )}
                 <button
-                  onClick={() => deleteCourse(course.id, course.videoKey)}
+                  onClick={() => deleteCourse(course.id, course.videoKey, course.imageKey)}
                   style={{
                     padding: '0.5rem 1rem',
                     backgroundColor: '#d32f2f',
@@ -265,48 +297,196 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
   );
 };
 
-// Helper component for video preview
-const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+// Helper component for image preview
+const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchVideoUrl = async () => {
+    const fetchImageUrl = async () => {
       try {
-        const url = await getUrl({ path: videoKey });
-        setVideoUrl(url.url.toString());
+        const url = await getUrl({ path: imageKey });
+        setImageUrl(url.url.toString());
       } catch (err) {
-        console.error('Error loading video:', err);
+        console.error('Error loading image:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchVideoUrl();
-  }, [videoKey]);
+    fetchImageUrl();
+  }, [imageKey]);
 
   if (loading) {
-    return <p style={{ color: '#666', fontSize: '0.9rem' }}>Loading video preview...</p>;
+    return (
+      <div style={{ 
+        width: '150px', 
+        height: '100px', 
+        backgroundColor: '#f5f5f5', 
+        borderRadius: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.8rem',
+        color: '#666'
+      }}>
+        Loading...
+      </div>
+    );
   }
 
-  if (!videoUrl) {
-    return <p style={{ color: '#d32f2f', fontSize: '0.9rem' }}>Video not available</p>;
+  if (!imageUrl) {
+    return (
+      <div style={{ 
+        width: '150px', 
+        height: '100px', 
+        backgroundColor: '#f5f5f5', 
+        borderRadius: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.8rem',
+        color: '#d32f2f'
+      }}>
+        Image not available
+      </div>
+    );
   }
 
   return (
-    <div>
+    <img 
+      src={imageUrl} 
+      alt="Course thumbnail" 
+      style={{ 
+        width: '150px', 
+        height: '100px', 
+        objectFit: 'cover',
+        borderRadius: '4px',
+        border: '1px solid #e0e0e0'
+      }}
+    />
+  );
+};
+
+// Helper component for video preview
+const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchVideoUrl = async () => {
+      try {
+        console.log('[VideoPreview] Fetching URL for video key:', videoKey);
+        
+        // Get signed URL with 1 hour expiration
+        const urlResult = await getUrl({ 
+          path: videoKey,
+          options: {
+            expiresIn: 3600 // 1 hour
+          }
+        });
+        
+        const url = urlResult.url.toString();
+        console.log('[VideoPreview] Video URL retrieved:', url.substring(0, 100) + '...');
+        setVideoUrl(url);
+        setError(null);
+      } catch (err: any) {
+        console.error('[VideoPreview] Error loading video:', err);
+        console.error('[VideoPreview] Error details:', {
+          message: err?.message,
+          name: err?.name,
+          stack: err?.stack,
+          videoKey: videoKey
+        });
+        
+        // Provide more specific error messages
+        let errorMessage = 'Video not available';
+        if (err?.message?.includes('AccessDenied') || err?.message?.includes('403')) {
+          errorMessage = 'Access denied. Check storage permissions.';
+        } else if (err?.message?.includes('NotFound') || err?.message?.includes('404')) {
+          errorMessage = 'Video file not found in storage.';
+        } else if (err?.message) {
+          errorMessage = `Error: ${err.message}`;
+        }
+        
+        setError(errorMessage);
+        setVideoUrl(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (videoKey) {
+      fetchVideoUrl();
+    } else {
+      setError('No video key provided');
+      setLoading(false);
+    }
+  }, [videoKey]);
+
+  if (loading) {
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
+          <strong>Video:</strong>
+        </p>
+        <p style={{ color: '#666', fontSize: '0.9rem' }}>Loading video preview...</p>
+      </div>
+    );
+  }
+
+  if (error || !videoUrl) {
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
+          <strong>Video:</strong>
+        </p>
+        <p style={{ color: '#d32f2f', fontSize: '0.9rem' }}>
+          {error || 'Video not available'}
+        </p>
+        {videoKey && (
+          <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+            Key: <code>{videoKey}</code>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: '1rem' }}>
       <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
         <strong>Video:</strong>
       </p>
       <video 
-        width="200" 
-        height="120" 
+        width="300" 
+        height="180" 
         controls 
-        style={{ borderRadius: '4px' }}
+        style={{ 
+          borderRadius: '4px',
+          maxWidth: '100%',
+          backgroundColor: '#000'
+        }}
+        onError={(e) => {
+          console.error('[VideoPreview] Video playback error:', e);
+          setError('Video playback failed. Check browser console for details.');
+        }}
+        onLoadStart={() => {
+          console.log('[VideoPreview] Video started loading');
+        }}
+        onCanPlay={() => {
+          console.log('[VideoPreview] Video can play');
+        }}
       >
         <source src={videoUrl} type="video/mp4" />
+        <source src={videoUrl} type="video/webm" />
+        <source src={videoUrl} type="video/ogg" />
         Your browser does not support the video tag.
       </video>
+      <p style={{ color: '#999', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+        Video key: <code>{videoKey}</code>
+      </p>
     </div>
   );
 };

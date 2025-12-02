@@ -195,27 +195,43 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         const timestamp = Date.now();
         const videoKey = `courses/videos/${timestamp}_${videoFile.name}`;
 
-        await uploadData({
-          path: videoKey,
-          data: videoFile,
-          options: {
-            onProgress: ({ transferredBytes, totalBytes }) => {
-              if (totalBytes) {
-                setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+        console.log('[CourseForm] Uploading video to:', videoKey);
+        console.log('[CourseForm] Video file:', {
+          name: videoFile.name,
+          size: videoFile.size,
+          type: videoFile.type
+        });
+
+        try {
+          await uploadData({
+            path: videoKey,
+            data: videoFile,
+            options: {
+              onProgress: ({ transferredBytes, totalBytes }) => {
+                if (totalBytes) {
+                  setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+                }
               }
             }
-          }
-        });
+          });
+          console.log('[CourseForm] ✅ Video uploaded successfully to:', videoKey);
+        } catch (uploadError) {
+          console.error('[CourseForm] ❌ Video upload failed:', uploadError);
+          throw new Error(`Failed to upload video: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`);
+        }
 
         if (isEditMode && existingVideoKey) {
           try {
+            console.log('[CourseForm] Deleting old video:', existingVideoKey);
             await remove({ path: existingVideoKey });
+            console.log('[CourseForm] ✅ Old video deleted');
           } catch (storageError) {
-            console.warn('Failed to delete existing video. Continuing update.', storageError);
+            console.warn('[CourseForm] ⚠️ Failed to delete existing video. Continuing update.', storageError);
           }
         }
 
         resolvedVideoKey = videoKey;
+        console.log('[CourseForm] Video key resolved to:', resolvedVideoKey);
       }
 
       if (imageFile) {
