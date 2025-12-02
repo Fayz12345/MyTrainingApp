@@ -127,6 +127,7 @@ const schema = a.schema({
       course: a.belongsTo('Course', 'courseId'),
       status: a.enum(['assigned', 'completed']),
       isTrainingComplete: a.boolean().default(false),
+      trainingCompletedAt: a.datetime(), // Date when training was completed (for recertification tracking)
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

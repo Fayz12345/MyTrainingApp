@@ -91,9 +91,9 @@ export const handler = async (event: QuizCompletionEvent) => {
     console.log(`${logPrefix} [STEP 1.3] ✅ Training completion logged for future API validation`);
     console.log(`${logPrefix} [STEP 1.3] Employee: ${employeeName}, Course: ${courseTitle}, Score: ${event.score || 'N/A'}%`);
 
-    // Update assignment to completed (Lambda has permission, employees don't need it)
-    console.log(`${logPrefix} [STEP 2] Updating assignment to completed...`);
-    await updateAssignmentToCompleted(event.assignmentId);
+    // Note: Assignment is updated by frontend (employees have update permission)
+    // Lambda only handles notification, not assignment update
+    console.log(`${logPrefix} [STEP 2] Assignment should already be updated by frontend`);
 
     if (!managerEmail) {
       console.warn(`${logPrefix} [STEP 3] ⚠️ No manager email found. Employee may not have a manager assigned.`);

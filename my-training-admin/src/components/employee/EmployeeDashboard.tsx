@@ -32,6 +32,8 @@ type CourseWithAssignment = {
   assignmentId: string;
   employeeId?: string; // Add employeeId for Lambda invocation
   assignmentStatus: 'assigned' | 'completed';
+  isTrainingComplete?: boolean | null;
+  trainingCompletedAt?: string | null; // Date when training was completed (for recertification)
   createdAt: string;
   updatedAt: string;
 };
@@ -49,6 +51,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState<number | null>(null);
   const [quizPassed, setQuizPassed] = useState<boolean | false>(false);
+  const [totalCourses, setTotalCourses] = useState<number>(0);
+  const [completedCourses, setCompletedCourses] = useState<number>(0);
 
   useEffect(() => {
     loadUserInfo();
@@ -92,6 +96,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                   id
                   status
                   isTrainingComplete
+                  trainingCompletedAt
                   course {
                     id
                     title
@@ -156,6 +161,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
             assignmentId: assignment.id,
             employeeId: employee.id, // Store employeeId for Lambda
             assignmentStatus: assignment.status as 'assigned' | 'completed',
+            isTrainingComplete: assignment.isTrainingComplete ?? false,
+            trainingCompletedAt: assignment.trainingCompletedAt || null,
             createdAt: course.createdAt,
             updatedAt: course.updatedAt,
           });
@@ -164,6 +171,18 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
 
       console.log('[EmployeeDashboard] Courses loaded:', coursesList.length);
       setCourses(coursesList);
+      
+      // Calculate progress
+      const total = coursesList.length;
+      const completed = coursesList.filter(c => c.assignmentStatus === 'completed').length;
+      setTotalCourses(total);
+      setCompletedCourses(completed);
+      
+      console.log('[EmployeeDashboard] Progress:', {
+        total,
+        completed,
+        percentage: total > 0 ? Math.round((completed / total) * 100) : 0
+      });
     } catch (err) {
       console.error('[EmployeeDashboard] Error loading courses:', err);
       setError(err instanceof Error ? err.message : 'Failed to load courses');
@@ -211,6 +230,28 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
     setQuizSubmitted(false);
     setQuizScore(null);
     setQuizPassed(false);
+  };
+
+  // Check if recertification is needed (1 year has passed since training completion)
+  const isRecertificationNeeded = (course: CourseWithAssignment): boolean => {
+    if (!course.isTrainingComplete || !course.trainingCompletedAt) {
+      return false;
+    }
+    
+    const completedDate = new Date(course.trainingCompletedAt);
+    const now = new Date();
+    const oneYearInMs = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
+    const timeSinceCompletion = now.getTime() - completedDate.getTime();
+    
+    return timeSinceCompletion >= oneYearInMs;
+  };
+
+  // Check if quiz should be enabled (either not completed, or recertification needed)
+  const isQuizEnabled = (course: CourseWithAssignment): boolean => {
+    // Quiz is enabled if:
+    // 1. Training is not complete, OR
+    // 2. Recertification is needed (1 year passed)
+    return !course.isTrainingComplete || isRecertificationNeeded(course);
   };
 
   const invokeQuizCompletionLambda = async (event: {
@@ -355,50 +396,63 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
 
       console.log('[EmployeeDashboard] Result created:', resultData.data);
 
-      // If quiz passed, trigger Lambda which will update assignment automatically
-      // Lambda has permission to update assignments, employees don't need it
-      if (passed && resultData.data && selectedCourse.employeeId) {
-        // Trigger Lambda for assignment update and SNS notification
-        // Lambda will handle everything (no employee update permission needed)
+      // Update assignment if passed (employees have update permission after backend deployment)
+      if (passed && resultData.data) {
         try {
-          await invokeQuizCompletionLambda({
-            assignmentId: selectedCourse.assignmentId,
-            employeeId: selectedCourse.employeeId,
-            courseId: selectedCourse.id,
-            score: score,
-            passed: passed
+          // Update assignment directly from frontend (employees have update permission)
+          console.log('[EmployeeDashboard] Updating assignment to completed...');
+          const now = new Date().toISOString();
+          
+          // If this is a recertification (training was already complete), update the completion date
+          // Otherwise, set it for the first time
+          const isRecert = selectedCourse.isTrainingComplete && isRecertificationNeeded(selectedCourse);
+          
+          const updateResult = await client.models.Assignment.update({
+            id: selectedCourse.assignmentId,
+            status: 'completed',
+            isTrainingComplete: true,
+            trainingCompletedAt: now // Store/update completion date for recertification tracking
           });
-          
-          console.log('[EmployeeDashboard] ✅ Lambda invoked - assignment will be updated automatically by Lambda');
 
-          // Wait a moment for Lambda to process, then reload
-          setTimeout(async () => {
-            await loadCourses();
-            // Update selectedCourse state to reflect new status
-            setSelectedCourse({
-              ...selectedCourse,
-              assignmentStatus: 'completed'
-            });
-          }, 1000);
-        } catch (lambdaError) {
-          // Lambda failure is non-critical - quiz result is still saved
-          console.warn('[EmployeeDashboard] ⚠️ Lambda invocation failed (non-critical):', lambdaError);
-          console.warn('[EmployeeDashboard] Quiz result saved, but assignment update and notification may not have occurred');
-          
-          // Update UI optimistically
+          console.log('[EmployeeDashboard] ✅ Assignment updated:', updateResult.data);
+
+          // Trigger Lambda for SNS notification (non-blocking)
+          if (selectedCourse.employeeId) {
+            try {
+              await invokeQuizCompletionLambda({
+                assignmentId: selectedCourse.assignmentId,
+                employeeId: selectedCourse.employeeId,
+                courseId: selectedCourse.id,
+                score: score,
+                passed: passed
+              });
+              console.log('[EmployeeDashboard] ✅ Lambda invoked for notification');
+            } catch (lambdaError) {
+              // Lambda failure is non-critical - assignment is already updated
+              console.warn('[EmployeeDashboard] ⚠️ Lambda invocation failed (non-critical):', lambdaError);
+            }
+          }
+
+          // Update selectedCourse state immediately
           setSelectedCourse({
             ...selectedCourse,
-            assignmentStatus: 'completed'
+            assignmentStatus: 'completed',
+            isTrainingComplete: true,
+            trainingCompletedAt: now
           });
+
+          // Reload courses to update progress
           await loadCourses();
+        } catch (updateError) {
+          console.error('[EmployeeDashboard] ❌ Failed to update assignment:', updateError);
+          // Check if it's a permission error
+          if (updateError instanceof Error && updateError.message.includes('Unauthorized')) {
+            alert('Permission error: Please ensure backend is deployed with employee update permission. Assignment update failed.');
+          } else {
+            alert('Failed to update assignment: ' + (updateError instanceof Error ? updateError.message : 'Unknown error'));
+          }
+          throw updateError;
         }
-      } else if (passed && resultData.data) {
-        // If no employeeId, update UI optimistically
-        setSelectedCourse({
-          ...selectedCourse,
-          assignmentStatus: 'completed'
-        });
-        await loadCourses();
       }
 
       // Don't show alert if quiz passed (results are shown in UI)
@@ -411,7 +465,21 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, isTrainingComplete?: boolean | null) => {
+    if (isTrainingComplete) {
+      return (
+        <span style={{
+          padding: '4px 12px',
+          borderRadius: '12px',
+          backgroundColor: '#4caf50',
+          color: 'white',
+          fontSize: '0.875rem',
+          fontWeight: 600
+        }}>
+          ✅ Training Complete
+        </span>
+      );
+    }
     if (status === 'completed') {
       return (
         <span style={{
@@ -466,7 +534,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
         )}
 
         <div style={{ marginBottom: '20px' }}>
-          {getStatusBadge(selectedCourse.assignmentStatus)}
+          {getStatusBadge(selectedCourse.assignmentStatus, selectedCourse.isTrainingComplete)}
           {selectedCourse.passingScore && (
             <span style={{ marginLeft: '15px', color: '#666' }}>
               Passing Score: {selectedCourse.passingScore}%
@@ -492,7 +560,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           </div>
         )}
 
-        {selectedCourse.assignmentStatus === 'completed' && (
+        {selectedCourse.assignmentStatus === 'completed' && !selectedCourse.isTrainingComplete && (
           <div style={{
             padding: '15px',
             backgroundColor: '#e8f5e9',
@@ -501,6 +569,61 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           }}>
             <p style={{ margin: 0, color: '#2e7d32' }}>
               ✅ You have completed this course. You can review the video or retake the quiz.
+            </p>
+          </div>
+        )}
+
+        {selectedCourse.isTrainingComplete && !isRecertificationNeeded(selectedCourse) && (
+          <div style={{
+            padding: '15px',
+            backgroundColor: '#e8f5e9',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            border: '2px solid #4caf50'
+          }}>
+            <p style={{ margin: 0, color: '#2e7d32', fontWeight: 500 }}>
+              ✅ Training Complete - This course has been completed and marked as training complete.
+            </p>
+            {selectedCourse.trainingCompletedAt && (
+              <p style={{ margin: '5px 0 0 0', color: '#2e7d32', fontSize: '0.9rem' }}>
+                Completed on: {new Date(selectedCourse.trainingCompletedAt).toLocaleDateString()}
+                {(() => {
+                  const completedDate = new Date(selectedCourse.trainingCompletedAt!);
+                  const now = new Date();
+                  const oneYearInMs = 365 * 24 * 60 * 60 * 1000;
+                  const timeSinceCompletion = now.getTime() - completedDate.getTime();
+                  const daysUntilRecert = Math.ceil((oneYearInMs - timeSinceCompletion) / (24 * 60 * 60 * 1000));
+                  if (daysUntilRecert > 0 && daysUntilRecert <= 365) {
+                    return ` • Recertification due in ${daysUntilRecert} days`;
+                  }
+                  return '';
+                })()}
+              </p>
+            )}
+            <p style={{ margin: '5px 0 0 0', color: '#2e7d32', fontSize: '0.9rem' }}>
+              You can review the video content, but the quiz cannot be retaken until recertification is due.
+            </p>
+          </div>
+        )}
+
+        {selectedCourse.isTrainingComplete && isRecertificationNeeded(selectedCourse) && (
+          <div style={{
+            padding: '15px',
+            backgroundColor: '#fff3e0',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            border: '2px solid #ff9800'
+          }}>
+            <p style={{ margin: 0, color: '#e65100', fontWeight: 500 }}>
+              🔄 Recertification Required - Your training certification has expired (over 1 year since completion).
+            </p>
+            {selectedCourse.trainingCompletedAt && (
+              <p style={{ margin: '5px 0 0 0', color: '#e65100', fontSize: '0.9rem' }}>
+                Original completion date: {new Date(selectedCourse.trainingCompletedAt).toLocaleDateString()}
+              </p>
+            )}
+            <p style={{ margin: '5px 0 0 0', color: '#e65100', fontSize: '0.9rem' }}>
+              Please retake the quiz to renew your certification.
             </p>
           </div>
         )}
@@ -518,13 +641,13 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           </div>
         )}
 
-        {!showQuiz && (
+        {!showQuiz && isQuizEnabled(selectedCourse) && (
           <div style={{ marginTop: '20px' }}>
             <button
               onClick={() => loadQuizQuestions(selectedCourse.id)}
               style={{
                 padding: '12px 24px',
-                backgroundColor: '#007AFF',
+                backgroundColor: isRecertificationNeeded(selectedCourse) ? '#ff9800' : '#007AFF',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
@@ -533,8 +656,29 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                 fontWeight: 500
               }}
             >
-              {selectedCourse.assignmentStatus === 'completed' ? 'Retake Quiz' : 'Take Quiz'}
+              {isRecertificationNeeded(selectedCourse) 
+                ? '🔄 Retake Quiz for Recertification' 
+                : selectedCourse.assignmentStatus === 'completed' 
+                  ? 'Retake Quiz' 
+                  : 'Take Quiz'}
             </button>
+          </div>
+        )}
+
+        {!showQuiz && !isQuizEnabled(selectedCourse) && (
+          <div style={{
+            marginTop: '20px',
+            padding: '15px',
+            backgroundColor: '#e8f5e9',
+            borderRadius: '8px',
+            border: '2px solid #4caf50'
+          }}>
+            <p style={{ margin: 0, color: '#2e7d32', fontWeight: 500 }}>
+              ✅ Training Complete - Quiz cannot be retaken
+            </p>
+            <p style={{ margin: '5px 0 0 0', color: '#2e7d32', fontSize: '0.9rem' }}>
+              This course has been completed and marked as training complete. You can review the video content.
+            </p>
           </div>
         )}
 
@@ -631,7 +775,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                 setQuizScore(null);
                 setQuizPassed(false);
                 setQuizAnswers({});
-                loadCourses(); // Reload to update status
+                loadCourses(); // Reload to update status and progress
               }}
               style={{
                 marginTop: '15px',
@@ -660,34 +804,95 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
         padding: '20px',
         marginBottom: '20px'
       }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '24px' }}>My Training</h1>
-            <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>{userEmail || 'Employee'}</p>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '24px' }}>My Training</h1>
+              <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>{userEmail || 'Employee'}</p>
+            </div>
+            <button
+              onClick={signOut}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Sign Out
+            </button>
           </div>
-          <button
-            onClick={signOut}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              color: 'white',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
+          
+          {/* Progress Section */}
+          <div style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            padding: '15px',
+            borderRadius: '8px',
+            marginTop: '15px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div>
+                <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>Training Progress</p>
+                <p style={{ margin: '5px 0 0 0', fontSize: '1.1rem', fontWeight: 500 }}>
+                  {completedCourses} of {totalCourses} courses completed
+                </p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
+                  {totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0}%
+                </p>
+                <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', opacity: 0.9 }}>Complete</p>
+              </div>
+            </div>
+            {/* Progress Bar */}
+            <div style={{
+              width: '100%',
+              height: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
               borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Sign Out
-          </button>
+              overflow: 'hidden',
+              marginTop: '10px'
+            }}>
+              <div style={{
+                width: `${totalCourses > 0 ? (completedCourses / totalCourses) * 100 : 0}%`,
+                height: '100%',
+                backgroundColor: '#4CAF50',
+                transition: 'width 0.3s ease',
+                borderRadius: '4px'
+              }} />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-        <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ margin: 0 }}>Assigned Courses</h2>
-          <p style={{ color: '#666', margin: '5px 0 0 0' }}>
-            View and complete your assigned training courses
-          </p>
+        <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Assigned Courses</h2>
+            <p style={{ color: '#666', margin: '5px 0 0 0' }}>
+              View and complete your assigned training courses
+            </p>
+          </div>
+          {totalCourses > 0 && (
+            <div style={{
+              textAlign: 'right',
+              padding: '12px 20px',
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>Completion Rate</p>
+              <p style={{ margin: '5px 0 0 0', fontSize: '1.5rem', fontWeight: 'bold', color: '#007AFF' }}>
+                {Math.round((completedCourses / totalCourses) * 100)}%
+              </p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#999' }}>
+                {completedCourses}/{totalCourses} completed
+              </p>
+            </div>
+          )}
         </div>
 
         {loading && (
@@ -768,7 +973,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                       </p>
                     )}
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      {getStatusBadge(course.assignmentStatus)}
+                      {getStatusBadge(course.assignmentStatus, course.isTrainingComplete)}
                       {course.passingScore && (
                         <span style={{ color: '#666', fontSize: '0.875rem' }}>
                           Passing: {course.passingScore}%

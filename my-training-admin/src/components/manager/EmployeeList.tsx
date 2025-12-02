@@ -24,6 +24,8 @@ type Assignment = {
   readonly employeeId: string;
   readonly courseId: string;
   readonly status?: string | null;
+  readonly isTrainingComplete?: boolean | null;
+  readonly trainingCompletedAt?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -109,6 +111,38 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
 
   const getEmployeeAssignments = (employeeId: string) => {
     return assignments.filter(assignment => assignment.employeeId === employeeId);
+  };
+
+  const getCompletedTrainingAssignments = (employeeId: string) => {
+    return assignments.filter(assignment => 
+      assignment.employeeId === employeeId &&
+      assignment.status === 'completed' &&
+      assignment.isTrainingComplete === true
+    );
+  };
+
+  // Check if recertification is needed (1 year has passed since training completion)
+  const isRecertificationNeeded = (assignment: Assignment): boolean => {
+    if (!assignment.isTrainingComplete || !assignment.trainingCompletedAt) {
+      return false;
+    }
+    
+    const completedDate = new Date(assignment.trainingCompletedAt);
+    const now = new Date();
+    const oneYearInMs = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
+    const timeSinceCompletion = now.getTime() - completedDate.getTime();
+    
+    return timeSinceCompletion >= oneYearInMs;
+  };
+
+  // Get assignments that need recertification
+  const getRecertificationNeededAssignments = (employeeId: string) => {
+    return assignments.filter(assignment => 
+      assignment.employeeId === employeeId &&
+      assignment.status === 'completed' &&
+      assignment.isTrainingComplete === true &&
+      isRecertificationNeeded(assignment)
+    );
   };
 
   const getCourseTitle = (courseId: string) => {
@@ -342,7 +376,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
 
                   {isExpanded && employeeAssignments.length > 0 && (
                     <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
-                      <h5 style={{ margin: '0 0 0.75rem 0' }}>Assigned Courses:</h5>
+                      <h5 style={{ margin: '0 0 0.75rem 0' }}>All Course Assignments ({employeeAssignments.length}):</h5>
                       <div style={{ display: 'grid', gap: '0.5rem' }}>
                         {employeeAssignments.map((assignment) => (
                           <div 
@@ -363,6 +397,33 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
                               </div>
                               <div style={{ fontSize: '0.8rem', color: '#666' }}>
                                 Status: {assignment.status || 'assigned'} • 
+                                {assignment.isTrainingComplete && !isRecertificationNeeded(assignment) && (
+                                  <span style={{ color: '#4caf50', fontWeight: 'bold', marginLeft: '0.5rem' }}>
+                                    ✅ Training Complete
+                                  </span>
+                                )}
+                                {assignment.isTrainingComplete && isRecertificationNeeded(assignment) && (
+                                  <span style={{ color: '#ff9800', fontWeight: 'bold', marginLeft: '0.5rem' }}>
+                                    🔄 Recertification Required
+                                  </span>
+                                )}
+                                {!assignment.isTrainingComplete && assignment.status === 'completed' && (
+                                  <span style={{ color: '#ff9800', marginLeft: '0.5rem' }}>
+                                    ⚠️ Completed (Training not marked complete)
+                                  </span>
+                                )}
+                                <br />
+                                {assignment.trainingCompletedAt && (
+                                  <>
+                                    Completed: {new Date(assignment.trainingCompletedAt).toLocaleDateString()}
+                                    {isRecertificationNeeded(assignment) && (
+                                      <span style={{ color: '#ff9800', marginLeft: '0.5rem' }}>
+                                        (Expired - Over 1 year)
+                                      </span>
+                                    )}
+                                    <br />
+                                  </>
+                                )}
                                 Assigned: {new Date(assignment.createdAt).toLocaleDateString()}
                               </div>
                             </div>
@@ -370,16 +431,137 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
                               padding: '0.25rem 0.5rem',
                               borderRadius: '4px',
                               fontSize: '0.75rem',
-                              backgroundColor: assignment.status === 'completed' ? '#4caf50' : '#ff9800',
+                              backgroundColor: assignment.status === 'completed' && assignment.isTrainingComplete && isRecertificationNeeded(assignment) ? '#ff9800' :
+                                             assignment.status === 'completed' && assignment.isTrainingComplete ? '#4caf50' : 
+                                             assignment.status === 'completed' ? '#ff9800' : '#9e9e9e',
                               color: 'white'
                             }}>
-                              {assignment.status === 'completed' ? 'COMPLETED' : 'ASSIGNED'}
+                              {assignment.status === 'completed' && assignment.isTrainingComplete && isRecertificationNeeded(assignment) ? 'RECERTIFICATION NEEDED' :
+                               assignment.status === 'completed' && assignment.isTrainingComplete ? 'TRAINING COMPLETE' : 
+                               assignment.status === 'completed' ? 'COMPLETED' : 'ASSIGNED'}
                             </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {isExpanded && (() => {
+                    const recertificationNeeded = getRecertificationNeededAssignments(employee.id);
+                    return recertificationNeeded.length > 0 && (
+                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#fff3e0', borderRadius: '4px', border: '2px solid #ff9800' }}>
+                        <h5 style={{ margin: '0 0 0.75rem 0', color: '#e65100' }}>
+                          🔄 Recertification Required ({recertificationNeeded.length}):
+                        </h5>
+                        <div style={{ display: 'grid', gap: '0.5rem' }}>
+                          {recertificationNeeded.map((assignment) => (
+                            <div 
+                              key={assignment.id}
+                              style={{ 
+                                padding: '0.75rem', 
+                                backgroundColor: 'white', 
+                                borderRadius: '4px',
+                                border: '1px solid #ff9800',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 'bold', color: '#e65100' }}>
+                                  {getCourseTitle(assignment.courseId)}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                  {assignment.trainingCompletedAt && (
+                                    <>
+                                      Original completion: {new Date(assignment.trainingCompletedAt).toLocaleDateString()}
+                                      <br />
+                                      <span style={{ color: '#ff9800', fontWeight: 'bold' }}>
+                                        Expired - Employee needs to retake quiz
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                backgroundColor: '#ff9800',
+                                color: 'white',
+                                fontWeight: 'bold'
+                              }}>
+                                🔄 RECERTIFY
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {isExpanded && (() => {
+                    const completedTraining = getCompletedTrainingAssignments(employee.id);
+                    return completedTraining.length > 0 && (
+                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#e8f5e9', borderRadius: '4px', border: '2px solid #4caf50' }}>
+                        <h5 style={{ margin: '0 0 0.75rem 0', color: '#2e7d32' }}>
+                          ✅ Completed Training ({completedTraining.length}):
+                        </h5>
+                        <div style={{ display: 'grid', gap: '0.5rem' }}>
+                          {completedTraining.filter(a => !isRecertificationNeeded(a)).map((assignment) => (
+                            <div 
+                              key={assignment.id}
+                              style={{ 
+                                padding: '0.75rem', 
+                                backgroundColor: 'white', 
+                                borderRadius: '4px',
+                                border: '1px solid #4caf50',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 'bold', color: '#2e7d32' }}>
+                                  {getCourseTitle(assignment.courseId)}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                  {assignment.trainingCompletedAt ? (
+                                    <>
+                                      Completed: {new Date(assignment.trainingCompletedAt).toLocaleDateString()}
+                                      {(() => {
+                                        const completedDate = new Date(assignment.trainingCompletedAt);
+                                        const now = new Date();
+                                        const oneYearInMs = 365 * 24 * 60 * 60 * 1000;
+                                        const timeSinceCompletion = now.getTime() - completedDate.getTime();
+                                        const daysUntilRecert = Math.ceil((oneYearInMs - timeSinceCompletion) / (24 * 60 * 60 * 1000));
+                                        if (daysUntilRecert > 0 && daysUntilRecert <= 365) {
+                                          return ` • Recertification due in ${daysUntilRecert} days`;
+                                        }
+                                        return '';
+                                      })()}
+                                    </>
+                                  ) : (
+                                    <>Completed: {new Date(assignment.updatedAt).toLocaleDateString()}</>
+                                  )}
+                                </div>
+                              </div>
+                              <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                backgroundColor: '#4caf50',
+                                color: 'white',
+                                fontWeight: 'bold'
+                              }}>
+                                ✅ COMPLETE
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
