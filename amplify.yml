@@ -1,4 +1,14 @@
 version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - npm --prefix amplify ci
+        - CI=true AWS_REGION=$AWS_REGION npx @aws-amplify/backend-cli pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID --outputs-out-dir . --format json
+  artifacts:
+    baseDirectory: .
+    files:
+      - amplify_outputs.json
 frontend:
   phases:
     preBuild:
@@ -15,3 +25,4 @@ frontend:
   cache:
     paths:
       - my-training-admin/node_modules/**/*
+      - amplify/node_modules/**/*
