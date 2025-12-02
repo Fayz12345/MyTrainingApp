@@ -70,6 +70,8 @@ const schema = a.schema({
         passingScore: a.integer(),
         duration: a.string(), // Course duration (e.g., "45 min", "1 hr 30 min", "2 hr")
         category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
+        tag: a.string(), // Course Tag
+        status: a.string(), // Course status
         createdAt: a.datetime().required(),
         updatedAt: a.datetime().required()
     })
