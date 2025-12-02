@@ -3,7 +3,8 @@ backend:
   phases:
     build:
       commands:
-        - npm --prefix amplify ci
+        - npm ci --cache .npm --prefer-offline
+        - npm --prefix amplify ci --cache ../.npm --prefer-offline
         - CI=true AWS_REGION=$AWS_REGION npx @aws-amplify/backend-cli pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID --outputs-out-dir . --outputs-format json
   artifacts:
     baseDirectory: .
