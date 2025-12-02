@@ -2,7 +2,7 @@ import { a, defineData } from '@aws-amplify/backend';
 // Schema includes all 8 models: BusinessUnit, Store, Manager, Course, QuizQuestion, Employee, Assignment, Result
 // CRITICAL FIX: Reordered models to ensure BusinessUnit, Store, Manager are recognized by AppSync
 // These models must be defined first to ensure proper schema generation
-// FORCE COMPLETE REDEPLOY: Trigger full CloudFormation stack update (2025-11-30 - v4)
+// FORCE COMPLETE REDEPLOY: Trigger full CloudFormation stack update (2025-12-01 - v5 - Course fields)
 const schema = a.schema({
     // Hierarchy models - defined first to ensure AppSync includes them
     BusinessUnit: a
