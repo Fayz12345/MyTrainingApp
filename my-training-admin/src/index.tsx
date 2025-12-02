@@ -10,6 +10,7 @@ import SuperAdminDashboard from './components/superadmin/SuperAdminDashboard';
 import BusinessUnitDashboard from './components/businessunit/BusinessUnitDashboard';
 import StoreDashboard from './components/store/StoreDashboard';
 import ManagerDashboard from './components/manager/ManagerDashboard';
+import EmployeeDashboard from './components/employee/EmployeeDashboard';
 
 Amplify.configure(outputs);
 
@@ -69,25 +70,7 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
     );
   }
   
-  // Employees can only login in Flutter, not web
-  if (user && userRole === 'Employee') {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        flexDirection: 'column',
-        gap: '1rem'
-      }}>
-        <h2>Access Denied</h2>
-        <p>Employees can only access the mobile app. This web portal is for administrators only.</p>
-        <button onClick={() => signOut?.()} style={{ padding: '10px 20px' }}>
-          Sign Out
-        </button>
-      </div>
-    );
-  }
+  // Employees can now access the web portal
 
   // No valid role
   if (user && !userRole) {
@@ -121,6 +104,8 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
       return <StoreDashboard signOut={signOut} user={user} />;
     case 'Manager':
       return <ManagerDashboard signOut={signOut} user={user} />;
+    case 'Employee':
+      return <EmployeeDashboard signOut={signOut} user={user} />;
     default:
       return null;
   }

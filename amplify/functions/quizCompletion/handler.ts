@@ -10,9 +10,9 @@ const APPSYNC_API_KEY = process.env.APPSYNC_API_KEY || 'da2-la7esrklanbehi5v7e57
 
 interface QuizCompletionEvent {
   assignmentId: string;
-  employeeId: string;
-  courseId: string;
-  score: number;
+  employeeId?: string;
+  courseId?: string;
+  score?: number;
   passed: boolean;
 }
 
@@ -26,7 +26,7 @@ export const handler = async (event: QuizCompletionEvent) => {
   try {
     // Only process if quiz was passed
     if (!event.passed) {
-      console.log(`${logPrefix} Quiz not passed (score: ${event.score}). No notification sent.`);
+      console.log(`${logPrefix} Quiz not passed (score: ${event.score || 'N/A'}). No notification sent.`);
       console.log(`${logPrefix} ✅ Completion logged for future API validation (failed quiz)`);
       return { 
         status: 'success', 
@@ -35,7 +35,7 @@ export const handler = async (event: QuizCompletionEvent) => {
       };
     }
 
-    console.log(`${logPrefix} [STEP 1] Quiz passed! Fetching employee and course details...`);
+    console.log(`${logPrefix} [STEP 1] Quiz passed! Processing completion...`);
     
     // Fetch assignment details with employee and course information
     const assignmentQuery = {
@@ -89,10 +89,14 @@ export const handler = async (event: QuizCompletionEvent) => {
 
     // Log completion for future scheduling API validation
     console.log(`${logPrefix} [STEP 1.3] ✅ Training completion logged for future API validation`);
-    console.log(`${logPrefix} [STEP 1.3] Employee: ${employeeName}, Course: ${courseTitle}, Score: ${event.score}%`);
+    console.log(`${logPrefix} [STEP 1.3] Employee: ${employeeName}, Course: ${courseTitle}, Score: ${event.score || 'N/A'}%`);
+
+    // Update assignment to completed (Lambda has permission, employees don't need it)
+    console.log(`${logPrefix} [STEP 2] Updating assignment to completed...`);
+    await updateAssignmentToCompleted(event.assignmentId);
 
     if (!managerEmail) {
-      console.warn(`${logPrefix} [STEP 1.4] ⚠️ No manager email found. Employee may not have a manager assigned.`);
+      console.warn(`${logPrefix} [STEP 3] ⚠️ No manager email found. Employee may not have a manager assigned.`);
       return {
         status: 'success',
         message: 'Training completed but no manager email found',
@@ -103,13 +107,13 @@ export const handler = async (event: QuizCompletionEvent) => {
       };
     }
 
-    console.log(`${logPrefix} [STEP 2] Preparing SNS notification...`);
+    console.log(`${logPrefix} [STEP 3] Sending SNS notification...`);
     
     // Get SNS Topic ARN from environment variable
     const SNS_TOPIC_ARN = process.env.SNS_TOPIC_ARN;
     
     if (!SNS_TOPIC_ARN || SNS_TOPIC_ARN === 'YOUR_SNS_TOPIC_ARN') {
-      console.warn(`${logPrefix} [STEP 2.1] ⚠️ SNS_TOPIC_ARN not configured. Logging completion only.`);
+      console.warn(`${logPrefix} [STEP 3.1] ⚠️ SNS_TOPIC_ARN not configured. Logging completion only.`);
       return {
         status: 'success',
         message: 'Training completed but SNS not configured',
@@ -127,7 +131,7 @@ Training Completion Notification
 
 Employee: ${employeeName}
 Course: ${courseTitle}
-Score: ${event.score}%
+Score: ${event.score || 0}%
 Status: Passed ✅
 
 The employee has successfully completed the training course and passed the quiz.
@@ -135,8 +139,8 @@ The employee has successfully completed the training course and passed the quiz.
 This completion has been logged in the system for scheduling API validation.
     `.trim();
 
-    console.log(`${logPrefix} [STEP 2.2] Sending SNS notification to: ${managerEmail}`);
-    console.log(`${logPrefix} [STEP 2.3] SNS Topic ARN: ${SNS_TOPIC_ARN}`);
+    console.log(`${logPrefix} [STEP 3.2] Sending SNS notification to: ${managerEmail}`);
+    console.log(`${logPrefix} [STEP 3.3] SNS Topic ARN: ${SNS_TOPIC_ARN}`);
 
     // Send SNS notification
     const snsParams = {
@@ -154,7 +158,7 @@ This completion has been logged in the system for scheduling API validation.
         },
         'score': {
           DataType: 'Number',
-          StringValue: event.score.toString()
+          StringValue: (event.score || 0).toString()
         },
         'assignmentId': {
           DataType: 'String',
@@ -164,7 +168,7 @@ This completion has been logged in the system for scheduling API validation.
     };
 
     await snsClient.send(new PublishCommand(snsParams));
-    console.log(`${logPrefix} [STEP 2.4] ✅ SNS notification sent successfully`);
+    console.log(`${logPrefix} [STEP 3.4] ✅ SNS notification sent successfully`);
 
     console.log(`${logPrefix} ========================================`);
     console.log(`${logPrefix} ✅ PROCESS COMPLETE`);
@@ -176,7 +180,7 @@ This completion has been logged in the system for scheduling API validation.
       employeeName,
       courseTitle,
       managerEmail,
-      score: event.score,
+      score: event.score || 0,
       logged: true
     };
   } catch (error: any) {
@@ -197,6 +201,48 @@ This completion has been logged in the system for scheduling API validation.
     };
   }
 };
+
+// Update assignment to completed status (Lambda has permission to do this)
+async function updateAssignmentToCompleted(assignmentId: string) {
+  const logPrefix = '[QUIZ_COMPLETION]';
+  console.log(`${logPrefix} [UPDATE] Updating assignment ${assignmentId} to completed...`);
+  
+  try {
+    const updateMutation = {
+      query: `
+        mutation UpdateAssignment($input: UpdateAssignmentInput!) {
+          updateAssignment(input: $input) {
+            id
+            status
+            isTrainingComplete
+          }
+        }
+      `,
+      variables: {
+        input: {
+          id: assignmentId,
+          status: 'completed',
+          isTrainingComplete: true
+        }
+      }
+    };
+
+    const updateResult = await queryAppSync(updateMutation);
+    
+    if (updateResult?.data?.updateAssignment) {
+      console.log(`${logPrefix} [UPDATE] ✅ Assignment updated successfully`);
+      return true;
+    } else {
+      console.warn(`${logPrefix} [UPDATE] ⚠️ Assignment update returned null - may need Lambda IAM permissions`);
+      return false;
+    }
+  } catch (error: any) {
+    console.error(`${logPrefix} [UPDATE] ❌ Failed to update assignment:`, error);
+    console.error(`${logPrefix} [UPDATE] Error details:`, error?.message);
+    // Don't throw - notification can still be sent even if update fails
+    return false;
+  }
+}
 
 // Helper function to query AppSync
 async function queryAppSync(query: any): Promise<any> {

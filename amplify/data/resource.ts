@@ -132,7 +132,7 @@ const schema = a.schema({
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete', 'read']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read', 'update']) // Allow employees to update their own assignments (for quiz completion)
     ]),
   Result: a
     .model({

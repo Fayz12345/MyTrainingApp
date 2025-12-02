@@ -1070,6 +1070,13 @@
               "isRequired": false,
               "attributes": []
             },
+            "isTrainingComplete": {
+              "name": "isTrainingComplete",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
