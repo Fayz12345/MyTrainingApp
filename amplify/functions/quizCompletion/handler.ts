@@ -141,19 +141,16 @@ export const handler = async (event: QuizCompletionEvent) => {
       };
     }
 
-    // Create notification message
-    const message = `
-Training Completion Notification
-
-Employee: ${employeeName}
-Course: ${courseTitle}
-Score: ${event.score || 0}%
-Status: Passed ✅
-
-The employee has successfully completed the training course and passed the quiz.
-
-This completion has been logged in the system for scheduling API validation.
-    `.trim();
+    // Create notification message (JSON format for Lambda processing)
+    const message = JSON.stringify({
+      employeeName,
+      courseTitle,
+      score: event.score || 0,
+      managerEmail,
+      managerName,
+      assignmentId: event.assignmentId,
+      timestamp: new Date().toISOString()
+    });
 
     console.log(`${logPrefix} [STEP 3.2] Sending SNS notification to: ${managerEmail}`);
     console.log(`${logPrefix} [STEP 3.3] SNS Topic ARN: ${SNS_TOPIC_ARN}`);
@@ -180,6 +177,14 @@ This completion has been logged in the system for scheduling API validation.
         'assignmentId': {
           DataType: 'String',
           StringValue: event.assignmentId
+        },
+        'managerEmail': {
+          DataType: 'String',
+          StringValue: managerEmail
+        },
+        'managerName': {
+          DataType: 'String',
+          StringValue: managerName
         }
       }
     };

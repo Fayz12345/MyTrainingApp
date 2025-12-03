@@ -1,17 +1,21 @@
 /**
- * Lambda function to subscribe a manager's email to SNS topic
+ * Lambda function to send welcome email to manager via SES
  * 
  * This function is called automatically when a manager is created
- * to subscribe them to training completion notifications.
+ * to send them a welcome email via SES (no confirmation needed).
+ * 
+ * Note: We use SES instead of SNS email subscriptions because:
+ * - SES emails work immediately (no confirmation needed)
+ * - SNS email subscriptions require manual confirmation
+ * - SES provides better control over email content
  */
 
-import { SNSClient, SubscribeCommand, ListSubscriptionsByTopicCommand } from '@aws-sdk/client-sns';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 
-const snsClient = new SNSClient({ region: 'ca-central-1' });
+const sesClient = new SESClient({ region: 'ca-central-1' });
 
-// SNS Topic ARN
-const SNS_TOPIC_ARN = process.env.SNS_TOPIC_ARN || 
-  'arn:aws:sns:ca-central-1:216348571084:training-completion-notifications';
+// SES Configuration
+const FROM_EMAIL = process.env.FROM_EMAIL || 'circular360dev@gmail.com';
 
 interface SubscribeManagerEvent {
   email: string;
@@ -21,99 +25,137 @@ interface SubscribeManagerEvent {
 
 interface SubscriptionResult {
   success: boolean;
-  subscriptionArn?: string;
-  confirmationUrl?: string;
+  sesMessageId?: string;
   message?: string;
   error?: string;
 }
 
-export const handler = async (event: SubscribeManagerEvent): Promise<SubscriptionResult> => {
-  const logPrefix = '[SUBSCRIBE_MANAGER_SNS]';
+export const handler = async (event: any): Promise<SubscriptionResult> => {
+  const logPrefix = '[SEND_MANAGER_WELCOME_EMAIL]';
   console.log(`${logPrefix} ========================================`);
-  console.log(`${logPrefix} 📧 Subscribing Manager to SNS Topic`);
-  console.log(`${logPrefix} Event:`, JSON.stringify(event, null, 2));
+  console.log(`${logPrefix} 📧 Sending Welcome Email to Manager via SES`);
+  console.log(`${logPrefix} Raw Event:`, JSON.stringify(event, null, 2));
   console.log(`${logPrefix} ========================================`);
 
   try {
+    // Handle Function URL invocation (HTTP event with body)
+    let requestData: SubscribeManagerEvent;
+    
+    if (event.body) {
+      // Function URL invocation - body is a JSON string
+      console.log(`${logPrefix} [PARSING] Parsing Function URL event body...`);
+      requestData = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+      console.log(`${logPrefix} [PARSING] Parsed data:`, JSON.stringify(requestData, null, 2));
+    } else if (event.email) {
+      // Direct invocation (for testing)
+      requestData = event as SubscribeManagerEvent;
+    } else {
+      throw new Error('Invalid event format. Expected email in event.body or event.email');
+    }
+
     // Validate input
-    if (!event.email) {
+    if (!requestData.email) {
+      console.error(`${logPrefix} [VALIDATION] Email missing in request data`);
+      console.error(`${logPrefix} [VALIDATION] Request data:`, JSON.stringify(requestData, null, 2));
       throw new Error('Email is required');
     }
 
-    const email = event.email.toLowerCase().trim();
-    const managerName = event.name || 'Manager';
+    const email = requestData.email.toLowerCase().trim();
+    const managerName = requestData.name || 'Manager';
 
     console.log(`${logPrefix} [STEP 1] Validating input...`);
     console.log(`${logPrefix} [STEP 1] Email: ${email}`);
     console.log(`${logPrefix} [STEP 1] Manager Name: ${managerName}`);
 
-    // Check if already subscribed
-    console.log(`${logPrefix} [STEP 2] Checking existing subscriptions...`);
-    const listCommand = new ListSubscriptionsByTopicCommand({
-      TopicArn: SNS_TOPIC_ARN
-    });
-    
-    const existingSubs = await snsClient.send(listCommand);
-    const existingSubscription = existingSubs.Subscriptions?.find(
-      sub => sub.Protocol === 'email' && sub.Endpoint?.toLowerCase() === email
-    );
+    // Skip SNS email subscriptions - we use SES for direct email delivery
+    // SNS email subscriptions require manual confirmation, which is not ideal
+    // SES emails work immediately without confirmation
+    console.log(`${logPrefix} [STEP 2] Skipping SNS email subscription (using SES instead)`);
+    console.log(`${logPrefix} [STEP 2] SNS email subscriptions require confirmation - SES does not`);
 
-    if (existingSubscription) {
-      const isConfirmed = !existingSubscription.SubscriptionArn?.includes('PendingConfirmation');
-      
-      if (isConfirmed) {
-        console.log(`${logPrefix} [STEP 2] ✅ Manager already subscribed and confirmed`);
-        return {
-          success: true,
-          subscriptionArn: existingSubscription.SubscriptionArn,
-          message: 'Manager already subscribed and confirmed'
-        };
-      } else {
-        console.log(`${logPrefix} [STEP 2] ⚠️ Manager subscription pending confirmation`);
-        // Extract token from ARN if possible
-        const token = existingSubscription.SubscriptionArn?.split(':').pop();
-        const confirmationUrl = token 
-          ? `https://sns.ca-central-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=${SNS_TOPIC_ARN}&Token=${token}`
-          : undefined;
-        
-        return {
-          success: true,
-          subscriptionArn: existingSubscription.SubscriptionArn,
-          confirmationUrl,
-          message: 'Subscription created but pending confirmation. Check email inbox for confirmation link.'
-        };
-      }
-    }
+    // Send welcome email via SES (no confirmation needed)
+    console.log(`${logPrefix} [STEP 3] Sending welcome email via SES...`);
+    let sesMessageId: string | undefined;
+    try {
+      const emailSubject = `Welcome to Training Notifications - ${managerName}`;
+      const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; background-color: #f9f9f9; }
+            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>Welcome to Training Notifications</h2>
+            </div>
+            <div class="content">
+              <p>Dear ${managerName},</p>
+              <p>You have been set up to receive training completion notifications.</p>
+              <p>You will receive email notifications automatically when employees under your management complete their training courses and pass quizzes.</p>
+              <p>No confirmation is required - you're all set!</p>
+              <p>Thank you for using the Training Management System.</p>
+            </div>
+            <div class="footer">
+              <p>This is an automated notification from the Training Management System.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
 
-    // Subscribe manager to SNS topic
-    console.log(`${logPrefix} [STEP 3] Subscribing ${managerName} (${email}) to SNS topic...`);
-    console.log(`${logPrefix} [STEP 3] Topic ARN: ${SNS_TOPIC_ARN}`);
-    
-    const subscribeCommand = new SubscribeCommand({
-      TopicArn: SNS_TOPIC_ARN,
-      Protocol: 'email',
-      Endpoint: email
-    });
+      const emailText = `
+Welcome to Training Notifications
 
-    const response = await snsClient.send(subscribeCommand);
-    const subscriptionArn = response.SubscriptionArn;
+Dear ${managerName},
 
-    console.log(`${logPrefix} [STEP 3] ✅ Subscription created`);
-    console.log(`${logPrefix} [STEP 3] Subscription ARN: ${subscriptionArn}`);
+You have been set up to receive training completion notifications.
 
-    // Check if subscription is pending confirmation
-    const isPending = subscriptionArn?.includes('PendingConfirmation');
-    
-    let confirmationUrl: string | undefined;
-    if (isPending && subscriptionArn) {
-      // Extract token from ARN (format: arn:aws:sns:region:account:topic:token)
-      const parts = subscriptionArn.split(':');
-      const token = parts[parts.length - 1];
-      confirmationUrl = `https://sns.ca-central-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=${SNS_TOPIC_ARN}&Token=${token}`;
-      console.log(`${logPrefix} [STEP 3] ⚠️ Subscription pending confirmation`);
-      console.log(`${logPrefix} [STEP 3] Confirmation URL: ${confirmationUrl}`);
-    } else {
-      console.log(`${logPrefix} [STEP 3] ✅ Subscription confirmed automatically`);
+You will receive email notifications automatically when employees under your management complete their training courses and pass quizzes.
+
+No confirmation is required - you're all set!
+
+Thank you for using the Training Management System.
+      `.trim();
+
+      const sendEmailCommand = new SendEmailCommand({
+        Source: FROM_EMAIL,
+        Destination: {
+          ToAddresses: [email]
+        },
+        Message: {
+          Subject: {
+            Data: emailSubject,
+            Charset: 'UTF-8'
+          },
+          Body: {
+            Html: {
+              Data: emailHtml,
+              Charset: 'UTF-8'
+            },
+            Text: {
+              Data: emailText,
+              Charset: 'UTF-8'
+            }
+          }
+        }
+      });
+
+      const sesResponse = await sesClient.send(sendEmailCommand);
+      sesMessageId = sesResponse.MessageId;
+      console.log(`${logPrefix} [STEP 3] ✅ Welcome email sent via SES`);
+      console.log(`${logPrefix} [STEP 3] SES MessageId: ${sesMessageId}`);
+    } catch (sesError: any) {
+      // Critical - if SES fails, we should know about it
+      console.error(`${logPrefix} [STEP 3] ❌ Failed to send welcome email via SES:`, sesError?.message);
+      console.error(`${logPrefix} [STEP 3] SES Error:`, sesError);
+      throw new Error(`Failed to send welcome email: ${sesError?.message || 'Unknown error'}`);
     }
 
     console.log(`${logPrefix} ========================================`);
@@ -122,15 +164,12 @@ export const handler = async (event: SubscribeManagerEvent): Promise<Subscriptio
 
     return {
       success: true,
-      subscriptionArn,
-      confirmationUrl,
-      message: isPending 
-        ? 'Subscription created. Manager will receive confirmation email.'
-        : 'Subscription created and confirmed successfully.'
+      sesMessageId,
+      message: 'Welcome email sent successfully via SES. No confirmation required.'
     };
   } catch (error: any) {
     console.error(`${logPrefix} ========================================`);
-    console.error(`${logPrefix} ❌ ERROR IN SUBSCRIBE MANAGER SNS`);
+    console.error(`${logPrefix} ❌ ERROR SENDING WELCOME EMAIL`);
     console.error(`${logPrefix} Error:`, error);
     console.error(`${logPrefix} Error message:`, error?.message);
     console.error(`${logPrefix} Stack:`, error?.stack);
@@ -139,7 +178,7 @@ export const handler = async (event: SubscribeManagerEvent): Promise<Subscriptio
     return {
       success: false,
       error: error?.message || 'Unknown error',
-      message: `Failed to subscribe manager: ${error?.message || 'Unknown error'}`
+      message: `Failed to send welcome email: ${error?.message || 'Unknown error'}`
     };
   }
 };

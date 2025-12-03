@@ -9,6 +9,7 @@
     "@aws-amplify/backend": "latest",
     "@aws-amplify/backend-cli": "latest",
     "@aws-sdk/client-cognito-identity-provider": "^3.0.0",
+    "@aws-sdk/client-ses": "^3.943.0",
     "@aws-sdk/client-sns": "^3.0.0"
   },
   "devDependencies": {
