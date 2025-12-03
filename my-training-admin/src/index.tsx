@@ -70,25 +70,7 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
     );
   }
   
-  // Employee web access is temporarily disabled
-  if (userRole === 'Employee') {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        flexDirection: 'column',
-        gap: '1rem'
-      }}>
-        <h2>Access Denied</h2>
-        <p>Employee web access is currently disabled. Please use the mobile app to access your training.</p>
-        <button onClick={() => signOut?.()} style={{ padding: '10px 20px' }}>
-          Sign Out
-        </button>
-      </div>
-    );
-  }
+  // Employee web access is now enabled
 
   // No valid role
   if (user && !userRole) {
@@ -122,8 +104,8 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
       return <StoreDashboard signOut={signOut} user={user} />;
     case 'Manager':
       return <ManagerDashboard signOut={signOut} user={user} />;
-    // case 'Employee': // Temporarily disabled - EmployeeDashboard file remains intact
-    //   return <EmployeeDashboard signOut={signOut} user={user} />;
+    case 'Employee':
+      return <EmployeeDashboard signOut={signOut} user={user} />;
     default:
       return null;
   }

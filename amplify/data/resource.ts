@@ -60,7 +60,8 @@ const schema = a.schema({
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('BusinessUnit').to(['read']),
       allow.group('Store').to(['create', 'read', 'update', 'delete']),
-      allow.group('Managers').to(['read'])
+      allow.group('Managers').to(['read']),
+      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read manager details for notifications
     ]),
   Course: a
     .model({
@@ -81,7 +82,8 @@ const schema = a.schema({
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
+      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read course details for notifications
     ]),
   QuizQuestion: a
     .model({
@@ -116,7 +118,8 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
+      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read employee details for notifications
     ]),
   Assignment: a
     .model({
@@ -133,7 +136,8 @@ const schema = a.schema({
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete', 'read']),
-      allow.group('Employees').to(['read', 'update']) // Allow employees to update their own assignments (for quiz completion)
+      allow.group('Employees').to(['read', 'update']), // Allow employees to update their own assignments (for quiz completion)
+      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read assignments for notifications
     ]),
   Result: a
     .model({

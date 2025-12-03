@@ -68,10 +68,22 @@ export const handler = async (event: QuizCompletionEvent) => {
     };
 
     console.log(`${logPrefix} [STEP 1.1] Querying AppSync for assignment details...`);
+    console.log(`${logPrefix} [STEP 1.1] Assignment ID: ${event.assignmentId}`);
     const assignmentData = await queryAppSync(assignmentQuery);
     
+    // Log full response for debugging
+    console.log(`${logPrefix} [STEP 1.1] AppSync Response:`, JSON.stringify(assignmentData, null, 2));
+    
+    // Check for errors in response
+    if (assignmentData?.errors) {
+      console.error(`${logPrefix} [STEP 1.1] AppSync Errors:`, JSON.stringify(assignmentData.errors, null, 2));
+      throw new Error(`AppSync query failed: ${JSON.stringify(assignmentData.errors)}`);
+    }
+    
     if (!assignmentData?.data?.getAssignment) {
-      throw new Error('Assignment not found');
+      console.error(`${logPrefix} [STEP 1.1] Assignment not found in response`);
+      console.error(`${logPrefix} [STEP 1.1] Full response data:`, JSON.stringify(assignmentData?.data, null, 2));
+      throw new Error(`Assignment not found. Assignment ID: ${event.assignmentId}. This may be an authorization issue - API key may not have permission to read Assignment.`);
     }
 
     const assignment = assignmentData.data.getAssignment;
@@ -308,19 +320,27 @@ async function queryAppSync(query: any): Promise<any> {
         'x-api-key': APPSYNC_API_KEY
       },
       timeout: 10000
-    }, (res) => {
+      }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
+          
+          // Log response for debugging
+          console.log(`[QUIZ_COMPLETION] AppSync HTTP Status: ${res.statusCode}`);
+          if (parsed.errors) {
+            console.error(`[QUIZ_COMPLETION] AppSync Errors:`, JSON.stringify(parsed.errors, null, 2));
+          }
+          
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve(parsed);
           } else {
-            reject(new Error(`AppSync returned status ${res.statusCode}: ${data}`));
+            // Include full response in error for debugging
+            reject(new Error(`AppSync returned status ${res.statusCode}: ${JSON.stringify(parsed, null, 2)}`));
           }
         } catch (e) {
-          reject(new Error(`Failed to parse response: ${e}`));
+          reject(new Error(`Failed to parse response: ${e}. Raw response: ${data.substring(0, 500)}`));
         }
       });
     });
