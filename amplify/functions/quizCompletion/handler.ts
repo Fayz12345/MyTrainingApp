@@ -91,9 +91,13 @@ export const handler = async (event: QuizCompletionEvent) => {
     console.log(`${logPrefix} [STEP 1.3] ✅ Training completion logged for future API validation`);
     console.log(`${logPrefix} [STEP 1.3] Employee: ${employeeName}, Course: ${courseTitle}, Score: ${event.score || 'N/A'}%`);
 
-    // Note: Assignment is updated by frontend (employees have update permission)
-    // Lambda only handles notification, not assignment update
-    console.log(`${logPrefix} [STEP 2] Assignment should already be updated by frontend`);
+    // Update assignment to completed status and set is_training_complete = true
+    console.log(`${logPrefix} [STEP 2] Updating assignment status to completed...`);
+    const updateSuccess = await updateAssignmentToCompleted(event.assignmentId);
+    
+    if (!updateSuccess) {
+      console.warn(`${logPrefix} [STEP 2] ⚠️ Assignment update failed, but continuing with notification`);
+    }
 
     if (!managerEmail) {
       console.warn(`${logPrefix} [STEP 3] ⚠️ No manager email found. Employee may not have a manager assigned.`);
@@ -141,6 +145,7 @@ This completion has been logged in the system for scheduling API validation.
 
     console.log(`${logPrefix} [STEP 3.2] Sending SNS notification to: ${managerEmail}`);
     console.log(`${logPrefix} [STEP 3.3] SNS Topic ARN: ${SNS_TOPIC_ARN}`);
+    console.log(`${logPrefix} [STEP 3.3] SNS Region: ca-central-1`);
 
     // Send SNS notification
     const snsParams = {
@@ -167,8 +172,40 @@ This completion has been logged in the system for scheduling API validation.
       }
     };
 
-    await snsClient.send(new PublishCommand(snsParams));
-    console.log(`${logPrefix} [STEP 3.4] ✅ SNS notification sent successfully`);
+    let snsMessageId: string | undefined;
+    try {
+      console.log(`${logPrefix} [STEP 3.4] Publishing to SNS with params:`, JSON.stringify({
+        TopicArn: SNS_TOPIC_ARN,
+        Subject: snsParams.Subject,
+        MessageLength: message.length,
+        MessageAttributes: Object.keys(snsParams.MessageAttributes)
+      }, null, 2));
+
+      const snsResponse = await snsClient.send(new PublishCommand(snsParams));
+      snsMessageId = snsResponse.MessageId;
+      
+      console.log(`${logPrefix} [STEP 3.5] ✅ SNS notification sent successfully`);
+      console.log(`${logPrefix} [STEP 3.5] SNS MessageId: ${snsMessageId}`);
+      console.log(`${logPrefix} [STEP 3.5] SNS Response:`, JSON.stringify(snsResponse, null, 2));
+    } catch (snsError: any) {
+      console.error(`${logPrefix} [STEP 3.4] ❌ SNS Publish Error:`, snsError);
+      console.error(`${logPrefix} [STEP 3.4] Error Name:`, snsError?.name);
+      console.error(`${logPrefix} [STEP 3.4] Error Code:`, snsError?.Code || snsError?.code);
+      console.error(`${logPrefix} [STEP 3.4] Error Message:`, snsError?.message);
+      console.error(`${logPrefix} [STEP 3.4] Error Stack:`, snsError?.stack);
+      
+      // Check for common SNS errors
+      if (snsError?.name === 'NotFound' || snsError?.Code === 'NotFound') {
+        console.error(`${logPrefix} [STEP 3.4] ⚠️ SNS Topic not found. Verify the Topic ARN is correct.`);
+      } else if (snsError?.name === 'AuthorizationError' || snsError?.Code === 'AuthorizationError') {
+        console.error(`${logPrefix} [STEP 3.4] ⚠️ Lambda lacks permission to publish to SNS. Check IAM role permissions.`);
+      } else if (snsError?.name === 'InvalidParameter' || snsError?.Code === 'InvalidParameter') {
+        console.error(`${logPrefix} [STEP 3.4] ⚠️ Invalid SNS parameters. Check Topic ARN format.`);
+      }
+      
+      // Re-throw to be caught by outer try-catch
+      throw new Error(`SNS notification failed: ${snsError?.message || 'Unknown error'}`);
+    }
 
     console.log(`${logPrefix} ========================================`);
     console.log(`${logPrefix} ✅ PROCESS COMPLETE`);
@@ -181,7 +218,9 @@ This completion has been logged in the system for scheduling API validation.
       courseTitle,
       managerEmail,
       score: event.score || 0,
-      logged: true
+      logged: true,
+      snsMessageId: snsMessageId,
+      snsTopicArn: SNS_TOPIC_ARN
     };
   } catch (error: any) {
     console.error(`${logPrefix} ========================================`);
@@ -208,6 +247,7 @@ async function updateAssignmentToCompleted(assignmentId: string) {
   console.log(`${logPrefix} [UPDATE] Updating assignment ${assignmentId} to completed...`);
   
   try {
+    const now = new Date().toISOString();
     const updateMutation = {
       query: `
         mutation UpdateAssignment($input: UpdateAssignmentInput!) {
@@ -215,6 +255,7 @@ async function updateAssignmentToCompleted(assignmentId: string) {
             id
             status
             isTrainingComplete
+            trainingCompletedAt
           }
         }
       `,
@@ -222,7 +263,8 @@ async function updateAssignmentToCompleted(assignmentId: string) {
         input: {
           id: assignmentId,
           status: 'completed',
-          isTrainingComplete: true
+          isTrainingComplete: true,
+          trainingCompletedAt: now
         }
       }
     };
@@ -231,14 +273,20 @@ async function updateAssignmentToCompleted(assignmentId: string) {
     
     if (updateResult?.data?.updateAssignment) {
       console.log(`${logPrefix} [UPDATE] ✅ Assignment updated successfully`);
+      console.log(`${logPrefix} [UPDATE] Status: ${updateResult.data.updateAssignment.status}, isTrainingComplete: ${updateResult.data.updateAssignment.isTrainingComplete}`);
       return true;
     } else {
-      console.warn(`${logPrefix} [UPDATE] ⚠️ Assignment update returned null - may need Lambda IAM permissions`);
+      // Check for errors in the response
+      if (updateResult?.errors) {
+        console.error(`${logPrefix} [UPDATE] AppSync errors:`, JSON.stringify(updateResult.errors, null, 2));
+      }
+      console.warn(`${logPrefix} [UPDATE] ⚠️ Assignment update returned null - may need Lambda IAM permissions or API key authorization`);
       return false;
     }
   } catch (error: any) {
     console.error(`${logPrefix} [UPDATE] ❌ Failed to update assignment:`, error);
     console.error(`${logPrefix} [UPDATE] Error details:`, error?.message);
+    console.error(`${logPrefix} [UPDATE] Stack trace:`, error?.stack);
     // Don't throw - notification can still be sent even if update fails
     return false;
   }
