@@ -14,9 +14,6 @@
 
 import { LambdaClient, GetFunctionCommand, GetFunctionUrlConfigCommand, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { SNSClient, ListSubscriptionsByTopicCommand, GetTopicAttributesCommand } from '@aws-sdk/client-sns';
-import { AppSyncClient, GraphQLClient } from '@aws-sdk/client-appsync';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
 
 const lambdaClient = new LambdaClient({ region: 'ca-central-1' });
 const snsClient = new SNSClient({ region: 'ca-central-1' });
