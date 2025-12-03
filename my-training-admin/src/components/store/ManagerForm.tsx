@@ -77,6 +77,42 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
     }));
   };
 
+  const subscribeManagerToSNS = async (email: string, name: string, managerId: string) => {
+    const logPrefix = '[SUBSCRIBE_MANAGER_SNS]';
+    const LAMBDA_FUNCTION_URL = process.env.REACT_APP_SUBSCRIBE_MANAGER_SNS_LAMBDA_URL || '';
+    
+    if (!LAMBDA_FUNCTION_URL) {
+      console.warn(`${logPrefix} Lambda Function URL not configured. Skipping SNS subscription.`);
+      return { success: false, error: 'Lambda Function URL not configured' };
+    }
+
+    try {
+      console.log(`${logPrefix} Calling subscribe manager Lambda...`);
+      const response = await fetch(LAMBDA_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          name,
+          managerId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lambda returned status ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`${logPrefix} Lambda response:`, result);
+      return result;
+    } catch (err) {
+      console.error(`${logPrefix} Lambda invocation error:`, err);
+      throw err;
+    }
+  };
+
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
     let password = '';
@@ -308,6 +344,23 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
       
       await client.models.Manager.create(managerData);
       console.log(`${logPrefix} [STEP 4] ✅ Manager record created in database`);
+
+      // Automatically subscribe manager to SNS topic for notifications
+      console.log(`${logPrefix} [STEP 4.1] Subscribing manager to SNS topic...`);
+      try {
+        const subscribeResult = await subscribeManagerToSNS(formData.email, formData.name, result.managerId);
+        if (subscribeResult.success) {
+          console.log(`${logPrefix} [STEP 4.1] ✅ Manager subscribed to SNS topic`);
+          if (subscribeResult.confirmationUrl) {
+            console.log(`${logPrefix} [STEP 4.1] ⚠️ Confirmation required: ${subscribeResult.confirmationUrl}`);
+          }
+        } else {
+          console.warn(`${logPrefix} [STEP 4.1] ⚠️ Subscription failed: ${subscribeResult.error}`);
+        }
+      } catch (snsError) {
+        // Non-critical error - log but don't fail manager creation
+        console.warn(`${logPrefix} [STEP 4.1] ⚠️ Failed to subscribe manager to SNS (non-critical):`, snsError);
+      }
 
       // IMPORTANT: The external Lambda creates the user but may not add them to Managers group
       // We need to add them manually or wait for post-confirmation trigger
