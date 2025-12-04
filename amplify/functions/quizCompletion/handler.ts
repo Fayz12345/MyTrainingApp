@@ -215,7 +215,8 @@ export const handler = async (event: any) => {
       timestamp: new Date().toISOString()
     };
 
-    // Create HTML-formatted message for email subscriptions
+    // Create HTML-formatted message for Lambda subscribers (sendManagerNotification)
+    // Note: SNS email subscriptions don't render HTML, so we use a Lambda to send HTML emails via SES
     const formattedDate = new Date(notificationData.timestamp).toLocaleString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -355,11 +356,11 @@ export const handler = async (event: any) => {
 </html>
     `.trim();
 
-    // Create JSON message for Lambda subscribers (keep for backward compatibility)
+    // Create JSON message for Lambda subscribers (sendManagerNotification will use MessageAttributes)
     const jsonMessage = JSON.stringify(notificationData);
     
-    // Use HTML message for email subscriptions, JSON for Lambda processing
-    // SNS will use HTML format for email subscriptions automatically
+    // Use HTML message - sendManagerNotification Lambda will extract data from MessageAttributes
+    // and send properly formatted HTML email via SES
     const message = htmlMessage;
 
     console.log(`${logPrefix} [STEP 3.2] Sending SNS notification to: ${managerEmail}`);
@@ -395,6 +396,10 @@ export const handler = async (event: any) => {
         'managerName': {
           DataType: 'String',
           StringValue: managerName
+        },
+        'timestamp': {
+          DataType: 'String',
+          StringValue: notificationData.timestamp
         }
       }
     };

@@ -32,6 +32,8 @@ interface QuizCompletionMessage {
   score?: number;
   managerEmail?: string;
   managerName?: string;
+  assignmentId?: string;
+  timestamp?: string;
 }
 
 export const handler = async (event: SNSEvent) => {
@@ -75,6 +77,25 @@ export const handler = async (event: SNSEvent) => {
     const scoreStr = getFromAttributes('score') || message.score?.toString() || '0';
     const score = parseInt(scoreStr) || 0;
     const managerName = getFromAttributes('managerName') || message.managerName || 'Manager';
+    const assignmentId = getFromAttributes('assignmentId') || message.assignmentId || 'N/A';
+    
+    // Extract timestamp and format date
+    const timestampStr = getFromAttributes('timestamp') || message.timestamp;
+    let formattedDate = 'N/A';
+    if (timestampStr) {
+      try {
+        formattedDate = new Date(timestampStr).toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZoneName: 'short'
+        });
+      } catch (e) {
+        formattedDate = timestampStr;
+      }
+    }
     
     console.log(`${logPrefix} [EXTRACTION] Extracted data:`, {
       managerEmail,
@@ -206,6 +227,14 @@ export const handler = async (event: SNSEvent) => {
         <tr>
           <td><strong>Status</strong></td>
           <td class="status-cell">✅ Passed</td>
+        </tr>
+        <tr>
+          <td><strong>Assignment ID</strong></td>
+          <td>${assignmentId}</td>
+        </tr>
+        <tr>
+          <td><strong>Completion Date</strong></td>
+          <td>${formattedDate}</td>
         </tr>
       </table>
       
