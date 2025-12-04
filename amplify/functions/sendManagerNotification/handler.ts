@@ -44,14 +44,46 @@ export const handler = async (event: SNSEvent) => {
   try {
     // Parse SNS message
     const snsRecord = event.Records[0];
-    const message: QuizCompletionMessage = JSON.parse(snsRecord.Sns.Message);
+    const rawMessage = snsRecord.Sns.Message;
+    const messageAttributes = snsRecord.Sns.MessageAttributes || {};
     
-    const managerEmail = message.managerEmail || 
-      snsRecord.Sns.MessageAttributes?.managerEmail?.Value;
-    const employeeName = message.employeeName || 'Employee';
-    const courseTitle = message.courseTitle || 'Course';
-    const score = message.score || 0;
-    const managerName = message.managerName || 'Manager';
+    // Try to parse as JSON first (for backward compatibility)
+    // If it fails (e.g., HTML message), extract from MessageAttributes
+    let message: QuizCompletionMessage = {};
+    let useMessageAttributes = false;
+    
+    try {
+      message = JSON.parse(rawMessage);
+      console.log(`${logPrefix} [PARSING] Successfully parsed JSON message`);
+    } catch (parseError) {
+      console.log(`${logPrefix} [PARSING] Message is not JSON (likely HTML), extracting from MessageAttributes`);
+      useMessageAttributes = true;
+    }
+    
+    // Extract data from MessageAttributes (always available) or parsed JSON message
+    // MessageAttributes structure: { key: { Type: 'String', Value: '...' } }
+    const getFromAttributes = (key: string): string | null => {
+      const attr = messageAttributes[key];
+      return (attr && attr.Value !== undefined) ? attr.Value : null;
+    };
+    
+    // Extract values: MessageAttributes are always populated, use as primary source
+    // Fall back to parsed JSON message if available (for backward compatibility)
+    const managerEmail = getFromAttributes('managerEmail') || message.managerEmail || null;
+    const employeeName = getFromAttributes('employeeName') || message.employeeName || 'Employee';
+    const courseTitle = getFromAttributes('courseTitle') || message.courseTitle || 'Course';
+    const scoreStr = getFromAttributes('score') || message.score?.toString() || '0';
+    const score = parseInt(scoreStr) || 0;
+    const managerName = getFromAttributes('managerName') || message.managerName || 'Manager';
+    
+    console.log(`${logPrefix} [EXTRACTION] Extracted data:`, {
+      managerEmail,
+      employeeName,
+      courseTitle,
+      score,
+      managerName,
+      source: useMessageAttributes ? 'MessageAttributes' : 'JSON Message'
+    });
 
     if (!managerEmail) {
       console.error(`${logPrefix} ❌ No manager email found in message`);
@@ -64,48 +96,129 @@ export const handler = async (event: SNSEvent) => {
     console.log(`${logPrefix} [STEP 1] Course: ${courseTitle}`);
     console.log(`${logPrefix} [STEP 1] Score: ${score}%`);
 
-    // Create email content
+    // Create email content with HTML table format
     const subject = `Training Completed: ${employeeName} - ${courseTitle}`;
     const htmlBody = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; background-color: #f9f9f9; }
-          .info { margin: 10px 0; }
-          .score { font-size: 24px; font-weight: bold; color: #4CAF50; }
-          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>🎉 Training Completion Notification</h2>
-          </div>
-          <div class="content">
-            <p>Dear ${managerName},</p>
-            <p>We're pleased to inform you that an employee has successfully completed their training.</p>
-            
-            <div class="info">
-              <strong>Employee:</strong> ${employeeName}<br>
-              <strong>Course:</strong> ${courseTitle}<br>
-              <strong>Score:</strong> <span class="score">${score}%</span><br>
-              <strong>Status:</strong> ✅ Passed
-            </div>
-            
-            <p>The employee has successfully completed the training course and passed the quiz.</p>
-            <p>This completion has been logged in the system for scheduling API validation.</p>
-          </div>
-          <div class="footer">
-            <p>This is an automated notification from the Training Management System.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+    .container {
+      max-width: 600px;
+      margin: 20px auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      background-color: #4CAF50;
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .greeting {
+      margin-bottom: 20px;
+      font-size: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      background-color: #ffffff;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px;
+      text-align: left;
+      font-weight: bold;
+      border: 1px solid #45a049;
+    }
+    td {
+      padding: 12px;
+      border: 1px solid #ddd;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .score-cell {
+      font-size: 18px;
+      font-weight: bold;
+      color: #4CAF50;
+    }
+    .status-cell {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      color: #666;
+      font-size: 12px;
+      border-top: 1px solid #ddd;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎉 Training Completion Notification</h1>
+    </div>
+    <div class="content">
+      <p class="greeting">Dear ${managerName},</p>
+      <p>We're pleased to inform you that an employee has successfully completed their training.</p>
+      
+      <table>
+        <tr>
+          <th>Field</th>
+          <th>Value</th>
+        </tr>
+        <tr>
+          <td><strong>Employee Name</strong></td>
+          <td>${employeeName}</td>
+        </tr>
+        <tr>
+          <td><strong>Course Title</strong></td>
+          <td>${courseTitle}</td>
+        </tr>
+        <tr>
+          <td><strong>Score</strong></td>
+          <td class="score-cell">${score}%</td>
+        </tr>
+        <tr>
+          <td><strong>Status</strong></td>
+          <td class="status-cell">✅ Passed</td>
+        </tr>
+      </table>
+      
+      <p>The employee has successfully completed the training course and passed the quiz.</p>
+      <p>This completion has been logged in the system for scheduling API validation.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated notification from the Training Management System.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
 
     const textBody = `
 Training Completion Notification

@@ -9,4 +9,5 @@ export const subscribeManagerToSNS = defineFunction({
   }
   // Note: IAM permissions for SNS subscribe need to be added manually
   // The Lambda execution role needs: sns:Subscribe, sns:ListSubscriptionsByTopic
+  // SES has been removed - using SNS email subscriptions only
 });
