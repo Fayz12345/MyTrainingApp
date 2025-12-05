@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
@@ -21,6 +24,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentManagerId, setCurrentManagerId] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const getCurrentManager = async () => {
@@ -45,12 +50,63 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     getCurrentManager();
   }, []);
 
+  const validateField = (name: string, value: string): string => {
+    switch (name) {
+      case 'name':
+        if (!value.trim()) return 'Full Name is required';
+        if (value.trim().length < 2) return 'Full Name must be at least 2 characters';
+        return '';
+      case 'email':
+        if (!value.trim()) return 'Email Address is required';
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) return 'Please enter a valid email address';
+        return '';
+      case 'temporaryPassword':
+        if (!value) return 'Temporary Password is required';
+        if (value.length < 8) return 'Password must be at least 8 characters';
+        const hasUpper = /[A-Z]/.test(value);
+        const hasLower = /[a-z]/.test(value);
+        const hasNumber = /[0-9]/.test(value);
+        const hasSpecial = /[!@#$%^&*]/.test(value);
+        if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+          return 'Password must contain uppercase, lowercase, number, and special character';
+        }
+        return '';
+      default:
+        return '';
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Clear error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setTouchedFields(prev => ({ ...prev, [name]: true }));
+    const error = validateField(name, value);
+    if (error) {
+      setFieldErrors(prev => ({ ...prev, [name]: error }));
+    } else {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
   const generateRandomPassword = () => {
@@ -119,15 +175,37 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.email || !formData.name) {
-      setError('Email and name are required');
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    
+    const nameError = validateField('name', formData.name);
+    if (nameError) {
+      errors.name = nameError;
+      touched.name = true;
+    }
+    
+    const emailError = validateField('email', formData.email);
+    if (emailError) {
+      errors.email = emailError;
+      touched.email = true;
+    }
+    
+    const passwordError = validateField('temporaryPassword', formData.temporaryPassword);
+    if (passwordError) {
+      errors.temporaryPassword = passwordError;
+      touched.temporaryPassword = true;
+    }
+    
+    setFieldErrors(errors);
+    setTouchedFields(touched);
+    
+    if (Object.keys(errors).length > 0) {
+      setError('Please fix the errors in the form');
       return;
     }
-
-    if (!formData.temporaryPassword) {
-      setError('Temporary password is required');
-      return;
-    }
+    
+    setError(null);
 
     setSubmitting(true);
     setError(null);
@@ -244,11 +322,31 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         }
       }
       
-      alert(`🎉 Employee created successfully!\n\n👤 Employee: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n👥 Role: ${formData.role}\n🆔 Employee ID: ${result.employeeId}\n🆔 User ID (Cognito): ${result.userId}\n\n✅ The employee can now log in to the mobile app immediately!\n✅ You can assign courses to this employee from the 'Assign Courses' section.`);
+      await MySwal.fire({
+        title: "🎉 Employee Created!",
+        html: `<div style="text-align: left;">
+          <p><strong>👤 Employee:</strong> ${formData.name} (${formData.email})</p>
+          <p><strong>🔑 Password:</strong> ${formData.temporaryPassword}</p>
+          <p><strong>👥 Role:</strong> ${formData.role}</p>
+          <p><strong>🆔 Employee ID:</strong> ${result.employeeId}</p>
+          <p><strong>🆔 User ID (Cognito):</strong> ${result.userId}</p>
+          <hr style="margin: 1rem 0; border: none; border-top: 1px solid #ddd;">
+          <p>✅ The employee can now log in to the mobile app immediately!</p>
+          <p>✅ You can assign courses to this employee from the 'Assign Courses' section.</p>
+        </div>`,
+        icon: "success",
+        confirmButtonText: "OK",
+        width: "600px",
+      });
 
       onEmployeeCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create employee');
+      await MySwal.fire({
+        title: "Error!",
+        text: err instanceof Error ? err.message : 'Failed to create employee',
+        icon: "error",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -271,48 +369,62 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
           </div>
         )}
 
-        {/* Email */}
-        <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Email Address *
-          </label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            placeholder="employee@company.com"
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              fontSize: '1rem'
-            }}
-          />
-        </div>
-
         {/* Name */}
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Full Name *
+            Full Name <span style={{ color: '#d32f2f' }}>*</span>
           </label>
           <input
             type="text"
             name="name"
             value={formData.name}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             placeholder="John Doe"
             required
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.name ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
           />
+          {touchedFields.name && fieldErrors.name && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.name}
+            </div>
+          )}
+        </div>
+
+        {/* Email */}
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Email Address <span style={{ color: '#d32f2f' }}>*</span>
+          </label>
+          <input
+            type="email"
+            name="email"
+            value={formData.email}
+            onChange={handleInputChange}
+            onBlur={handleBlur}
+            placeholder="employee@company.com"
+            required
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: fieldErrors.email ? '2px solid #d32f2f' : '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '1rem',
+              outline: 'none'
+            }}
+          />
+          {touchedFields.email && fieldErrors.email && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.email}
+            </div>
+          )}
         </div>
 
         {/* Department */}
@@ -339,7 +451,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         {/* Role */}
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Role *
+            Role <span style={{ color: '#d32f2f' }}>*</span>
           </label>
           <select
             name="role"
@@ -361,7 +473,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         {/* Temporary Password */}
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Temporary Password *
+            Temporary Password <span style={{ color: '#d32f2f' }}>*</span>
           </label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <input
@@ -369,19 +481,30 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
               name="temporaryPassword"
               value={formData.temporaryPassword}
               onChange={handleInputChange}
+              onBlur={handleBlur}
               placeholder="Enter temporary password"
               required
               style={{
                 flex: 1,
                 padding: '0.75rem',
-                border: '1px solid #ccc',
+                border: fieldErrors.temporaryPassword ? '2px solid #d32f2f' : '1px solid #ccc',
                 borderRadius: '4px',
-                fontSize: '1rem'
+                fontSize: '1rem',
+                outline: 'none'
               }}
             />
             <button
               type="button"
-              onClick={() => setFormData(prev => ({ ...prev, temporaryPassword: generateRandomPassword() }))}
+              onClick={() => {
+                const newPassword = generateRandomPassword();
+                setFormData(prev => ({ ...prev, temporaryPassword: newPassword }));
+                // Clear error when password is generated
+                setFieldErrors(prev => {
+                  const newErrors = { ...prev };
+                  delete newErrors.temporaryPassword;
+                  return newErrors;
+                });
+              }}
               style={{
                 padding: '0.75rem 1rem',
                 backgroundColor: '#f5f5f5',
@@ -394,9 +517,15 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
               Generate
             </button>
           </div>
-          <small style={{ color: '#666', fontSize: '0.8rem' }}>
-            Password must contain uppercase, lowercase, number, and special character (min 8 chars)
-          </small>
+          {touchedFields.temporaryPassword && fieldErrors.temporaryPassword ? (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.temporaryPassword}
+            </div>
+          ) : (
+            <small style={{ color: '#666', fontSize: '0.8rem' }}>
+              Password must contain uppercase, lowercase, number, and special character (min 8 chars)
+            </small>
+          )}
         </div>
 
         {/* Action Buttons */}

@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import BusinessUnitForm from './BusinessUnitForm';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 type BusinessUnit = {
   readonly id: string;
@@ -122,43 +126,60 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
   };
 
   const deleteBusinessUnit = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete business unit "${name}"? This will also delete all associated stores.`)) {
-      return;
-    }
+    const result = await MySwal.fire({
+      title: "Are you sure?",
+      text: `Do you want to delete business unit "${name}"? This will also delete all associated stores.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete!",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       // Verify user is authenticated
-      const { fetchAuthSession } = await import('aws-amplify/auth');
+      const { fetchAuthSession } = await import("aws-amplify/auth");
       const session = await fetchAuthSession({ forceRefresh: true });
-      
+
       if (!session.tokens || !session.tokens.idToken) {
-        throw new Error('User is not authenticated. Please sign in again.');
+        throw new Error("User is not authenticated. Please sign in again.");
       }
 
       const client = generateClient<Schema>({
-        authMode: 'userPool'
+        authMode: "userPool",
       });
-      await client.models.BusinessUnit.delete({ 
-        id 
+
+      await client.models.BusinessUnit.delete({ id });
+
+      MySwal.fire({
+        title: "Deleted!",
+        text: "Business Unit deleted successfully",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
       });
-      alert('Business Unit deleted successfully');
+
       fetchData();
     } catch (err) {
-      console.error('Error deleting business unit:', err);
-      alert('Failed to delete business unit');
+      console.error("Error deleting business unit:", err);
+
+      MySwal.fire({
+        title: "Error!",
+        text: "Failed to delete business unit",
+        icon: "error",
+      });
     }
   };
+
 
   useEffect(() => {
     fetchData();
   }, [refreshTrigger]);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading business units...</p>
-      </div>
-    );
+    return <Loader message="Loading business units..." />;
   }
 
   if (error) {
@@ -266,7 +287,7 @@ const BusinessUnitList: React.FC<BusinessUnitListProps> = ({ refreshTrigger }) =
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem' }}>
                   {businessUnit.name}

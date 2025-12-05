@@ -1,9 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
+import { 
+  Box, 
+  Typography, 
+  Button, 
+  Alert, 
+  AlertTitle, 
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import ManagerForm from '../store/ManagerForm';
-
+import Loader from '../common/Loader';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
 const client = generateClient<Schema>();
+const MySwal = withReactContent(Swal);
 
 type Manager = {
   readonly id: string;
@@ -31,6 +54,7 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingManager, setEditingManager] = useState<Manager | null>(null);
 
   const fetchData = async () => {
     try {
@@ -39,7 +63,6 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
 
       console.log('SuperAdmin ManagerList - Starting to fetch managers...');
 
-      // SuperAdmin can see ALL managers (no filtering by createdBy)
       const [managersResult, storesResult] = await Promise.all([
         client.models.Manager.list({}),
         client.models.Store.list({})
@@ -61,7 +84,6 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
         console.warn('Warning fetching stores:', storesResult.errors);
       }
 
-      // SuperAdmin sees all managers (no filtering)
       const managersData = (managersResult.data as Manager[]) || [];
       console.log('SuperAdmin ManagerList - Total managers fetched:', managersData.length);
       if (managersData.length > 0) {
@@ -76,7 +98,6 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
       }
       setManagers(managersData);
       
-      // Create a map of stores for easy lookup
       const storeMap: Record<string, Store> = {};
       if (storesResult.data) {
         (storesResult.data as Store[]).forEach(store => {
@@ -93,17 +114,38 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
   };
 
   const deleteManager = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete manager "${name}"? This will also remove all their employee assignments.`)) {
-      return;
-    }
+    const result = await MySwal.fire({
+      title: "Are you sure?",
+      text: `Do you want to delete manager "${name}"? This will also remove all their employee assignments.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete!",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       await client.models.Manager.delete({ id });
-      alert('Manager deleted successfully');
+
+      MySwal.fire({
+        title: "Deleted!",
+        text: "Manager deleted successfully",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+
       fetchData();
     } catch (err) {
-      console.error('Error deleting manager:', err);
-      alert('Failed to delete manager');
+      console.error("Delete error:", err);
+
+      MySwal.fire({
+        title: "Error!",
+        text: "Failed to delete manager",
+        icon: "error",
+      });
     }
   };
 
@@ -111,42 +153,17 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
     fetchData();
   }, [refreshTrigger]);
 
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading managers...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem', color: 'red' }}>
-        <p>{error}</p>
-        <button 
-          onClick={fetchData}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#1976d2',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (showCreateForm) {
+  if (showCreateForm || editingManager) {
     return (
       <ManagerForm 
-        onCancel={() => setShowCreateForm(false)}
+        manager={editingManager}
+        onCancel={() => {
+          setShowCreateForm(false);
+          setEditingManager(null);
+        }}
         onManagerCreated={() => {
           setShowCreateForm(false);
-          // Force refresh after a short delay to ensure data is available
+          setEditingManager(null);
           setTimeout(() => {
             fetchData();
           }, 500);
@@ -155,116 +172,169 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
     );
   }
 
+  if (loading) {
+    return <Loader message="Loading managers..." />;
+  }
+
+  if (error) {
+    return (
+      <Alert 
+        severity="error" 
+        action={
+          <Button color="inherit" size="small" onClick={fetchData}>
+            Retry
+          </Button>
+        }
+      >
+        <AlertTitle>Error</AlertTitle>
+        {error}
+      </Alert>
+    );
+  }
+
   if (managers.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>No managers found. Create your first manager to get started.</p>
-        <button 
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          No managers found
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Create your first manager to get started.
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
           onClick={() => setShowCreateForm(true)}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#1976d2',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginTop: '1rem'
-          }}
         >
           Create New Manager
-        </button>
-      </div>
+        </Button>
+      </Box>
     );
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h3>Managers ({managers.length})</h3>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button 
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5">
+          Managers ({managers.length})
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
             onClick={() => setShowCreateForm(true)}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#1976d2',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
           >
-            + Create Manager
-          </button>
-          <button 
+            Create Manager
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
             onClick={fetchData}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#f5f5f5',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
           >
-            🔄 Refresh
-          </button>
-        </div>
-      </div>
+            Refresh
+          </Button>
+        </Box>
+      </Box>
 
-      <div style={{ display: 'grid', gap: '1rem' }}>
-        {managers.map((manager) => {
-          const store = stores[manager.storeId];
-          return (
-            <div 
-              key={manager.id} 
-              style={{
-                border: '1px solid #e0e0e0',
-                borderRadius: '8px',
-                padding: '1.5rem',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem' }}>
-                    {manager.name}
-                  </h4>
-                  <p style={{ margin: '0.5rem 0', color: '#666' }}>
-                    <strong>Email:</strong> {manager.email}
-                  </p>
-                  {store && (
-                    <p style={{ margin: '0.5rem 0', color: '#666' }}>
-                      <strong>Store:</strong> {store.name}
-                    </p>
-                  )}
-                  <p style={{ margin: '0.5rem 0', color: '#999', fontSize: '0.9rem' }}>
-                    Created: {new Date(manager.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
-                  <button
-                    onClick={() => deleteManager(manager.id, manager.name)}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      backgroundColor: '#d32f2f',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+      <TableContainer component={Paper} elevation={2}>
+        <Table sx={{ minWidth: 650 }} aria-label="managers table">
+          <TableHead>
+            <TableRow sx={{ backgroundColor: 'primary.main' }}>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Name</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Store</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Created Date</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold', textAlign: 'center' }}>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {managers.map((manager) => {
+              const store = stores[manager.storeId];
+              return (
+                <TableRow
+                  key={manager.id}
+                  sx={{
+                    '&:nth-of-type(odd)': {
+                      backgroundColor: 'action.hover',
+                    },
+                    '&:hover': {
+                      backgroundColor: 'action.selected',
+                    },
+                  }}
+                >
+                  <TableCell>
+                    <Typography variant="body1" fontWeight="medium" color="primary">
+                      {manager.name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {manager.email}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    {store ? (
+                      <Chip 
+                        label={store.name} 
+                        size="small" 
+                        color="primary" 
+                        variant="outlined"
+                      />
+                    ) : (
+                      <Typography variant="body2" color="text.disabled">
+                        No store assigned
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {new Date(manager.createdAt).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                      <IconButton
+                        color="primary"
+                        size="small"
+                        onClick={() => setEditingManager(manager)}
+                        aria-label="edit manager"
+                        sx={{
+                          '&:hover': {
+                            backgroundColor: 'primary.light',
+                            color: 'white',
+                          },
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        color="error"
+                        size="small"
+                        onClick={() => deleteManager(manager.id, manager.name)}
+                        aria-label="delete manager"
+                        sx={{
+                          '&:hover': {
+                            backgroundColor: 'error.light',
+                            color: 'white',
+                          },
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
   );
 };
 
 export default ManagerList;
-

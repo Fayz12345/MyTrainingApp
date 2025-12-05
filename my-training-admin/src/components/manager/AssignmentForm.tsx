@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
@@ -32,6 +36,8 @@ const AssignmentForm: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const fetchData = async () => {
     try {
@@ -72,18 +78,75 @@ const AssignmentForm: React.FC = () => {
     } else {
       setSelectedCourseIds(selectedCourseIds.filter(id => id !== courseId));
     }
+    // Clear course error when user selects a course
+    if (fieldErrors.courses) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.courses;
+        return newErrors;
+      });
+    }
+  };
+
+  const handleEmployeeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedEmployeeId(e.target.value);
+    // Clear error when user selects an employee
+    if (fieldErrors.employeeId) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.employeeId;
+        return newErrors;
+      });
+    }
+  };
+
+  const handleEmployeeBlur = () => {
+    setTouchedFields(prev => ({ ...prev, employeeId: true }));
+    if (!selectedEmployeeId) {
+      setFieldErrors(prev => ({ ...prev, employeeId: 'Please select an employee' }));
+    } else {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.employeeId;
+        return newErrors;
+      });
+    }
+  };
+
+  const handleCoursesBlur = () => {
+    setTouchedFields(prev => ({ ...prev, courses: true }));
+    if (selectedCourseIds.length === 0) {
+      setFieldErrors(prev => ({ ...prev, courses: 'Please select at least one course' }));
+    } else {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.courses;
+        return newErrors;
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    
     if (!selectedEmployeeId) {
-      alert('Please select an employee');
-      return;
+      errors.employeeId = 'Please select an employee';
+      touched.employeeId = true;
     }
-
+    
     if (selectedCourseIds.length === 0) {
-      alert('Please select at least one course');
+      errors.courses = 'Please select at least one course';
+      touched.courses = true;
+    }
+    
+    setFieldErrors(errors);
+    setTouchedFields(touched);
+    
+    if (Object.keys(errors).length > 0) {
       return;
     }
 
@@ -112,25 +175,33 @@ const AssignmentForm: React.FC = () => {
       const selectedEmployee = employees.find(emp => emp.id === selectedEmployeeId);
       const selectedCourses = courses.filter(course => selectedCourseIds.includes(course.id));
       
-      alert(`Successfully assigned ${selectedCourses.length} course(s) to ${selectedEmployee?.name}`);
+      await MySwal.fire({
+        title: "Success!",
+        text: `Successfully assigned ${selectedCourses.length} course(s) to ${selectedEmployee?.name}`,
+        icon: "success",
+        timer: 2000,
+        showConfirmButton: false,
+      });
       
       // Reset form
       setSelectedEmployeeId('');
       setSelectedCourseIds([]);
+      setFieldErrors({});
+      setTouchedFields({});
     } catch (err) {
       console.error('Error creating assignments:', err);
-      alert('Failed to create assignments: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      await MySwal.fire({
+        title: "Error!",
+        text: 'Failed to create assignments: ' + (err instanceof Error ? err.message : 'Unknown error'),
+        icon: "error",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading courses and employees...</p>
-      </div>
-    );
+    return <Loader message="Loading courses and employees..." />;
   }
 
   if (error) {
@@ -169,29 +240,38 @@ const AssignmentForm: React.FC = () => {
               No employees found. You'll need to add employees first.
             </p>
           ) : (
-            <select
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                fontSize: '1rem'
-              }}
-              required
-            >
-              <option value="">Choose an employee...</option>
-              {employees
-                .filter(emp => emp.isActive !== false)
-                .map(employee => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name} ({employee.email})
-                    {employee.department && ` - ${employee.department}`}
-                  </option>
-                ))
-              }
-            </select>
+            <>
+              <select
+                value={selectedEmployeeId}
+                onChange={handleEmployeeChange}
+                onBlur={handleEmployeeBlur}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: fieldErrors.employeeId ? '2px solid #d32f2f' : '1px solid #ccc',
+                  borderRadius: '4px',
+                  fontSize: '1rem',
+                  outline: 'none'
+                }}
+                required
+              >
+                <option value="">Choose an employee...</option>
+                {employees
+                  .filter(emp => emp.isActive !== false)
+                  .map(employee => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name} ({employee.email})
+                      {employee.department && ` - ${employee.department}`}
+                    </option>
+                  ))
+                }
+              </select>
+              {touchedFields.employeeId && fieldErrors.employeeId && (
+                <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                  {fieldErrors.employeeId}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -205,13 +285,18 @@ const AssignmentForm: React.FC = () => {
               No courses found. Create courses first before assigning them.
             </p>
           ) : (
-            <div style={{ 
-              border: '1px solid #ccc', 
-              borderRadius: '4px', 
-              maxHeight: '300px', 
-              overflowY: 'auto',
-              padding: '1rem'
-            }}>
+            <>
+              <div 
+                style={{ 
+                  border: fieldErrors.courses ? '2px solid #d32f2f' : '1px solid #ccc', 
+                  borderRadius: '4px', 
+                  maxHeight: '300px', 
+                  overflowY: 'auto',
+                  padding: '1rem'
+                }}
+                onBlur={handleCoursesBlur}
+                tabIndex={0}
+              >
               {courses.map(course => (
                 <div key={course.id} style={{ 
                   display: 'flex', 
@@ -242,12 +327,18 @@ const AssignmentForm: React.FC = () => {
                   </label>
                 </div>
               ))}
-            </div>
-          )}
-          {selectedCourseIds.length > 0 && (
-            <p style={{ marginTop: '0.5rem', color: '#1976d2', fontSize: '0.9rem' }}>
-              {selectedCourseIds.length} course(s) selected
-            </p>
+              </div>
+              {touchedFields.courses && fieldErrors.courses && (
+                <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                  {fieldErrors.courses}
+                </div>
+              )}
+              {selectedCourseIds.length > 0 && !fieldErrors.courses && (
+                <p style={{ marginTop: '0.5rem', color: '#1976d2', fontSize: '0.9rem' }}>
+                  {selectedCourseIds.length} course(s) selected
+                </p>
+              )}
+            </>
           )}
         </div>
 

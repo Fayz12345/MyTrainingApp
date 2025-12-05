@@ -2,6 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { getUrl, remove } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
+import {
+  Box,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  CardMedia,
+  CardActions,
+  Grid,
+  Chip,
+  IconButton,
+  Alert,
+  AlertTitle,
+  useTheme,
+  useMediaQuery,
+  CircularProgress,
+} from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import ImageIcon from '@mui/icons-material/Image';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
@@ -28,6 +54,8 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const fetchCourses = async () => {
     try {
@@ -143,9 +171,18 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
   };
 
   const deleteCourse = async (courseId: string, videoKey?: string | null, imageKey?: string | null) => {
-    if (!window.confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
-      return;
-    }
+    const result = await MySwal.fire({
+      title: "Are you sure?",
+      text: "Are you sure you want to delete this course? This action cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+      cancelButtonText: "Cancel",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       // Delete quiz questions first (due to foreign key relationship)
@@ -182,10 +219,20 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
 
       // Refresh course list
       fetchCourses();
-      alert('Course deleted successfully');
+      await MySwal.fire({
+        title: "Deleted!",
+        text: "Course deleted successfully",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error('Error deleting course:', err);
-      alert('Failed to delete course');
+      await MySwal.fire({
+        title: "Error!",
+        text: "Failed to delete course",
+        icon: "error",
+      });
     }
   };
 
@@ -204,196 +251,258 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
   }, [refreshTrigger]);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading courses...</p>
-      </div>
-    );
+    return <Loader message="Loading courses..." />;
   }
 
   if (error) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem', color: 'red' }}>
-        <p>{error}</p>
-        <button 
-          onClick={fetchCourses}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#1976d2',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Retry
-        </button>
-      </div>
+      <Alert 
+        severity="error" 
+        action={
+          <Button color="inherit" size="small" onClick={fetchCourses}>
+            Retry
+          </Button>
+        }
+        sx={{ m: 2 }}
+      >
+        <AlertTitle>Error</AlertTitle>
+        {error}
+      </Alert>
     );
   }
 
   if (courses.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>No courses found. Create your first course to get started!</p>
-      </div>
+      <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          No courses found
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Create your first course to get started!
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h3>Existing Courses ({courses.length})</h3>
-        <button 
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 2
+        }}
+      >
+        <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
+          Courses ({courses.length})
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<RefreshIcon />}
           onClick={fetchCourses}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#f5f5f5',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
+          size={isMobile ? 'small' : 'medium'}
         >
-          🔄 Refresh
-        </button>
-      </div>
+          Refresh
+        </Button>
+      </Box>
 
-      <div style={{ display: 'grid', gap: '1rem' }}>
+      <Grid container spacing={{ xs: 2, sm: 3 }}>
         {courses.map((course) => (
-          <div 
-            key={course.id} 
-            style={{
-              border: '1px solid #e0e0e0',
-              borderRadius: '8px',
-              padding: '1.5rem',
-              backgroundColor: 'white',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, display: 'flex', gap: '1rem' }}>
-                {/* Image Preview */}
-                {course.imageKey && (
-                  <div style={{ flexShrink: 0 }}>
-                    <ImagePreview imageKey={course.imageKey} />
-                  </div>
-                )}
-                
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                    {course.title}
-                  </h4>
-                  
-                  {/* Description */}
-                  {course.description && (
-                    <p style={{ 
-                      margin: '0 0 1rem 0', 
-                      color: '#555', 
-                      fontSize: '0.95rem',
-                      lineHeight: '1.5'
-                    }}>
-                      {course.description}
-                    </p>
-                  )}
-                  
-                  {/* Duration and Category Tags */}
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                    {course.duration && (
-                      <span style={{
-                        padding: '0.25rem 0.75rem',
-                        backgroundColor: '#e3f2fd',
-                        color: '#1976d2',
-                        borderRadius: '16px',
-                        fontSize: '0.875rem',
-                        fontWeight: '500'
-                      }}>
-                        {course.duration}
-                      </span>
-                    )}
-                    {course.category && (
-                      <span style={{
-                        padding: '0.25rem 0.75rem',
-                        backgroundColor: '#e3f2fd',
-                        color: '#1976d2',
-                        borderRadius: '16px',
-                        fontSize: '0.875rem',
-                        fontWeight: '500'
-                      }}>
-                        {course.category}
-                      </span>
-                    )}
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
-                    <p style={{ margin: 0, color: '#666' }}>
-                      <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
-                    </p>
-                    <p style={{ margin: 0, color: '#666' }}>
-                      <strong>Created:</strong> {new Date(course.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  
-                  {course.videoKey && (
-                    <div style={{ marginBottom: '1rem' }}>
-                      <VideoPreview videoKey={course.videoKey} />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
-                {onEditCourse && (
-                  <button
-                    onClick={() => {
-                      console.log('[CourseList] ========== EDIT BUTTON CLICKED ==========');
-                      console.log('[CourseList] Course object being passed:', course);
-                      console.log('[CourseList] Course ID:', course.id);
-                      console.log('[CourseList] Course title:', course.title);
-                      console.log('[CourseList] Course description:', course.description);
-                      console.log('[CourseList] Course description type:', typeof course.description);
-                      console.log('[CourseList] Course description === undefined?', course.description === undefined);
-                      console.log('[CourseList] Course description === null?', course.description === null);
-                      console.log('[CourseList] Course imageKey:', course.imageKey);
-                      console.log('[CourseList] Course imageKey type:', typeof course.imageKey);
-                      console.log('[CourseList] Course imageKey === undefined?', course.imageKey === undefined);
-                      console.log('[CourseList] Course imageKey === null?', course.imageKey === null);
-                      console.log('[CourseList] Full course object (JSON):', JSON.stringify(course, null, 2));
-                      console.log('[CourseList] ===========================================');
-                      onEditCourse(course);
-                    }}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      backgroundColor: '#1976d2',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    ✏️ Edit
-                  </button>
-                )}
-                <button
-                  onClick={() => deleteCourse(course.id, course.videoKey, course.imageKey)}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#d32f2f',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '0.9rem'
+          <Grid item xs={12} sm={6} md={4} key={course.id}>
+            <Card
+              sx={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                '&:hover': {
+                  transform: { xs: 'none', sm: 'translateY(-4px)' },
+                  boxShadow: { xs: 1, sm: 4 },
+                },
+                borderRadius: { xs: 1, sm: 2 },
+                overflow: 'hidden',
+              }}
+            >
+              {/* Course Image */}
+              {course.imageKey ? (
+                <CardMedia
+                  component="div"
+                  sx={{
+                    height: { xs: 140, sm: 180 },
+                    position: 'relative',
+                    backgroundColor: 'grey.200',
                   }}
                 >
-                  🗑️ Delete
-                </button>
-              </div>
-            </div>
-          </div>
+                  <ImagePreview imageKey={course.imageKey} />
+                </CardMedia>
+              ) : (
+                <Box
+                  sx={{
+                    height: { xs: 140, sm: 180 },
+                    backgroundColor: 'primary.light',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'white',
+                  }}
+                >
+                  <ImageIcon sx={{ fontSize: { xs: 40, sm: 60 }, opacity: 0.5 }} />
+                </Box>
+              )}
+
+              <CardContent sx={{ flexGrow: 1, p: { xs: 1.5, sm: 2 } }}>
+                {/* Course Title */}
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  sx={{
+                    fontWeight: 600,
+                    mb: { xs: 0.75, sm: 1 },
+                    color: 'primary.main',
+                    fontSize: { xs: '0.95rem', sm: '1.1rem' },
+                    lineHeight: 1.3,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {course.title}
+                </Typography>
+
+                {/* Description */}
+                {course.description && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      mb: { xs: 1, sm: 1.5 },
+                      display: '-webkit-box',
+                      WebkitLineClamp: { xs: 2, sm: 2 },
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {course.description}
+                  </Typography>
+                )}
+
+                {/* Tags */}
+                <Box sx={{ display: 'flex', gap: { xs: 0.25, sm: 0.5 }, mb: { xs: 1, sm: 1.5 }, flexWrap: 'wrap' }}>
+                  {course.duration && (
+                    <Chip
+                      label={course.duration}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      sx={{ 
+                        fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                        height: { xs: 20, sm: 24 },
+                        '& .MuiChip-label': {
+                          px: { xs: 0.75, sm: 1 },
+                        },
+                      }}
+                    />
+                  )}
+                  {course.category && (
+                    <Chip
+                      label={course.category}
+                      size="small"
+                      color="secondary"
+                      variant="outlined"
+                      sx={{ 
+                        fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                        height: { xs: 20, sm: 24 },
+                        '& .MuiChip-label': {
+                          px: { xs: 0.75, sm: 1 },
+                        },
+                      }}
+                    />
+                  )}
+                </Box>
+
+                {/* Course Details */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 0.25, sm: 0.5 }, mb: { xs: 0.75, sm: 1 } }}>
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}
+                  >
+                    <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
+                  </Typography>
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}
+                  >
+                    <strong>Created:</strong>{' '}
+                    {new Date(course.createdAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Typography>
+                </Box>
+
+                {/* Video Preview */}
+                {course.videoKey && (
+                  <Box sx={{ mt: { xs: 1, sm: 1.5 }, mb: { xs: 0.5, sm: 1 } }}>
+                    <VideoPreview videoKey={course.videoKey} />
+                  </Box>
+                )}
+              </CardContent>
+
+              {/* Action Buttons */}
+              <CardActions
+                sx={{
+                  p: { xs: 1, sm: 1.5 },
+                  pt: 0,
+                  display: 'flex',
+                  gap: { xs: 0.5, sm: 1 },
+                  justifyContent: 'flex-end',
+                }}
+              >
+                {onEditCourse && (
+                  <IconButton
+                    color="primary"
+                    size="small"
+                    onClick={() => onEditCourse(course)}
+                    aria-label="edit course"
+                    sx={{
+                      '&:hover': {
+                        backgroundColor: 'primary.light',
+                        color: 'white',
+                      },
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                )}
+                <IconButton
+                  color="error"
+                  size="small"
+                  onClick={() => deleteCourse(course.id, course.videoKey, course.imageKey)}
+                  aria-label="delete course"
+                  sx={{
+                    '&:hover': {
+                      backgroundColor: 'error.light',
+                      color: 'white',
+                    },
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </CardActions>
+            </Card>
+          </Grid>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Box>
   );
 };
 
@@ -432,53 +541,56 @@ const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
 
   if (loading) {
     return (
-      <div style={{ 
-        width: '150px', 
-        height: '100px', 
-        backgroundColor: '#f5f5f5', 
-        borderRadius: '4px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '0.8rem',
-        color: '#666'
-      }}>
-        Loading...
-      </div>
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'grey.200',
+        }}
+      >
+        <CircularProgress size={30} />
+      </Box>
     );
   }
 
   if (error || !imageUrl) {
     return (
-      <div style={{ 
-        width: '150px', 
-        height: '100px', 
-        backgroundColor: '#f5f5f5', 
-        borderRadius: '4px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '0.8rem',
-        color: '#d32f2f'
-      }}>
-        {error || 'Image not available'}
-      </div>
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'grey.200',
+          flexDirection: 'column',
+          gap: 1,
+        }}
+      >
+        <ImageIcon sx={{ fontSize: 40, color: 'grey.400' }} />
+        <Typography variant="caption" color="error">
+          {error || 'Image not available'}
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <img 
-      src={imageUrl || undefined} 
-      alt="Course thumbnail" 
-      style={{ 
-        width: '150px', 
-        height: '100px', 
+    <Box
+      component="img"
+      src={imageUrl}
+      alt="Course thumbnail"
+      sx={{
+        width: '100%',
+        height: '100%',
         objectFit: 'cover',
-        borderRadius: '4px',
-        border: '1px solid #e0e0e0'
+        display: 'block',
       }}
-      onError={(e) => {
-        console.error('[ImagePreview] Image failed to load:', imageUrl, e);
+      onError={() => {
+        console.error('[ImagePreview] Image failed to load:', imageUrl);
         setError('Image failed to load');
         setImageUrl(null);
       }}
@@ -486,17 +598,17 @@ const ImagePreview: React.FC<{ imageKey: string }> = ({ imageKey }) => {
   );
 };
 
-// Helper component for video preview
+// Helper component for video preview (compact version for course cards)
 const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   useEffect(() => {
     const fetchVideoUrl = async () => {
       try {
-        console.log('[VideoPreview] Fetching URL for video key:', videoKey);
-        
         // Get signed URL with 1 hour expiration
         const urlResult = await getUrl({ 
           path: videoKey,
@@ -506,29 +618,11 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
         });
         
         const url = urlResult.url.toString();
-        console.log('[VideoPreview] Video URL retrieved:', url.substring(0, 100) + '...');
         setVideoUrl(url);
         setError(null);
       } catch (err: any) {
         console.error('[VideoPreview] Error loading video:', err);
-        console.error('[VideoPreview] Error details:', {
-          message: err?.message,
-          name: err?.name,
-          stack: err?.stack,
-          videoKey: videoKey
-        });
-        
-        // Provide more specific error messages
-        let errorMessage = 'Video not available';
-        if (err?.message?.includes('AccessDenied') || err?.message?.includes('403')) {
-          errorMessage = 'Access denied. Check storage permissions.';
-        } else if (err?.message?.includes('NotFound') || err?.message?.includes('404')) {
-          errorMessage = 'Video file not found in storage.';
-        } else if (err?.message) {
-          errorMessage = `Error: ${err.message}`;
-        }
-        
-        setError(errorMessage);
+        setError('Video not available');
         setVideoUrl(null);
       } finally {
         setLoading(false);
@@ -545,95 +639,71 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
 
   if (loading) {
     return (
-      <div style={{ marginBottom: '1rem' }}>
-        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
-          <strong>Video:</strong>
-        </p>
-        <p style={{ color: '#666', fontSize: '0.9rem' }}>Loading video preview...</p>
-      </div>
+      <Box
+        sx={{
+          width: '100%',
+          height: { xs: 100, sm: 120 },
+          backgroundColor: 'grey.200',
+          borderRadius: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <CircularProgress size={isMobile ? 20 : 24} />
+      </Box>
     );
   }
 
   if (error || !videoUrl) {
     return (
-      <div style={{ marginBottom: '1rem' }}>
-        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
-          <strong>Video:</strong>
-        </p>
-        <p style={{ color: '#d32f2f', fontSize: '0.9rem' }}>
+      <Box
+        sx={{
+          width: '100%',
+          height: { xs: 100, sm: 120 },
+          backgroundColor: 'grey.200',
+          borderRadius: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: 0.5,
+        }}
+      >
+        <PlayCircleOutlineIcon sx={{ fontSize: { xs: 24, sm: 32 }, color: 'text.secondary', opacity: 0.5 }} />
+        <Typography 
+          variant="caption" 
+          color="text.secondary"
+          sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+        >
           {error || 'Video not available'}
-        </p>
-        {videoKey && (
-          <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-            Key: <code>{videoKey}</code>
-          </p>
-        )}
-      </div>
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <div style={{ marginBottom: '1rem' }}>
-      <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
-        <strong>Video:</strong>
-      </p>
+    <Box
+      sx={{
+        width: '100%',
+        borderRadius: 1,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        maxHeight: { xs: '150px', sm: '200px' },
+      }}
+    >
       <video 
-        width="300" 
-        height="180" 
         controls 
         preload="metadata"
         style={{ 
-          borderRadius: '4px',
-          maxWidth: '100%',
-          backgroundColor: '#000'
+          display: 'block',
+          width: '100%',
+          height: 'auto',
+          maxHeight: isMobile ? '150px' : '200px',
         }}
         onError={(e) => {
           console.error('[VideoPreview] Video playback error:', e);
-          const videoElement = e.target as HTMLVideoElement;
-          const error = videoElement.error;
-          let errorMessage = 'Video playback failed.';
-          
-          if (error) {
-            switch (error.code) {
-              case error.MEDIA_ERR_ABORTED:
-                errorMessage = 'Video loading aborted.';
-                break;
-              case error.MEDIA_ERR_NETWORK:
-                errorMessage = 'Network error while loading video.';
-                break;
-              case error.MEDIA_ERR_DECODE:
-                errorMessage = 'Video decoding error.';
-                break;
-              case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                errorMessage = 'Video format not supported.';
-                break;
-              default:
-                errorMessage = `Video error (code: ${error.code}).`;
-            }
-          }
-          
-          console.error('[VideoPreview] Video error details:', {
-            code: error?.code,
-            message: error?.message,
-            videoUrl: videoUrl?.substring(0, 100)
-          });
-          
-          setError(errorMessage);
-        }}
-        onLoadStart={() => {
-          console.log('[VideoPreview] Video started loading');
-        }}
-        onCanPlay={() => {
-          console.log('[VideoPreview] Video can play');
-        }}
-        onWaiting={() => {
-          console.log('[VideoPreview] Video buffering...');
-        }}
-        onPlaying={() => {
-          console.log('[VideoPreview] Video playing');
-        }}
-        onLoadedMetadata={() => {
-          console.log('[VideoPreview] Video metadata loaded');
+          setError('Video playback failed');
         }}
       >
         <source src={videoUrl} type="video/mp4" />
@@ -641,7 +711,7 @@ const VideoPreview: React.FC<{ videoKey: string }> = ({ videoKey }) => {
         <source src={videoUrl} type="video/ogg" />
         Your browser does not support the video tag.
       </video>
-    </div>
+    </Box>
   );
 };
 

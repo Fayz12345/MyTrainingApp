@@ -4,6 +4,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { getUrl } from 'aws-amplify/storage';
+import Loader from '../common/Loader';
 
 const client = generateClient<Schema>();
 
@@ -868,8 +869,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
       </div>
 
       {/* Main Content */}
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-        <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div className="dashboard-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+        <div className="employee-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h2 style={{ margin: 0 }}>Assigned Courses</h2>
             <p style={{ color: '#666', margin: '5px 0 0 0' }}>
@@ -877,12 +878,14 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
             </p>
           </div>
           {totalCourses > 0 && (
-            <div style={{
+            <div className="completion-stats" style={{
               textAlign: 'right',
               padding: '12px 20px',
               backgroundColor: 'white',
               borderRadius: '8px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              width: '100%',
+              maxWidth: '300px'
             }}>
               <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>Completion Rate</p>
               <p style={{ margin: '5px 0 0 0', fontSize: '1.5rem', fontWeight: 'bold', color: '#007AFF' }}>
@@ -895,11 +898,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           )}
         </div>
 
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <p>Loading courses...</p>
-          </div>
-        )}
+        {loading && <Loader message="Loading courses..." />}
 
         {error && (
           <div style={{
@@ -962,7 +961,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                   e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ margin: '0 0 10px 0', color: '#333' }}>{course.title}</h3>
                     {course.description && (

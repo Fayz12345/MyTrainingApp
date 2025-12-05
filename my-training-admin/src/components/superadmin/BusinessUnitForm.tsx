@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>({
   authMode: 'userPool'
@@ -35,61 +38,90 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ onCancel, onBusines
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.name) {
-      setError('Business Unit name is required');
-      return;
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!formData.name) {
+    setError("Business Unit name is required");
+    return;
+  }
+
+  setSubmitting(true);
+  setError(null);
+
+  try {
+    // Get current user ID and verify authentication
+    const session = await fetchAuthSession({ forceRefresh: true });
+
+    if (!session.tokens || !session.tokens.idToken) {
+      throw new Error("User is not authenticated. Please sign in again.");
     }
 
-    setSubmitting(true);
-    setError(null);
+    const userId =
+      session.userSub ||
+      (session.tokens?.idToken?.payload?.sub as string);
 
-    try {
-      // Get current user ID and verify authentication
-      const session = await fetchAuthSession({ forceRefresh: true });
-      
-      if (!session.tokens || !session.tokens.idToken) {
-        throw new Error('User is not authenticated. Please sign in again.');
-      }
-      
-      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
-      
-      if (!userId) {
-        throw new Error('Unable to identify current user');
-      }
-
-      if (isEditMode && businessUnit) {
-        // Update existing business unit
-        const now = new Date().toISOString();
-        await client.models.BusinessUnit.update({
-          id: businessUnit.id,
-          name: formData.name,
-          description: formData.description || null,
-          updatedAt: now
-        });
-        alert(`✅ Business Unit "${formData.name}" updated successfully!`);
-      } else {
-        // Create new business unit
-        const now = new Date().toISOString();
-        await client.models.BusinessUnit.create({
-          name: formData.name,
-          description: formData.description || null,
-          createdBy: userId,
-          createdAt: now,
-          updatedAt: now
-        });
-        alert(`✅ Business Unit "${formData.name}" created successfully!`);
-      }
-      onBusinessUnitCreated();
-    } catch (err) {
-      console.error('Error creating business unit:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create business unit');
-    } finally {
-      setSubmitting(false);
+    if (!userId) {
+      throw new Error("Unable to identify current user");
     }
-  };
+
+    const now = new Date().toISOString();
+
+    if (isEditMode && businessUnit) {
+      // Update existing business unit
+      await client.models.BusinessUnit.update({
+        id: businessUnit.id,
+        name: formData.name,
+        description: formData.description || null,
+        updatedAt: now,
+      });
+
+      await MySwal.fire({
+        title: "Updated!",
+        text: `Business Unit "${formData.name}" updated successfully.`,
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } else {
+      // Create new business unit
+      await client.models.BusinessUnit.create({
+        name: formData.name,
+        description: formData.description || null,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await MySwal.fire({
+        title: "Created!",
+        text: `Business Unit "${formData.name}" created successfully.`,
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    }
+
+    onBusinessUnitCreated();
+  } catch (err) {
+    console.error("Error creating business unit:", err);
+    setError(
+      err instanceof Error ? err.message : "Failed to create business unit"
+    );
+
+    MySwal.fire({
+      title: "Error",
+      text:
+        err instanceof Error
+          ? err.message
+          : "Failed to create business unit",
+      icon: "error",
+    });
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   return (
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>

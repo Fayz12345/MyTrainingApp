@@ -195,7 +195,7 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem' }}>
                     {store.name}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
+import Loader from '../common/Loader';
 
 const client = generateClient<Schema>();
 
@@ -197,11 +198,7 @@ const OrganizationHierarchy: React.FC<OrganizationHierarchyProps> = ({ refreshTr
   }, [refreshTrigger]);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading organization hierarchy...</p>
-      </div>
-    );
+    return <Loader message="Loading organization hierarchy..." />;
   }
 
   if (error) {

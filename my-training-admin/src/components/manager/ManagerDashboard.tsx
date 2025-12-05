@@ -2,6 +2,30 @@ import React, { useState } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Box,
+  Container,
+  Card,
+  CardContent,
+  CardActions,
+  Grid,
+  IconButton,
+  useTheme,
+  useMediaQuery,
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  Divider,
+} from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import LogoutIcon from '@mui/icons-material/Logout';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CourseForm from './CourseForm';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
@@ -41,6 +65,25 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedCourse, setSelectedCourse] = useState<CourseSummary | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  const menuItems = [
+    { key: 'dashboard', label: 'Dashboard', icon: '📊' },
+    { key: 'courses', label: 'Courses', icon: '📚' },
+    { key: 'employees', label: 'Employees', icon: '👥' },
+    { key: 'assignments', label: 'Assignments', icon: '📋' },
+    { key: 'analytics', label: 'Analytics', icon: '📈' }
+  ];
+
+  const handleMenuClick = (view: ViewMode) => {
+    setCurrentView(view);
+    setMobileMenuOpen(false);
+    if (view === 'courses') {
+      setSelectedCourse(null);
+    }
+  };
 
   const navigateToCourses = () => {
     setCurrentView('courses');
@@ -48,28 +91,24 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
     setRefreshTrigger((prev) => prev + 1);
   };
 
+  const isCoursesView = currentView === 'courses' || currentView === 'create-course' || currentView === 'edit-course';
+
   const renderContent = () => {
     switch (currentView) {
       case 'courses':
         return (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2>Course Management</h2>
-              <button
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h4">
+                Course Management
+              </Typography>
+              <Button
+                variant="contained"
                 onClick={() => setCurrentView('create-course')}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  backgroundColor: '#1976d2',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '1rem'
-                }}
               >
                 + Create New Course
-              </button>
-            </div>
+              </Button>
+            </Box>
             <CourseList 
               refreshTrigger={refreshTrigger}
               onEditCourse={async (course) => {
@@ -84,7 +123,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                   fullCourse: course
                 });
                 
-                // Fetch full course details to ensure we have all fields
                 try {
                   const fullCourse = await client.models.Course.get({ id: course.id });
                   if (fullCourse.data) {
@@ -102,28 +140,19 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 setCurrentView('edit-course');
               }}
             />
-          </div>
+          </Box>
         );
       
       case 'create-course':
         return (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <button
-                onClick={() => {
-                  navigateToCourses();
-                }}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                ← Back to Courses
-              </button>
-            </div>
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => navigateToCourses()}
+              sx={{ mb: 2 }}
+            >
+              Back to Courses
+            </Button>
             <CourseForm
               onSuccess={() => {
                 navigateToCourses();
@@ -132,49 +161,36 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 setCurrentView('courses');
               }}
             />
-          </div>
+          </Box>
         );
 
       case 'edit-course':
         if (!selectedCourse) {
           return (
-            <div>
-              <p>No course selected. Please go back to the course list.</p>
-              <button
+            <Box>
+              <Typography sx={{ mb: 2 }}>No course selected. Please go back to the course list.</Typography>
+              <Button
+                startIcon={<ArrowBackIcon />}
                 onClick={() => setCurrentView('courses')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
               >
-                ← Back to Courses
-              </button>
-            </div>
+                Back to Courses
+              </Button>
+            </Box>
           );
         }
 
         return (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <button
-                onClick={() => {
-                  setCurrentView('courses');
-                  setSelectedCourse(null);
-                }}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                ← Back to Courses
-              </button>
-            </div>
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => {
+                setCurrentView('courses');
+                setSelectedCourse(null);
+              }}
+              sx={{ mb: 2 }}
+            >
+              Back to Courses
+            </Button>
             <CourseForm
               course={selectedCourse}
               onSuccess={() => {
@@ -185,289 +201,190 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 setSelectedCourse(null);
               }}
             />
-          </div>
+          </Box>
         );
 
       case 'employees':
         return (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2>Employee Management</h2>
-            </div>
+          <Box>
+            <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
+              Employee Management
+            </Typography>
             <EmployeeList refreshTrigger={refreshTrigger} />
-          </div>
+          </Box>
         );
 
       case 'assignments':
         return (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                ← Back to Dashboard
-              </button>
-            </div>
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
             <AssignmentForm />
-          </div>
+          </Box>
         );
 
       case 'analytics':
         return (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                ← Back to Dashboard
-              </button>
-            </div>
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
             <TrainingAnalytics />
-          </div>
+          </Box>
         );
 
       default:
         return (
-          <div>
-            <div style={{ 
-              backgroundColor: '#f5f5f5',
-              padding: '1.5rem',
-              borderRadius: '8px',
-              marginBottom: '2rem'
-            }}>
-              <h2>Welcome, {user.signInDetails?.loginId || user.username}!</h2>
-              <p>You have successfully logged in to the admin portal with manager privileges.</p>
-            </div>
+          <Box>
+            <Card sx={{ mb: 4, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+              <CardContent>
+                <Typography variant="h4" gutterBottom>
+                  Welcome, {user.signInDetails?.loginId || user.username}!
+                </Typography>
+                <Typography variant="body1">
+                  You have successfully logged in to the admin portal with manager privileges.
+                </Typography>
+              </CardContent>
+            </Card>
 
-            <div style={{ 
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '1.5rem'
-            }}>
-              <div style={{ 
-                backgroundColor: 'white',
-                padding: '1.5rem',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                <h3>Employee Management</h3>
-                <p>View and manage employee information and assignments.</p>
-                <button 
-                  onClick={() => setCurrentView('employees')}
-                  style={{ 
-                    padding: '8px 16px',
-                    backgroundColor: '#1976d2',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Manage Employees
-                </button>
-              </div>
-
-              <div style={{ 
-                backgroundColor: 'white',
-                padding: '1.5rem',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                <h3>Training Analytics</h3>
-                <p>View training completion rates and progress reports.</p>
-                <button 
-                  onClick={() => setCurrentView('analytics')}
-                  style={{ 
-                    padding: '8px 16px',
-                    backgroundColor: '#1976d2',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  View Analytics
-                </button>
-              </div>
-
-              <div style={{ 
-                backgroundColor: 'white',
-                padding: '1.5rem',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                <h3>Course Management</h3>
-                <p>Create, edit, and manage training courses.</p>
-                <button 
-                  onClick={() => setCurrentView('courses')}
-                  style={{ 
-                    padding: '8px 16px',
-                    backgroundColor: '#1976d2',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Manage Courses
-                </button>
-              </div>
-
-              <div style={{ 
-                backgroundColor: 'white',
-                padding: '1.5rem',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                <h3>Course Assignments</h3>
-                <p>Assign courses to employees for training.</p>
-                <button 
-                  onClick={() => setCurrentView('assignments')}
-                  style={{ 
-                    padding: '8px 16px',
-                    backgroundColor: '#1976d2',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Assign Courses
-                </button>
-              </div>
-            </div>
-          </div>
+            <Grid container spacing={3}>
+              {[
+                { key: 'employees', title: 'Employee Management', description: 'View and manage employee information and assignments.', icon: '👥' },
+                { key: 'analytics', title: 'Training Analytics', description: 'View training completion rates and progress reports.', icon: '📈' },
+                { key: 'courses', title: 'Course Management', description: 'Create, edit, and manage training courses.', icon: '📚' },
+                { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
+              ].map((item) => (
+                <Grid item xs={12} sm={6} md={3} key={item.key}>
+                  <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
+                    <CardContent sx={{ flexGrow: 1, textAlign: 'center', pt: 3 }}>
+                      <Box sx={{ color: 'primary.main', mb: 2, fontSize: '3rem' }}>
+                        {item.icon}
+                      </Box>
+                      <Typography variant="h6" gutterBottom>
+                        {item.title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.description}
+                      </Typography>
+                    </CardContent>
+                    <CardActions sx={{ justifyContent: 'center', pb: 2 }}>
+                      <Button
+                        variant="contained"
+                        onClick={() => handleMenuClick(item.key as ViewMode)}
+                        fullWidth
+                      >
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : 'Assign Courses'}
+                      </Button>
+                    </CardActions>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
         );
     }
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: '2rem' 
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <h1 
-            onClick={() => setCurrentView('dashboard')}
-            style={{ 
-              margin: 0, 
-              cursor: 'pointer',
-              color: currentView === 'dashboard' ? '#1976d2' : '#333'
-            }}
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
+      <AppBar position="static" elevation={2}>
+        <Toolbar>
+          {isMobile && (
+            <IconButton
+              edge="start"
+              color="inherit"
+              aria-label="menu"
+              onClick={() => setMobileMenuOpen(true)}
+              sx={{ mr: 2 }}
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
+          <Typography
+            variant="h6"
+            component="div"
+            onClick={() => handleMenuClick('dashboard')}
+            sx={{ flexGrow: 1, cursor: 'pointer', fontWeight: 600 }}
           >
             Manager Portal
-          </h1>
-          {currentView !== 'dashboard' && (
-            <nav style={{ display: 'flex', gap: '1rem' }}>
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: '#f5f5f5',
-                  color: '#333',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => setCurrentView('courses')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor:
-                    currentView === 'courses' ||
-                    currentView === 'create-course' ||
-                    currentView === 'edit-course'
-                      ? '#1976d2'
-                      : '#f5f5f5',
-                  color:
-                    currentView === 'courses' ||
-                    currentView === 'create-course' ||
-                    currentView === 'edit-course'
-                      ? 'white'
-                      : '#333',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Courses
-              </button>
-              <button
-                onClick={() => setCurrentView('employees')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: currentView === 'employees' ? '#1976d2' : '#f5f5f5',
-                  color: currentView === 'employees' ? 'white' : '#333',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Employees
-              </button>
-              <button
-                onClick={() => setCurrentView('assignments')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: currentView === 'assignments' ? '#1976d2' : '#f5f5f5',
-                  color: currentView === 'assignments' ? 'white' : '#333',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Assignments
-              </button>
-              <button
-                onClick={() => setCurrentView('analytics')}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: currentView === 'analytics' ? '#1976d2' : '#f5f5f5',
-                  color: currentView === 'analytics' ? 'white' : '#333',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Analytics
-              </button>
-            </nav>
+          </Typography>
+          {!isMobile && (
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {menuItems.map((item) => (
+                <Button
+                  key={item.key}
+                  color="inherit"
+                  onClick={() => handleMenuClick(item.key as ViewMode)}
+                  variant={
+                    (currentView === item.key || (item.key === 'courses' && isCoursesView))
+                      ? 'outlined'
+                      : 'text'
+                  }
+                  sx={{
+                    borderColor: (currentView === item.key || (item.key === 'courses' && isCoursesView))
+                      ? 'inherit'
+                      : 'transparent',
+                  }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </Box>
           )}
-        </div>
-        <button onClick={() => signOut?.()} style={{ 
-          padding: '10px 20px',
-          backgroundColor: '#1976d2',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer'
-        }}>
-          Sign Out
-        </button>
-      </div>
+          <Button
+            color="inherit"
+            startIcon={<LogoutIcon />}
+            onClick={() => signOut?.()}
+            sx={{ ml: 2 }}
+          >
+            Sign Out
+          </Button>
+        </Toolbar>
+      </AppBar>
 
-      {renderContent()}
-    </div>
+      <Drawer
+        anchor="left"
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+      >
+        <Box sx={{ width: 250 }}>
+          <Toolbar>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Menu
+            </Typography>
+          </Toolbar>
+          <Divider />
+          <List>
+            {menuItems.map((item) => (
+              <ListItem key={item.key} disablePadding>
+                <ListItemButton
+                  selected={currentView === item.key || (item.key === 'courses' && isCoursesView)}
+                  onClick={() => handleMenuClick(item.key as ViewMode)}
+                >
+                  <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+                    {item.icon}
+                  </Box>
+                  <ListItemText primary={item.label} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </Box>
+      </Drawer>
+
+      <Container maxWidth="lg" sx={{ py: 4, flexGrow: 1 }}>
+        {renderContent()}
+      </Container>
+    </Box>
   );
 };
 

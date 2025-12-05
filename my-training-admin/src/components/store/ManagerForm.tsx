@@ -2,12 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
 interface ManagerFormProps {
   onCancel: () => void;
   onManagerCreated: () => void;
+  manager?: {
+    id: string;
+    userId: string;
+    email: string;
+    name: string;
+    storeId: string;
+  } | null;
 }
 
 type Store = {
@@ -15,17 +26,20 @@ type Store = {
   readonly name: string;
 };
 
-const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated }) => {
+const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, manager }) => {
+  const isEditMode = !!manager;
   const [formData, setFormData] = useState({
-    email: '',
-    name: '',
-    storeId: '',
+    email: manager?.email || '',
+    name: manager?.name || '',
+    storeId: manager?.storeId || '',
     temporaryPassword: ''
   });
   const [stores, setStores] = useState<Store[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -69,12 +83,70 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
     fetchStores();
   }, []);
 
+  const validateField = (name: string, value: string): string => {
+    switch (name) {
+      case 'name':
+        if (!value.trim()) return 'Full Name is required';
+        if (value.trim().length < 2) return 'Full Name must be at least 2 characters';
+        return '';
+      case 'email':
+        if (!isEditMode && !value.trim()) return 'Email Address is required';
+        if (!isEditMode && value.trim()) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(value)) return 'Please enter a valid email address';
+        }
+        return '';
+      case 'storeId':
+        if (!value) return 'Store is required';
+        return '';
+      case 'temporaryPassword':
+        if (!isEditMode && !value) return 'Temporary Password is required';
+        if (!isEditMode && value) {
+          if (value.length < 8) return 'Password must be at least 8 characters';
+          const hasUpper = /[A-Z]/.test(value);
+          const hasLower = /[a-z]/.test(value);
+          const hasNumber = /[0-9]/.test(value);
+          const hasSpecial = /[!@#$%^&*]/.test(value);
+          if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+            return 'Password must contain uppercase, lowercase, number, and special character';
+          }
+        }
+        return '';
+      default:
+        return '';
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Clear error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setTouchedFields(prev => ({ ...prev, [name]: true }));
+    const error = validateField(name, value);
+    if (error) {
+      setFieldErrors(prev => ({ ...prev, [name]: error }));
+    } else {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
   const subscribeManagerToSNS = async (email: string, name: string, managerId: string) => {
@@ -250,31 +322,54 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const logPrefix = '[MANAGER_CREATION]';
+    const logPrefix = isEditMode ? '[MANAGER_UPDATE]' : '[MANAGER_CREATION]';
     const timestamp = new Date().toISOString();
     
     console.log(`${logPrefix} ========================================`);
-    console.log(`${logPrefix} 🚀 MANAGER CREATION PROCESS STARTED`);
+    console.log(`${logPrefix} 🚀 MANAGER ${isEditMode ? 'UPDATE' : 'CREATION'} PROCESS STARTED`);
     console.log(`${logPrefix} Timestamp: ${timestamp}`);
     console.log(`${logPrefix} ========================================`);
     
-    if (!formData.email || !formData.name) {
-      console.error(`${logPrefix} ❌ Validation failed: Email and name are required`);
-      setError('Email and name are required');
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    
+    const nameError = validateField('name', formData.name);
+    if (nameError) {
+      errors.name = nameError;
+      touched.name = true;
+    }
+    
+    const storeError = validateField('storeId', formData.storeId);
+    if (storeError) {
+      errors.storeId = storeError;
+      touched.storeId = true;
+    }
+    
+    // Only require email and password for new managers
+    if (!isEditMode) {
+      const emailError = validateField('email', formData.email);
+      if (emailError) {
+        errors.email = emailError;
+        touched.email = true;
+      }
+      
+      const passwordError = validateField('temporaryPassword', formData.temporaryPassword);
+      if (passwordError) {
+        errors.temporaryPassword = passwordError;
+        touched.temporaryPassword = true;
+      }
+    }
+    
+    setFieldErrors(errors);
+    setTouchedFields(touched);
+    
+    if (Object.keys(errors).length > 0) {
+      setError('Please fix the errors in the form');
       return;
     }
-
-    if (!formData.storeId) {
-      console.error(`${logPrefix} ❌ Validation failed: Store is required`);
-      setError('Store is required');
-      return;
-    }
-
-    if (!formData.temporaryPassword) {
-      console.error(`${logPrefix} ❌ Validation failed: Temporary password is required`);
-      setError('Temporary password is required');
-      return;
-    }
+    
+    setError(null);
 
     console.log(`${logPrefix} [STEP 1] Form validation passed`);
     console.log(`${logPrefix} [STEP 1] Manager Data:`, {
@@ -289,6 +384,36 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
     setError(null);
 
     try {
+      if (isEditMode && manager) {
+        // Update existing manager
+        console.log(`${logPrefix} [STEP 1] Updating manager record in database...`);
+        const now = new Date().toISOString();
+        
+        await client.models.Manager.update({
+          id: manager.id,
+          name: formData.name,
+          storeId: formData.storeId,
+          updatedAt: now
+        });
+        
+        console.log(`${logPrefix} [STEP 1] ✅ Manager record updated in database`);
+        console.log(`${logPrefix} ========================================`);
+        console.log(`${logPrefix} ✅ MANAGER UPDATE COMPLETED SUCCESSFULLY`);
+        console.log(`${logPrefix} ========================================`);
+
+        await MySwal.fire({
+          title: "Updated!",
+          text: `Manager "${formData.name}" updated successfully.`,
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
+        
+        onManagerCreated();
+        return;
+      }
+
+      // Create new manager (existing logic)
       // Get current user ID
       console.log(`${logPrefix} [STEP 2] Getting current user information...`);
       const session = await fetchAuthSession();
@@ -414,7 +539,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
       onManagerCreated();
     } catch (err) {
       console.error(`${logPrefix} ========================================`);
-      console.error(`${logPrefix} ❌ MANAGER CREATION FAILED`);
+      console.error(`${logPrefix} ❌ MANAGER ${isEditMode ? 'UPDATE' : 'CREATION'} FAILED`);
       console.error(`${logPrefix} Error:`, err);
       console.error(`${logPrefix} Error type:`, err instanceof Error ? err.constructor.name : typeof err);
       console.error(`${logPrefix} Error message:`, err instanceof Error ? err.message : String(err));
@@ -422,7 +547,13 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
         console.error(`${logPrefix} Stack trace:`, err.stack);
       }
       console.error(`${logPrefix} ========================================`);
-      setError(err instanceof Error ? err.message : 'Failed to create manager');
+      setError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} manager`);
+      
+      MySwal.fire({
+        title: "Error",
+        text: err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} manager`,
+        icon: "error",
+      });
     } finally {
       setSubmitting(false);
       console.log(`${logPrefix} [CLEANUP] Form submission state reset`);
@@ -430,16 +561,12 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
   };
 
   if (loading) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Loading stores...</p>
-      </div>
-    );
+    return <Loader message="Loading stores..." />;
   }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-      <h2>Create New Manager</h2>
+      <h2>{isEditMode ? 'Edit Manager' : 'Create New Manager'}</h2>
       
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && (
@@ -456,19 +583,21 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
 
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Store *
+            Store <span style={{ color: '#d32f2f' }}>*</span>
           </label>
           <select
             name="storeId"
             value={formData.storeId}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             required
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.storeId ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
           >
             <option value="">Select a Store</option>
@@ -478,89 +607,154 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
               </option>
             ))}
           </select>
+          {touchedFields.storeId && fieldErrors.storeId && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.storeId}
+            </div>
+          )}
         </div>
 
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Email Address *
-          </label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            placeholder="manager@company.com"
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              fontSize: '1rem'
-            }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Full Name *
+            Full Name <span style={{ color: '#d32f2f' }}>*</span>
           </label>
           <input
             type="text"
             name="name"
             value={formData.name}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             placeholder="John Doe"
             required
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.name ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
           />
+          {touchedFields.name && fieldErrors.name && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.name}
+            </div>
+          )}
         </div>
 
-        <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Temporary Password *
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {!isEditMode && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Email Address <span style={{ color: '#d32f2f' }}>*</span>
+            </label>
             <input
-              type="text"
-              name="temporaryPassword"
-              value={formData.temporaryPassword}
+              type="email"
+              name="email"
+              value={formData.email}
               onChange={handleInputChange}
-              placeholder="Enter temporary password"
+              onBlur={handleBlur}
+              placeholder="manager@company.com"
               required
               style={{
-                flex: 1,
+                width: '100%',
+                padding: '0.75rem',
+                border: fieldErrors.email ? '2px solid #d32f2f' : '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                outline: 'none'
+              }}
+            />
+            {touchedFields.email && fieldErrors.email && (
+              <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                {fieldErrors.email}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {isEditMode && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              disabled
+              style={{
+                width: '100%',
                 padding: '0.75rem',
                 border: '1px solid #ccc',
                 borderRadius: '4px',
-                fontSize: '1rem'
+                fontSize: '1rem',
+                backgroundColor: '#f5f5f5',
+                color: '#666'
               }}
             />
-            <button
-              type="button"
-              onClick={() => setFormData(prev => ({ ...prev, temporaryPassword: generateRandomPassword() }))}
-              style={{
-                padding: '0.75rem 1rem',
-                backgroundColor: '#f5f5f5',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Generate
-            </button>
+            <small style={{ color: '#666', fontSize: '0.8rem' }}>
+              Email cannot be changed after creation
+            </small>
           </div>
-          <small style={{ color: '#666', fontSize: '0.8rem' }}>
-            Password must contain uppercase, lowercase, number, and special character (min 8 chars)
-          </small>
-        </div>
+        )}
+
+        {!isEditMode && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Temporary Password <span style={{ color: '#d32f2f' }}>*</span>
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                name="temporaryPassword"
+                value={formData.temporaryPassword}
+                onChange={handleInputChange}
+                onBlur={handleBlur}
+                placeholder="Enter temporary password"
+                required
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  border: fieldErrors.temporaryPassword ? '2px solid #d32f2f' : '1px solid #ccc',
+                  borderRadius: '4px',
+                  fontSize: '1rem',
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const newPassword = generateRandomPassword();
+                  setFormData(prev => ({ ...prev, temporaryPassword: newPassword }));
+                  // Clear error when password is generated
+                  setFieldErrors(prev => {
+                    const newErrors = { ...prev };
+                    delete newErrors.temporaryPassword;
+                    return newErrors;
+                  });
+                }}
+                style={{
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Generate
+              </button>
+            </div>
+            {touchedFields.temporaryPassword && fieldErrors.temporaryPassword ? (
+              <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                {fieldErrors.temporaryPassword}
+              </div>
+            ) : (
+              <small style={{ color: '#666', fontSize: '0.8rem' }}>
+                Password must contain uppercase, lowercase, number, and special character (min 8 chars)
+              </small>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
           <button
@@ -591,7 +785,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated })
               fontSize: '1rem'
             }}
           >
-            {submitting ? 'Creating Manager...' : 'Create Manager'}
+            {submitting ? (isEditMode ? 'Updating Manager...' : 'Creating Manager...') : (isEditMode ? 'Update Manager' : 'Create Manager')}
           </button>
         </div>
       </form>

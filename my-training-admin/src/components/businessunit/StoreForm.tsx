@@ -2,12 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
 interface StoreFormProps {
   onCancel: () => void;
   onStoreCreated: () => void;
+  store?: {
+    id: string;
+    name: string;
+    description?: string | null;
+    businessUnitId: string;
+  } | null;
 }
 
 type BusinessUnit = {
@@ -15,16 +25,19 @@ type BusinessUnit = {
   readonly name: string;
 };
 
-const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
+const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated, store }) => {
+  const isEditMode = !!store;
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    businessUnitId: ''
+    name: store?.name || '',
+    description: store?.description || '',
+    businessUnitId: store?.businessUnitId || ''
   });
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchBusinessUnits = async () => {
@@ -68,26 +81,80 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
     fetchBusinessUnits();
   }, []);
 
+  const validateField = (name: string, value: string): string => {
+    switch (name) {
+      case 'name':
+        if (!value.trim()) return 'Store name is required';
+        if (value.trim().length < 2) return 'Store name must be at least 2 characters';
+        return '';
+      case 'businessUnitId':
+        if (!value) return 'Business Unit is required';
+        return '';
+      default:
+        return '';
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Clear error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setTouchedFields(prev => ({ ...prev, [name]: true }));
+    const error = validateField(name, value);
+    if (error) {
+      setFieldErrors(prev => ({ ...prev, [name]: error }));
+    } else {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name) {
-      setError('Store name is required');
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    
+    const nameError = validateField('name', formData.name);
+    if (nameError) {
+      errors.name = nameError;
+      touched.name = true;
+    }
+    
+    const businessUnitError = validateField('businessUnitId', formData.businessUnitId);
+    if (businessUnitError) {
+      errors.businessUnitId = businessUnitError;
+      touched.businessUnitId = true;
+    }
+    
+    setFieldErrors(errors);
+    setTouchedFields(touched);
+    
+    if (Object.keys(errors).length > 0) {
+      setError('Please fix the errors in the form');
       return;
     }
-
-    if (!formData.businessUnitId) {
-      setError('Business Unit is required');
-      return;
-    }
+    
+    setError(null);
 
     setSubmitting(true);
     setError(null);
@@ -102,36 +169,66 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
       }
 
       const now = new Date().toISOString();
-      await client.models.Store.create({
-        name: formData.name,
-        description: formData.description || null,
-        businessUnitId: formData.businessUnitId,
-        createdBy: userId,
-        createdAt: now,
-        updatedAt: now
-      });
+      
+      if (isEditMode && store) {
+        // Update existing store
+        await client.models.Store.update({
+          id: store.id,
+          name: formData.name,
+          description: formData.description || null,
+          businessUnitId: formData.businessUnitId,
+          updatedAt: now
+        });
 
-      alert(`✅ Store "${formData.name}" created successfully!`);
+        await MySwal.fire({
+          title: "Updated!",
+          text: `Store "${formData.name}" updated successfully.`,
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      } else {
+        // Create new store
+        await client.models.Store.create({
+          name: formData.name,
+          description: formData.description || null,
+          businessUnitId: formData.businessUnitId,
+          createdBy: userId,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await MySwal.fire({
+          title: "Created!",
+          text: `Store "${formData.name}" created successfully.`,
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      }
+      
       onStoreCreated();
     } catch (err) {
-      console.error('Error creating store:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create store');
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} store:`, err);
+      setError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} store`);
+      
+      MySwal.fire({
+        title: "Error",
+        text: err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} store`,
+        icon: "error",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Loading business units...</p>
-      </div>
-    );
+    return <Loader message="Loading business units..." />;
   }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-      <h2>Create New Store</h2>
+      <h2>{isEditMode ? 'Edit Store' : 'Create New Store'}</h2>
       
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && (
@@ -154,13 +251,15 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
             name="businessUnitId"
             value={formData.businessUnitId}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             required
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.businessUnitId ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
           >
             <option value="">Select a Business Unit</option>
@@ -170,6 +269,11 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
               </option>
             ))}
           </select>
+          {touchedFields.businessUnitId && fieldErrors.businessUnitId && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.businessUnitId}
+            </div>
+          )}
         </div>
 
         <div>
@@ -181,16 +285,23 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
             name="name"
             value={formData.name}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             placeholder="Store #123, Downtown Location, etc."
             required
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.name ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
           />
+          {touchedFields.name && fieldErrors.name && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.name}
+            </div>
+          )}
         </div>
 
         <div>
@@ -243,7 +354,7 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated }) => {
               fontSize: '1rem'
             }}
           >
-            {submitting ? 'Creating...' : 'Create Store'}
+            {submitting ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Store' : 'Create Store')}
           </button>
         </div>
       </form>

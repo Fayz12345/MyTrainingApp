@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
@@ -52,6 +55,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [isLoadingExistingImage, setIsLoadingExistingImage] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const loadExistingQuiz = async (courseId: string) => {
     setIsLoadingQuiz(true);
@@ -285,13 +290,41 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate title
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    
     if (!title.trim()) {
-      alert('Please provide a course title');
+      errors.title = 'Course title is required';
+      touched.title = true;
+    } else if (title.trim().length < 3) {
+      errors.title = 'Course title must be at least 3 characters';
+      touched.title = true;
+    }
+    
+    setFieldErrors(errors);
+    setTouchedFields(touched);
+    
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+    
+    if (!title.trim()) {
+      await MySwal.fire({
+        title: "Validation Error",
+        text: "Please provide a course title",
+        icon: "warning",
+      });
       return;
     }
 
     if (!isEditMode && !videoFile) {
-      alert('Please provide a video file');
+      await MySwal.fire({
+        title: "Validation Error",
+        text: "Please provide a video file",
+        icon: "warning",
+      });
       return;
     }
 
@@ -303,7 +336,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
     );
 
     if (validQuestions.length === 0) {
-      alert('Please add at least one complete quiz question');
+      await MySwal.fire({
+        title: "Validation Error",
+        text: "Please add at least one complete quiz question",
+        icon: "warning",
+      });
       return;
     }
 
@@ -386,7 +423,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       }
 
       if (!resolvedVideoKey) {
-        alert('Please provide a course video before saving');
+        await MySwal.fire({
+          title: "Validation Error",
+          text: "Please provide a course video before saving",
+          icon: "warning",
+        });
         return;
       }
 
@@ -424,7 +465,13 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           });
         }
 
-        alert('Course updated successfully!');
+        await MySwal.fire({
+          title: "Updated!",
+          text: "Course updated successfully!",
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
         onSuccess?.();
         return;
       }
@@ -456,7 +503,13 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           });
         }
 
-        alert('Course created successfully!');
+        await MySwal.fire({
+          title: "Created!",
+          text: "Course created successfully!",
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
 
         // Reset form
         setTitle('');
@@ -474,11 +527,19 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         onSuccess?.();
       } else {
         console.error('No course data returned from creation');
-        alert('Course creation failed - no data returned');
+        await MySwal.fire({
+          title: "Error!",
+          text: "Course creation failed - no data returned",
+          icon: "error",
+        });
       }
     } catch (error) {
       console.error(isEditMode ? 'Error updating course:' : 'Error creating course:', error);
-      alert('Failed to save course. Please try again.');
+      await MySwal.fire({
+        title: "Error!",
+        text: "Failed to save course. Please try again.",
+        icon: "error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -515,17 +576,47 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           <input
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              // Clear error when user starts typing
+              if (fieldErrors.title) {
+                setFieldErrors(prev => {
+                  const newErrors = { ...prev };
+                  delete newErrors.title;
+                  return newErrors;
+                });
+              }
+            }}
+            onBlur={(e) => {
+              setTouchedFields(prev => ({ ...prev, title: true }));
+              if (!title.trim()) {
+                setFieldErrors(prev => ({ ...prev, title: 'Course title is required' }));
+              } else if (title.trim().length < 3) {
+                setFieldErrors(prev => ({ ...prev, title: 'Course title must be at least 3 characters' }));
+              } else {
+                setFieldErrors(prev => {
+                  const newErrors = { ...prev };
+                  delete newErrors.title;
+                  return newErrors;
+                });
+              }
+            }}
             placeholder="Enter course title"
             style={{
               width: '100%',
               padding: '0.75rem',
-              border: '1px solid #ccc',
+              border: fieldErrors.title ? '2px solid #d32f2f' : '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '1rem'
+              fontSize: '1rem',
+              outline: 'none'
             }}
             required
           />
+          {touchedFields.title && fieldErrors.title && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.title}
+            </div>
+          )}
         </div>
 
         {/* Course Description */}

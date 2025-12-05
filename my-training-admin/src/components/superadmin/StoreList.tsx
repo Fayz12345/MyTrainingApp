@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import StoreForm from '../businessunit/StoreForm';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
+
 
 const client = generateClient<Schema>();
 
@@ -30,6 +35,7 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingStore, setEditingStore] = useState<Store | null>(null);
 
   const fetchData = async () => {
     try {
@@ -68,17 +74,39 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
   };
 
   const deleteStore = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete store "${name}"? This will also delete all associated managers.`)) {
-      return;
-    }
+    const result = await MySwal.fire({
+      title: "Are you sure?",
+      text: `Do you want to delete store "${name}"? This will also delete all associated managers.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete!",
+      cancelButtonText: "Cancel",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       await client.models.Store.delete({ id });
-      alert('Store deleted successfully');
+
+      await MySwal.fire({
+        title: "Deleted!",
+        text: "Store deleted successfully",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+
       fetchData();
     } catch (err) {
-      console.error('Error deleting store:', err);
-      alert('Failed to delete store');
+      console.error("Error deleting store:", err);
+
+      MySwal.fire({
+        title: "Error!",
+        text: "Failed to delete store",
+        icon: "error",
+      });
     }
   };
 
@@ -87,11 +115,7 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
   }, [refreshTrigger]);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading stores...</p>
-      </div>
-    );
+    return <Loader message="Loading stores..." />;
   }
 
   if (error) {
@@ -115,12 +139,17 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
     );
   }
 
-  if (showCreateForm) {
+  if (showCreateForm || editingStore) {
     return (
       <StoreForm 
-        onCancel={() => setShowCreateForm(false)}
+        store={editingStore}
+        onCancel={() => {
+          setShowCreateForm(false);
+          setEditingStore(null);
+        }}
         onStoreCreated={() => {
           setShowCreateForm(false);
+          setEditingStore(null);
           fetchData();
         }}
       />
@@ -196,7 +225,7 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem' }}>
                     {store.name}
@@ -216,6 +245,20 @@ const StoreList: React.FC<StoreListProps> = ({ refreshTrigger }) => {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
+                  <button
+                    onClick={() => setEditingStore(store)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      backgroundColor: '#1976d2',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    ✏️ Edit
+                  </button>
                   <button
                     onClick={() => deleteStore(store.id, store.name)}
                     style={{

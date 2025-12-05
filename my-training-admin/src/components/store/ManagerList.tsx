@@ -161,9 +161,9 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
 
   return (
     <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h3>Managers ({managers.length})</h3>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="list-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <h3 style={{ margin: 0, fontSize: 'clamp(1.1rem, 3vw, 1.5rem)' }}>Managers ({managers.length})</h3>
+        <div className="list-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setShowCreateForm(true)}
             style={{
@@ -206,26 +206,26 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem' }}>
+              <div className="card-content" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem', fontSize: 'clamp(1rem, 2.5vw, 1.25rem)' }}>
                     {manager.name}
                   </h4>
                   <div style={{ display: 'flex', gap: '2rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                    <p style={{ margin: 0, color: '#666' }}>
+                    <p style={{ margin: 0, color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>
                       <strong>Email:</strong> {manager.email}
                     </p>
                     {store && (
-                      <p style={{ margin: 0, color: '#666' }}>
+                      <p style={{ margin: 0, color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>
                         <strong>Store:</strong> {store.name}
                       </p>
                     )}
                   </div>
-                  <p style={{ margin: '0.5rem 0', color: '#999', fontSize: '0.9rem' }}>
+                  <p style={{ margin: '0.5rem 0', color: '#999', fontSize: 'clamp(0.8rem, 1.8vw, 0.9rem)' }}>
                     Created: {new Date(manager.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem' }}>
+                <div className="card-actions" style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem', flexWrap: 'wrap' }}>
                   <button
                     onClick={() => deleteManager(manager.id, manager.name)}
                     style={{
@@ -235,7 +235,9 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
                       border: 'none',
                       borderRadius: '4px',
                       cursor: 'pointer',
-                      fontSize: '0.9rem'
+                      fontSize: 'clamp(0.875rem, 2vw, 0.9rem)',
+                      minHeight: '44px',
+                      whiteSpace: 'nowrap'
                     }}
                   >
                     🗑️ Delete

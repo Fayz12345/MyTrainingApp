@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
+import Loader from '../common/Loader';
 
 const client = generateClient<Schema>();
 
@@ -337,11 +338,7 @@ const TrainingAnalytics: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '3rem' }}>
-        <p>Loading analytics...</p>
-      </div>
-    );
+    return <Loader message="Loading analytics..." fullHeight />;
   }
 
   if (error) {
@@ -481,7 +478,7 @@ const TrainingAnalytics: React.FC = () => {
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+              <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                 <div>
                   <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2' }}>{stat.courseTitle}</h4>
                   <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>

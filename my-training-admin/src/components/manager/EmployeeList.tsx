@@ -3,6 +3,10 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import EmployeeForm from './EmployeeForm';
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+import Loader from '../common/Loader';
+const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
 
@@ -151,9 +155,18 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
   };
 
   const deleteEmployee = async (employeeId: string, employeeName: string) => {
-    if (!window.confirm(`Are you sure you want to delete employee "${employeeName}"? This will also remove all their course assignments.`)) {
-      return;
-    }
+    const result = await MySwal.fire({
+      title: "Are you sure?",
+      text: `Do you want to delete employee "${employeeName}"? This will also remove all their course assignments.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete!",
+      cancelButtonText: "Cancel",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       // First delete all assignments for this employee
@@ -165,11 +178,21 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
       // Then delete the employee
       await client.models.Employee.delete({ id: employeeId });
 
-      alert('Employee deleted successfully');
+      await MySwal.fire({
+        title: "Deleted!",
+        text: "Employee deleted successfully",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
       fetchData(); // Refresh the list
     } catch (err) {
       console.error('Error deleting employee:', err);
-      alert('Failed to delete employee');
+      await MySwal.fire({
+        title: "Error!",
+        text: "Failed to delete employee",
+        icon: "error",
+      });
     }
   };
 
@@ -178,11 +201,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
   }, [refreshTrigger]);
 
   if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <p>Loading employees...</p>
-      </div>
-    );
+    return <Loader message="Loading employees..." />;
   }
 
   if (error) {
@@ -324,7 +343,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h4 style={{ margin: 0, color: '#1976d2' }}>

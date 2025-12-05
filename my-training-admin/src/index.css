@@ -11,3 +11,250 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Responsive Design Utilities */
+* {
+  box-sizing: border-box;
+}
+
+/* Mobile First - Base styles for mobile */
+@media (max-width: 768px) {
+  /* Dashboard containers */
+  .dashboard-container {
+    padding: 1rem !important;
+  }
+
+  /* Remove space-between and flex-start on mobile */
+  [style*="justify-content: space-between"][style*="align-items: flex-start"],
+  [style*="justifyContent: space-between"][style*="alignItems: flex-start"] {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  /* Override space-between with center alignment */
+  [style*="justify-content: space-between"][style*="align-items: center"],
+  [style*="justifyContent: space-between"][style*="alignItems: center"] {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  /* Header/navigation */
+  .dashboard-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+    position: relative !important;
+  }
+
+  .dashboard-title {
+    font-size: 1.5rem !important;
+  }
+
+  .dashboard-nav {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .dashboard-nav button {
+    font-size: 0.875rem !important;
+    padding: 0.4rem 0.8rem !important;
+  }
+
+  /* Mobile Menu Toggle */
+  .menu-toggle {
+    display: flex !important;
+  }
+
+  /* Hide desktop nav on mobile */
+  .desktop-nav {
+    display: none !important;
+  }
+
+  /* Show mobile dropdown */
+  .mobile-menu-dropdown {
+    display: block !important;
+  }
+
+  /* List headers */
+  .list-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .list-header h3 {
+    font-size: 1.25rem !important;
+    margin: 0 !important;
+  }
+
+  .list-actions {
+    width: 100% !important;
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .list-actions button {
+    width: 100% !important;
+  }
+
+  /* Cards */
+  .card-container {
+    padding: 1rem !important;
+  }
+
+  .card-content {
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+  }
+
+  /* Use a utility class approach - add this class to elements that need mobile override */
+  .mobile-stack {
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .card-actions {
+    width: 100% !important;
+    margin-top: 1rem !important;
+    margin-left: 0 !important;
+  }
+
+  .card-actions button {
+    width: 100% !important;
+  }
+
+  /* Forms */
+  .form-container {
+    padding: 1rem !important;
+  }
+
+  .form-group {
+    margin-bottom: 1rem !important;
+  }
+
+  .form-row {
+    flex-direction: column !important;
+  }
+
+  .form-actions {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .form-actions button {
+    width: 100% !important;
+  }
+
+  /* Grid layouts */
+  .grid-container {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tables - convert to cards on mobile */
+  .table-container {
+    overflow-x: auto;
+  }
+
+  /* Buttons */
+  button {
+    min-height: 44px; /* Touch target size */
+  }
+
+  /* Text */
+  h1 {
+    font-size: 1.75rem !important;
+  }
+
+  h2 {
+    font-size: 1.5rem !important;
+  }
+
+  h3 {
+    font-size: 1.25rem !important;
+  }
+
+  h4 {
+    font-size: 1.1rem !important;
+  }
+
+  /* Spacing */
+  .section-spacing {
+    margin-bottom: 1.5rem !important;
+  }
+
+  /* Employee Dashboard specific */
+  .employee-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .completion-stats {
+    width: 100% !important;
+    text-align: left !important;
+    margin-top: 1rem !important;
+  }
+
+  /* Course cards */
+  .course-card {
+    width: 100% !important;
+    margin-bottom: 1rem !important;
+  }
+
+  /* Video player */
+  video {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Input fields */
+  input, select, textarea {
+    width: 100% !important;
+    min-height: 44px !important;
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
+}
+
+/* Tablet styles */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .dashboard-container {
+    padding: 1.5rem !important;
+  }
+
+  .grid-container {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Desktop styles - already defined in components */
+@media (min-width: 1025px) {
+  .dashboard-container {
+    padding: 2rem !important;
+    max-width: 1200px !important;
+    margin: 0 auto !important;
+  }
+
+  /* Hide mobile menu toggle on desktop */
+  .menu-toggle {
+    display: none !important;
+  }
+
+  /* Show desktop nav on desktop */
+  .desktop-nav {
+    display: flex !important;
+  }
+
+  /* Hide mobile dropdown on desktop */
+  .mobile-menu-dropdown {
+    display: none !important;
+  }
+}
