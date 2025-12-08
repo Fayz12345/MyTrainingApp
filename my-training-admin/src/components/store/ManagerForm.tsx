@@ -53,6 +53,8 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
+  const managerStoreModel = (client as any).models?.ManagerStore;
+
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -94,6 +96,31 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     };
     fetchStores();
   }, []);
+
+  // When editing, hydrate storeIds from ManagerStore links if available
+  useEffect(() => {
+    if (!manager) return;
+    const loadManagerStores = async () => {
+      try {
+        if (managerStoreModel?.list) {
+          const resp = await managerStoreModel.list({ filter: { managerId: { eq: manager.id } } });
+          const ids = (resp.data || []).map((ms: any) => ms.storeId).filter(Boolean);
+          if (ids.length > 0) {
+            setFormData(prev => ({ ...prev, storeIds: Array.from(new Set(ids)) }));
+            return;
+          }
+        } else {
+          console.warn('[ManagerForm] ManagerStore model not available in generated client; using legacy storeId');
+        }
+      } catch (err) {
+        console.warn('[ManagerForm] Could not fetch ManagerStore links; falling back to legacy storeId', err);
+      }
+      if (manager.storeId) {
+        setFormData(prev => ({ ...prev, storeIds: [manager.storeId as string] }));
+      }
+    };
+    loadManagerStores();
+  }, [manager, managerStoreModel]);
 
   const validateField = (name: string, value: any): string => {
     switch (name) {
@@ -228,21 +255,29 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
   };
 
   const syncManagerStores = async (managerId: string, storeIds: string[]) => {
+    if (!managerStoreModel?.list || !managerStoreModel?.delete || !managerStoreModel?.create) {
+      console.warn('[ManagerForm] ManagerStore model not available in generated client; skipping multi-store sync');
+      return;
+    }
+
+    const uniqueStoreIds = Array.from(new Set(storeIds));
+
     // Remove existing links then add new ones
-    const existing = await client.models.ManagerStore.list({
+    const existing = await managerStoreModel.list({
       filter: { managerId: { eq: managerId } }
     });
     if (existing.data && existing.data.length > 0) {
       for (const link of existing.data) {
-        await client.models.ManagerStore.delete({ id: link.id });
+        await managerStoreModel.delete({ id: link.id });
       }
     }
-    for (const storeId of storeIds) {
-      await client.models.ManagerStore.create({
+    for (const storeId of uniqueStoreIds) {
+      const nowIso = new Date().toISOString();
+      await managerStoreModel.create({
         managerId,
         storeId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: nowIso,
+        updatedAt: nowIso
       });
     }
   };

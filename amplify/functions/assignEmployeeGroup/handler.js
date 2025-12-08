@@ -112,7 +112,7 @@ export const handler = async (event) => {
         // Determine group based on role
         let groupName = 'Employees'; // default
         let shouldCheckDatabase = false; // Flag to determine if we need to check database
-
+        
         // If this came from end-user sign-up (not admin create), force Employees unless role explicitly set
         const isSelfSignUp = (triggerSource || '').toLowerCase().includes('confirmsignup');
         const normalizedRole = (userRole || '').toLowerCase();

@@ -27,6 +27,7 @@ const schema = a.schema({
         businessUnit: a.belongsTo('BusinessUnit', 'businessUnitId'),
         createdBy: a.string(), // userId of the BusinessUnit or Store person who created it
         managers: a.hasMany('Manager', 'storeId'),
+        managerStores: a.hasMany('ManagerStore', 'storeId'),
         createdAt: a.datetime().required(),
         updatedAt: a.datetime().required()
     })
@@ -42,8 +43,10 @@ const schema = a.schema({
         userId: a.string().required(), // Cognito user ID
         email: a.string().required(),
         name: a.string().required(),
-        storeId: a.id().required(),
+        phoneNumber: a.string(),
+        storeId: a.id(),
         store: a.belongsTo('Store', 'storeId'),
+        managerStores: a.hasMany('ManagerStore', 'managerId'),
         createdBy: a.string(), // userId of the Store person who created it
         employees: a.hasMany('Employee', 'managerId'),
         createdAt: a.datetime().required(),
@@ -53,7 +56,8 @@ const schema = a.schema({
         allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
         allow.group('BusinessUnit').to(['read']),
         allow.group('Store').to(['create', 'read', 'update', 'delete']),
-        allow.group('Managers').to(['read'])
+        allow.group('Managers').to(['read']),
+        allow.publicApiKey().to(['read'])
     ]),
     Course: a
         .model({
@@ -124,6 +128,22 @@ const schema = a.schema({
         .authorization(allow => [
         allow.group('Managers').to(['create', 'update', 'delete', 'read']),
         allow.group('Employees').to(['read'])
+    ]),
+    ManagerStore: a
+        .model({
+        id: a.id(),
+        managerId: a.id().required(),
+        storeId: a.id().required(),
+        manager: a.belongsTo('Manager', 'managerId'),
+        store: a.belongsTo('Store', 'storeId'),
+        createdAt: a.datetime().required(),
+        updatedAt: a.datetime().required()
+    })
+        .authorization(allow => [
+        allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
+        allow.group('Store').to(['read']),
+        allow.group('BusinessUnit').to(['read']),
+        allow.group('Managers').to(['read'])
     ]),
     Result: a
         .model({
