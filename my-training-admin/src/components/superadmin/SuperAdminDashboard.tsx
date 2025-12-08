@@ -28,6 +28,7 @@ import BusinessUnitList from './BusinessUnitList';
 import StoreList from './StoreList';
 import ManagerList from './ManagerList';
 import OrganizationHierarchy from './OrganizationHierarchy';
+import UnassignedEmployeeList from './UnassignedEmployeeList';
 
 // Icons - using simple text for now, can be replaced with @mui/icons-material later
 const MenuIcon = () => <span>☰</span>;
@@ -42,7 +43,7 @@ interface SuperAdminDashboardProps {
   user: AuthUser;
 }
 
-type ViewMode = 'dashboard' | 'business-units' | 'stores' | 'managers' | 'organization';
+type ViewMode = 'dashboard' | 'business-units' | 'stores' | 'managers' | 'organization' | 'unassigned-employees';
 
 const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ signOut, user }) => {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
@@ -56,6 +57,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ signOut, user
     { key: 'business-units', label: 'Business Units', icon: '🏢' },
     { key: 'stores', label: 'Stores', icon: '🏪' },
     { key: 'managers', label: 'Managers', icon: '👥' },
+    { key: 'unassigned-employees', label: 'Unassigned Employees', icon: '🚫👥' },
     { key: 'organization', label: 'Organization', icon: '🌳' }
   ];
 
@@ -106,6 +108,16 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ signOut, user
           </Box>
         );
 
+      case 'unassigned-employees':
+        return (
+          <Box>
+            <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
+              Unassigned Employees
+            </Typography>
+            <UnassignedEmployeeList refreshTrigger={refreshTrigger} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -124,8 +136,9 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ signOut, user
               {[
                 { key: 'business-units', title: 'Business Units', description: 'Create and manage business units in your organization.', icon: '🏢' },
                 { key: 'stores', title: 'Stores', description: 'Create and manage stores across all business units.', icon: '🏪' },
-                { key: 'managers', title: 'Managers', description: 'Create and manage managers and assign them to any store.', icon: '👥' },
-                { key: 'organization', title: 'Organization Hierarchy', description: 'View the complete organizational structure: Business Units → Stores → Managers → Employees.', icon: '🌳' }
+                  { key: 'managers', title: 'Managers', description: 'Create and manage managers and assign them to any store.', icon: '👥' },
+                  { key: 'unassigned-employees', title: 'Unassigned Employees', description: 'Review employees who are not yet assigned to a manager.', icon: '🚫👥' },
+                  { key: 'organization', title: 'Organization Hierarchy', description: 'View the complete organizational structure: Business Units → Stores → Managers → Employees.', icon: '🌳' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>

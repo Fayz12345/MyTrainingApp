@@ -1,22 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
-import { 
-  Box, 
-  Typography, 
-  Button, 
-  Alert, 
-  AlertTitle, 
-  IconButton,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
-} from '@mui/material';
+import { Box, Typography, Button, Alert, AlertTitle, IconButton,Table,TableBody,TableCell,TableContainer,TableHead,TableRow,Paper,Chip,} from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -33,6 +18,7 @@ type Manager = {
   readonly userId: string;
   readonly email: string;
   readonly name: string;
+  readonly phoneNumber?: string | null;
   readonly storeId: string;
   readonly createdBy?: string | null;
   readonly createdAt: string;
@@ -242,6 +228,7 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
             <TableRow sx={{ backgroundColor: 'primary.main' }}>
               <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Name</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Phone Number</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Store</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Created Date</TableCell>
               <TableCell sx={{ color: 'white', fontWeight: 'bold', textAlign: 'center' }}>Actions</TableCell>
@@ -270,6 +257,11 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
                       {manager.email}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {manager.phoneNumber || 'N/A'}
                     </Typography>
                   </TableCell>
                   <TableCell>

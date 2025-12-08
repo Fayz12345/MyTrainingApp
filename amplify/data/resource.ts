@@ -34,6 +34,7 @@ const schema = a.schema({
       businessUnit: a.belongsTo('BusinessUnit', 'businessUnitId'),
       createdBy: a.string(), // userId of the BusinessUnit or Store person who created it
       managers: a.hasMany('Manager', 'storeId'),
+      managerStores: a.hasMany('ManagerStore', 'storeId'),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
@@ -49,8 +50,10 @@ const schema = a.schema({
       userId: a.string().required(), // Cognito user ID
       email: a.string().required(),
       name: a.string().required(),
-      storeId: a.id().required(),
+      phoneNumber: a.string(), // Phone number for the manager
+      storeId: a.id(), // primary store (legacy / optional)
       store: a.belongsTo('Store', 'storeId'),
+      managerStores: a.hasMany('ManagerStore', 'managerId'),
       createdBy: a.string(), // userId of the Store person who created it
       employees: a.hasMany('Employee', 'managerId'),
       createdAt: a.datetime().required(),
@@ -120,6 +123,22 @@ const schema = a.schema({
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read']),
       allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read employee details for notifications
+    ]),
+  ManagerStore: a
+    .model({
+      id: a.id(),
+      managerId: a.id().required(),
+      storeId: a.id().required(),
+      manager: a.belongsTo('Manager', 'managerId'),
+      store: a.belongsTo('Store', 'storeId'),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
+      allow.group('Store').to(['read']),
+      allow.group('BusinessUnit').to(['read']),
+      allow.group('Managers').to(['read'])
     ]),
   Assignment: a
     .model({

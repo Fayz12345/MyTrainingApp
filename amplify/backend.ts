@@ -8,6 +8,7 @@ import { createCognitoGroups } from './functions/createCognitoGroups/resource';
 import { assignUserToGroup } from './functions/assignUserToGroup/resource';
 import { subscribeManagerToSNS } from './functions/subscribeManagerToSNS/resource';
 import { sendManagerNotification } from './functions/sendManagerNotification/resource';
+import { sendWelcomeEmail } from './functions/sendWelcomeEmail/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -21,6 +22,7 @@ defineBackend({
   createCognitoGroups,
   assignUserToGroup,
   subscribeManagerToSNS,
-  sendManagerNotification
+  sendManagerNotification,
+  sendWelcomeEmail
 });
 

@@ -5,6 +5,16 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
 import Loader from '../common/Loader';
+
+// Minimal react-select typings (local) to avoid external @types dependency
+type RSOption = { value: string; label: string };
+type RSMultiValue = RSOption[];
+type RSStylesConfig = {
+  control?: (base: any, state: any) => any;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const Select = require('react-select').default as React.ComponentType<any>;
 const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
@@ -17,7 +27,8 @@ interface ManagerFormProps {
     userId: string;
     email: string;
     name: string;
-    storeId: string;
+    phoneNumber?: string | null;
+    storeId?: string | null;
   } | null;
 }
 
@@ -31,7 +42,8 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
   const [formData, setFormData] = useState({
     email: manager?.email || '',
     name: manager?.name || '',
-    storeId: manager?.storeId || '',
+    phoneNumber: manager?.phoneNumber || '',
+    storeIds: manager?.storeId ? [manager.storeId] : [],
     temporaryPassword: ''
   });
   const [stores, setStores] = useState<Store[]>([]);
@@ -67,7 +79,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
               
               if (userStore) {
                 // Auto-select the store they belong to
-                setFormData(prev => ({ ...prev, storeId }));
+                setFormData(prev => ({ ...prev, storeIds: storeId ? [storeId] : [] }));
               }
             }
           }
@@ -83,7 +95,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     fetchStores();
   }, []);
 
-  const validateField = (name: string, value: string): string => {
+  const validateField = (name: string, value: any): string => {
     switch (name) {
       case 'name':
         if (!value.trim()) return 'Full Name is required';
@@ -96,8 +108,37 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
           if (!emailRegex.test(value)) return 'Please enter a valid email address';
         }
         return '';
-      case 'storeId':
-        if (!value) return 'Store is required';
+      case 'storeIds':
+        if (!Array.isArray(value) || value.length === 0) return 'Store is required';
+        return '';
+      case 'phoneNumber':
+        if (value.trim()) {
+          // Canadian phone number validation
+          // Remove all non-digits for validation
+          const digitsOnly = value.replace(/\D/g, '');
+          
+          // Canadian numbers: country code (1) + area code (3) + number (7) = 11 digits
+          // Or without country code: area code (3) + number (7) = 10 digits
+          if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+            // Format: +1 (XXX) XXX-XXXX or 1-XXX-XXX-XXXX
+            const areaCode = digitsOnly.substring(1, 4);
+            if (areaCode[0] === '0' || areaCode[0] === '1') {
+              return 'Invalid area code (cannot start with 0 or 1)';
+            }
+          } else if (digitsOnly.length === 10) {
+            // Format: (XXX) XXX-XXXX or XXX-XXX-XXXX
+            const areaCode = digitsOnly.substring(0, 3);
+            if (areaCode[0] === '0' || areaCode[0] === '1') {
+              return 'Invalid area code (cannot start with 0 or 1)';
+            }
+          } else {
+            return 'Please enter a valid Canadian phone number (10 or 11 digits)';
+          }
+          
+          // Check for valid characters (digits, spaces, dashes, parentheses, plus)
+          const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+          if (!phoneRegex.test(value)) return 'Please enter a valid phone number';
+        }
         return '';
       case 'temporaryPassword':
         if (!isEditMode && !value) return 'Temporary Password is required';
@@ -117,7 +158,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -134,10 +175,11 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     }
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    const val: any = value;
     setTouchedFields(prev => ({ ...prev, [name]: true }));
-    const error = validateField(name, value);
+    const error = validateField(name, val);
     if (error) {
       setFieldErrors(prev => ({ ...prev, [name]: error }));
     } else {
@@ -182,6 +224,96 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     } catch (err) {
       console.error(`${logPrefix} Lambda invocation error:`, err);
       throw err;
+    }
+  };
+
+  const syncManagerStores = async (managerId: string, storeIds: string[]) => {
+    // Remove existing links then add new ones
+    const existing = await client.models.ManagerStore.list({
+      filter: { managerId: { eq: managerId } }
+    });
+    if (existing.data && existing.data.length > 0) {
+      for (const link of existing.data) {
+        await client.models.ManagerStore.delete({ id: link.id });
+      }
+    }
+    for (const storeId of storeIds) {
+      await client.models.ManagerStore.create({
+        managerId,
+        storeId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  };
+
+  const storeOptions: RSOption[] = stores.map(store => ({
+    value: store.id,
+    label: store.name
+  }));
+
+  const handleStoreSelect = (selected: RSMultiValue) => {
+    const ids = selected.map((opt: RSOption) => opt.value);
+    setFormData(prev => ({ ...prev, storeIds: ids }));
+
+    // Clear store errors when selection changes
+    setFieldErrors(prev => {
+      const next = { ...prev };
+      delete next.storeIds;
+      return next;
+    });
+    setTouchedFields(prev => ({ ...prev, storeIds: true }));
+  };
+
+  const storeSelectStyles: RSStylesConfig = {
+    control: (base: any, state: any) => ({
+      ...base,
+      borderColor: fieldErrors.storeIds ? '#d32f2f' : base.borderColor || '#ccc',
+      boxShadow: 'none',
+      '&:hover': {
+        borderColor: fieldErrors.storeIds ? '#d32f2f' : state.isFocused ? '#1976d2' : base.borderColor
+      }
+    })
+  };
+
+  const sendWelcomeEmail = async (email: string, name: string, password: string, role: 'manager' | 'employee') => {
+    const logPrefix = '[SEND_WELCOME_EMAIL]';
+    const LAMBDA_FUNCTION_URL = process.env.REACT_APP_SEND_WELCOME_EMAIL_LAMBDA_URL || '';
+    
+    if (!LAMBDA_FUNCTION_URL) {
+      console.warn(`${logPrefix} Lambda Function URL not configured. Skipping welcome email.`);
+      return { success: false, error: 'Lambda Function URL not configured' };
+    }
+
+    try {
+      console.log(`${logPrefix} Sending welcome email to ${email}...`);
+      const response = await fetch(LAMBDA_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          name,
+          password,
+          role,
+          loginUrl: role === 'manager' 
+            ? window.location.origin + '/login' 
+            : window.location.origin.replace('admin', 'app') + '/login'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lambda returned status ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`${logPrefix} Lambda response:`, result);
+      return result;
+    } catch (err) {
+      console.error(`${logPrefix} Lambda invocation error:`, err);
+      // Don't throw - email sending failure shouldn't block manager creation
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   };
 
@@ -340,10 +472,16 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
       touched.name = true;
     }
     
-    const storeError = validateField('storeId', formData.storeId);
+    const storeError = validateField('storeIds', formData.storeIds);
     if (storeError) {
-      errors.storeId = storeError;
-      touched.storeId = true;
+      errors.storeIds = storeError;
+      touched.storeIds = true;
+    }
+    
+    const phoneError = validateField('phoneNumber', formData.phoneNumber);
+    if (phoneError) {
+      errors.phoneNumber = phoneError;
+      touched.phoneNumber = true;
     }
     
     // Only require email and password for new managers
@@ -375,7 +513,8 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
     console.log(`${logPrefix} [STEP 1] Manager Data:`, {
       email: formData.email,
       name: formData.name,
-      storeId: formData.storeId,
+      phoneNumber: formData.phoneNumber,
+      storeIds: formData.storeIds,
       role: 'manager',
       hasPassword: !!formData.temporaryPassword
     });
@@ -392,9 +531,11 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
         await client.models.Manager.update({
           id: manager.id,
           name: formData.name,
-          storeId: formData.storeId,
+          phoneNumber: formData.phoneNumber || null,
+          storeId: formData.storeIds[0] || null,
           updatedAt: now
         });
+        await syncManagerStores(manager.id, formData.storeIds);
         
         console.log(`${logPrefix} [STEP 1] ✅ Manager record updated in database`);
         console.log(`${logPrefix} ========================================`);
@@ -454,12 +595,14 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
       // Create Manager record in database
       console.log(`${logPrefix} [STEP 4] Creating Manager record in database...`);
       const now = new Date().toISOString();
+      const primaryStoreId = formData.storeIds[0] || null;
       const managerData = {
         id: result.managerId,
         userId: result.userId,
         email: formData.email,
         name: formData.name,
-        storeId: formData.storeId,
+        phoneNumber: formData.phoneNumber || null,
+        storeId: primaryStoreId,
         createdBy: userId,
         createdAt: now,
         updatedAt: now
@@ -469,6 +612,8 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
       
       await client.models.Manager.create(managerData);
       console.log(`${logPrefix} [STEP 4] ✅ Manager record created in database`);
+      // Link manager to all selected stores
+      await syncManagerStores(result.managerId, formData.storeIds);
 
       // Automatically subscribe manager to SNS topic for notifications
       console.log(`${logPrefix} [STEP 4.1] Subscribing manager to SNS topic...`);
@@ -485,6 +630,20 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
       } catch (snsError) {
         // Non-critical error - log but don't fail manager creation
         console.warn(`${logPrefix} [STEP 4.1] ⚠️ Failed to subscribe manager to SNS (non-critical):`, snsError);
+      }
+
+      // Send welcome email with login credentials
+      console.log(`${logPrefix} [STEP 4.2] Sending welcome email to manager...`);
+      try {
+        const emailResult = await sendWelcomeEmail(formData.email, formData.name, formData.temporaryPassword, 'manager');
+        if (emailResult.success) {
+          console.log(`${logPrefix} [STEP 4.2] ✅ Welcome email sent successfully`);
+        } else {
+          console.warn(`${logPrefix} [STEP 4.2] ⚠️ Failed to send welcome email: ${emailResult.error}`);
+        }
+      } catch (emailError) {
+        // Non-critical error - log but don't fail manager creation
+        console.warn(`${logPrefix} [STEP 4.2] ⚠️ Failed to send welcome email (non-critical):`, emailError);
       }
 
       // IMPORTANT: The external Lambda creates the user but may not add them to Managers group
@@ -527,7 +686,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
         userId: result.userId,
         email: formData.email,
         name: formData.name,
-        storeId: formData.storeId,
+        storeIds: formData.storeIds,
         createdBy: userId,
         timestamp: new Date().toISOString()
       });
@@ -535,7 +694,21 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
       console.log(`${logPrefix} ✅ PROCESS COMPLETE`);
       console.log(`${logPrefix} ========================================`);
 
-      alert(`🎉 Manager created successfully!\n\n👤 Manager: ${formData.name} (${formData.email})\n🔑 Password: ${formData.temporaryPassword}\n🆔 Manager ID: ${result.managerId}\n🆔 User ID (Cognito): ${result.userId}\n\n✅ The manager can now log in to the admin portal!\n\n⚠️ IMPORTANT: Verify in AWS Cognito Console:\n   1. User Management → Users (should see ${formData.email})\n   2. User Management → Groups → Managers (should see ${formData.email})\n   3. If not in group, check CloudWatch logs for assignEmployeeGroup function\n   4. Or run: npm run add-manager-to-group -- ${formData.email}`);
+      await MySwal.fire({
+        title: "🎉 Manager Created!",
+        html: `<div style="text-align: left;">
+          <p><strong>👤 Manager:</strong> ${formData.name} (${formData.email})</p>
+          <p><strong>🔑 Password:</strong> ${formData.temporaryPassword}</p>
+          <p><strong>🆔 Manager ID:</strong> ${result.managerId}</p>
+          <p><strong>🆔 User ID (Cognito):</strong> ${result.userId}</p>
+          <hr style="margin: 1rem 0; border: none; border-top: 1px solid #ddd;">
+          <p>✅ The manager can now log in to the admin portal!</p>
+          <p>✅ A welcome email with login credentials has been sent to ${formData.email}</p>
+        </div>`,
+        icon: "success",
+        confirmButtonText: "OK",
+        width: "600px",
+      });
       onManagerCreated();
     } catch (err) {
       console.error(`${logPrefix} ========================================`);
@@ -583,33 +756,21 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
 
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Store <span style={{ color: '#d32f2f' }}>*</span>
+            Stores <span style={{ color: '#d32f2f' }}>*</span>
           </label>
-          <select
-            name="storeId"
-            value={formData.storeId}
-            onChange={handleInputChange}
-            onBlur={handleBlur}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: fieldErrors.storeId ? '2px solid #d32f2f' : '1px solid #ccc',
-              borderRadius: '4px',
-              fontSize: '1rem',
-              outline: 'none'
-            }}
-          >
-            <option value="">Select a Store</option>
-            {stores.map((store) => (
-              <option key={store.id} value={store.id}>
-                {store.name}
-              </option>
-            ))}
-          </select>
-          {touchedFields.storeId && fieldErrors.storeId && (
+          <Select
+            isMulti
+            options={storeOptions}
+            value={storeOptions.filter(opt => formData.storeIds.includes(opt.value))}
+            onChange={handleStoreSelect}
+            onBlur={() => setTouchedFields(prev => ({ ...prev, storeIds: true }))}
+            classNamePrefix="react-select"
+            placeholder="Select one or more stores"
+            styles={storeSelectStyles}
+          />
+          {touchedFields.storeIds && fieldErrors.storeIds && (
             <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-              {fieldErrors.storeId}
+              {fieldErrors.storeIds}
             </div>
           )}
         </div>
@@ -639,6 +800,38 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
             <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
               {fieldErrors.name}
             </div>
+          )}
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Phone Number
+          </label>
+          <input
+            type="tel"
+            name="phoneNumber"
+            value={formData.phoneNumber}
+            onChange={handleInputChange}
+            onBlur={handleBlur}
+            placeholder="+1 (416) 555-1234"
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: fieldErrors.phoneNumber ? '2px solid #d32f2f' : '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '1rem',
+              outline: 'none'
+            }}
+          />
+          {touchedFields.phoneNumber && fieldErrors.phoneNumber && (
+            <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {fieldErrors.phoneNumber}
+            </div>
+          )}
+          {!touchedFields.phoneNumber && !fieldErrors.phoneNumber && (
+            <small style={{ color: '#666', fontSize: '0.8rem' }}>
+              Optional - Canadian format: +1 (XXX) XXX-XXXX or (XXX) XXX-XXXX
+            </small>
           )}
         </div>
 

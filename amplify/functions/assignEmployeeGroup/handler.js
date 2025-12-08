@@ -112,9 +112,113 @@ export const handler = async (event) => {
         // Determine group based on role
         let groupName = 'Employees'; // default
         let shouldCheckDatabase = false; // Flag to determine if we need to check database
-        
-        // Check role from attributes
-        if (userRole === 'manager' || userRole === 'Managers') {
+
+        // If this came from end-user sign-up (not admin create), force Employees unless role explicitly set
+        const isSelfSignUp = (triggerSource || '').toLowerCase().includes('confirmsignup');
+        const normalizedRole = (userRole || '').toLowerCase();
+        if (isSelfSignUp && (!normalizedRole || normalizedRole === 'employee' || normalizedRole === 'employees')) {
+            groupName = 'Employees';
+            shouldCheckDatabase = false;
+            console.log(`${logPrefix} [STEP 2.0] Self-signup detected -> forcing 'Employees' group (no DB check)`);
+            
+            // For self-signup, also ensure an Employee record exists in the database
+            try {
+                const userIdFromEvent = event.request?.userAttributes?.sub || username;
+                const emailFromEvent = event.request?.userAttributes?.email || userEmail || username;
+                const nameFromEvent = event.request?.userAttributes?.name || event.request?.userAttributes?.given_name || emailFromEvent;
+                const nowIso = new Date().toISOString();
+                
+                if (!userIdFromEvent || !emailFromEvent) {
+                    console.warn(`${logPrefix} [STEP 2.0] ⚠️ Missing userId or email for self-signup employee creation`, {
+                        userIdFromEvent,
+                        emailFromEvent
+                    });
+                } else {
+                    const appsyncEndpoint = process.env.APPSYNC_API_URL || 'https://mswo73fsfjh4thfaalt7d63i4a.appsync-api.ca-central-1.amazonaws.com/graphql';
+                    const apiKey = process.env.APPSYNC_API_KEY || 'da2-la7esrklanbehi5v7e574ao7fq';
+                    const url = new URL(appsyncEndpoint);
+
+                    // Check if employee already exists
+                    const checkEmployeeQuery = {
+                        query: `query GetEmployeeByUserId($userId: String!) {
+                            listEmployees(filter: { userId: { eq: $userId } }) {
+                                items { id userId email }
+                            }
+                        }`,
+                        variables: { userId: userIdFromEvent }
+                    };
+
+                    const executeGraphql = async (payload) => {
+                        return await new Promise((resolve, reject) => {
+                            const req = https.request({
+                                hostname: url.hostname,
+                                port: 443,
+                                path: url.pathname,
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'x-api-key': apiKey
+                                },
+                                timeout: 10000
+                            }, (res) => {
+                                let data = '';
+                                res.on('data', (chunk) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        if (res.statusCode >= 200 && res.statusCode < 300) {
+                                            resolve(parsed);
+                                        } else {
+                                            reject(new Error(`AppSync returned status ${res.statusCode}: ${data}`));
+                                        }
+                                    } catch (e) {
+                                        reject(new Error(`Failed to parse response: ${e.message}`));
+                                    }
+                                });
+                            });
+                            req.on('error', reject);
+                            req.on('timeout', () => {
+                                req.destroy();
+                                reject(new Error('Request timeout'));
+                            });
+                            req.write(JSON.stringify(payload));
+                            req.end();
+                        });
+                    };
+
+                    const existing = await executeGraphql(checkEmployeeQuery);
+                    const alreadyExists = existing?.data?.listEmployees?.items?.length > 0;
+                    if (alreadyExists) {
+                        console.log(`${logPrefix} [STEP 2.0] Employee already exists for userId ${userIdFromEvent}`);
+                    } else {
+                        console.log(`${logPrefix} [STEP 2.0] Creating Employee record for self-signup userId ${userIdFromEvent}`);
+                        const createEmployeeMutation = {
+                            query: `mutation CreateEmployee($input: CreateEmployeeInput!) {
+                                createEmployee(input: $input) { id userId email }
+                            }`,
+                            variables: {
+                                input: {
+                                    id: userIdFromEvent, // use Cognito sub as ID
+                                    userId: userIdFromEvent,
+                                    email: emailFromEvent,
+                                    name: nameFromEvent,
+                                    department: null,
+                                    managerId: null,
+                                    createdBy: null,
+                                    isActive: true,
+                                    createdAt: nowIso,
+                                    updatedAt: nowIso
+                                }
+                            }
+                        };
+                        await executeGraphql(createEmployeeMutation);
+                        console.log(`${logPrefix} [STEP 2.0] ✅ Employee record created for ${emailFromEvent}`);
+                    }
+                }
+            } catch (selfSignupDbError) {
+                console.warn(`${logPrefix} [STEP 2.0] ⚠️ Could not ensure Employee record for self-signup:`, selfSignupDbError.message || selfSignupDbError);
+            }
+        } else if (userRole === 'manager' || userRole === 'Managers') {
             groupName = 'Managers';
             console.log(`${logPrefix} [STEP 2.1] ✅ Role is 'manager' → Assigning to 'Managers' group`);
         } else if (userRole === 'store' || userRole === 'Store') {

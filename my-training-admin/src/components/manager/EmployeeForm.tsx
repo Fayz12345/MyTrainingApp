@@ -24,6 +24,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentManagerId, setCurrentManagerId] = useState<string | null>(null);
+  const [currentManagerEmail, setCurrentManagerEmail] = useState<string | null>(null);
+  const [currentManagerName, setCurrentManagerName] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
@@ -32,6 +34,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
       try {
         const session = await fetchAuthSession();
         const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+        const email = session.tokens?.idToken?.payload?.email as string | undefined;
+        const givenName = session.tokens?.idToken?.payload?.name as string | undefined;
+        setCurrentManagerEmail(email || null);
+        setCurrentManagerName(givenName || null);
         
         if (userId) {
           const managers = await client.models.Manager.list({
@@ -126,6 +132,47 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
     
     // Shuffle the password
     return password.split('').sort(() => Math.random() - 0.5).join('');
+  };
+
+  const sendWelcomeEmail = async (email: string, name: string, password: string, role: 'manager' | 'employee') => {
+    const logPrefix = '[SEND_WELCOME_EMAIL]';
+    const LAMBDA_FUNCTION_URL = process.env.REACT_APP_SEND_WELCOME_EMAIL_LAMBDA_URL || '';
+    
+    if (!LAMBDA_FUNCTION_URL) {
+      console.warn(`${logPrefix} Lambda Function URL not configured. Skipping welcome email.`);
+      return { success: false, error: 'Lambda Function URL not configured' };
+    }
+
+    try {
+      console.log(`${logPrefix} Sending welcome email to ${email}...`);
+      const response = await fetch(LAMBDA_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          name,
+          password,
+          role,
+          loginUrl: role === 'manager' 
+            ? window.location.origin + '/login' 
+            : window.location.origin.replace('admin', 'app') + '/login'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lambda returned status ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`${logPrefix} Lambda response:`, result);
+      return result;
+    } catch (err) {
+      console.error(`${logPrefix} Lambda invocation error:`, err);
+      // Don't throw - email sending failure shouldn't block employee creation
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
   };
 
   const createCognitoUser = async (email: string, name: string, department: string, temporaryPassword: string, role: string) => {
@@ -322,6 +369,44 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
         }
       }
       
+      // Send welcome email with login credentials
+      console.log('[EMPLOYEE_CREATION] Sending welcome email to employee...');
+      try {
+        const emailResult = await sendWelcomeEmail(
+          formData.email, 
+          formData.name, 
+          formData.temporaryPassword, 
+          formData.role as 'manager' | 'employee'
+        );
+        if (emailResult.success) {
+          console.log('[EMPLOYEE_CREATION] ✅ Welcome email sent successfully');
+        } else {
+          console.warn('[EMPLOYEE_CREATION] ⚠️ Failed to send welcome email:', emailResult.error);
+        }
+      } catch (emailError) {
+        // Non-critical error - log but don't fail employee creation
+        console.warn('[EMPLOYEE_CREATION] ⚠️ Failed to send welcome email (non-critical):', emailError);
+      }
+
+      // Notify manager who created this employee
+      if (currentManagerEmail) {
+        try {
+          const managerNotify = await sendWelcomeEmail(
+            currentManagerEmail,
+            currentManagerName || 'Manager',
+            'N/A', // no password disclosure
+            'manager'
+          );
+          if (managerNotify.success) {
+            console.log('[EMPLOYEE_CREATION] ✅ Manager notification email sent');
+          } else {
+            console.warn('[EMPLOYEE_CREATION] ⚠️ Manager notification email failed:', managerNotify.error);
+          }
+        } catch (mgrEmailErr) {
+          console.warn('[EMPLOYEE_CREATION] ⚠️ Manager notification email threw (non-critical):', mgrEmailErr);
+        }
+      }
+      
       await MySwal.fire({
         title: "🎉 Employee Created!",
         html: `<div style="text-align: left;">
@@ -332,6 +417,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
           <p><strong>🆔 User ID (Cognito):</strong> ${result.userId}</p>
           <hr style="margin: 1rem 0; border: none; border-top: 1px solid #ddd;">
           <p>✅ The employee can now log in to the mobile app immediately!</p>
+          <p>✅ A welcome email with login credentials has been sent to ${formData.email}</p>
           <p>✅ You can assign courses to this employee from the 'Assign Courses' section.</p>
         </div>`,
         icon: "success",
