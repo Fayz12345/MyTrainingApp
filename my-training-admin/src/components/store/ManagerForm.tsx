@@ -81,7 +81,13 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
               
               if (userStore) {
                 // Auto-select the store they belong to
-                setFormData(prev => ({ ...prev, storeIds: storeId ? [storeId] : [] }));
+                setFormData(prev => {
+                  // Don't override selected stores when editing and already hydrated
+                  if (isEditMode && prev.storeIds && prev.storeIds.length > 0) {
+                    return prev;
+                  }
+                  return { ...prev, storeIds: storeId ? [storeId] : [] };
+                });
               }
             }
           }

@@ -122,7 +122,7 @@ const schema = a.schema({
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read']),
-      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read employee details for notifications
+      allow.publicApiKey().to(['create', 'read']) // Allow Lambda (using API key) to create/read employee for notifications/self-signup
     ]),
   ManagerStore: a
     .model({

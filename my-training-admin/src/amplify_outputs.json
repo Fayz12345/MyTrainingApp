@@ -270,6 +270,22 @@
                 ]
               }
             },
+            "managerStores": {
+              "name": "managerStores",
+              "isArray": true,
+              "type": {
+                "model": "ManagerStore"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "storeId"
+                ]
+              }
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -398,11 +414,18 @@
               "isRequired": true,
               "attributes": []
             },
+            "phoneNumber": {
+              "name": "phoneNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "storeId": {
               "name": "storeId",
               "isArray": false,
               "type": "ID",
-              "isRequired": true,
+              "isRequired": false,
               "attributes": []
             },
             "store": {
@@ -417,6 +440,22 @@
                 "connectionType": "BELONGS_TO",
                 "targetNames": [
                   "storeId"
+                ]
+              }
+            },
+            "managerStores": {
+              "name": "managerStores",
+              "isArray": true,
+              "type": {
+                "model": "ManagerStore"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "managerId"
                 ]
               }
             },
@@ -525,6 +564,13 @@
                     ],
                     "groups": [
                       "Managers"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read"
                     ]
                   }
                 ]
@@ -699,6 +745,13 @@
                     ],
                     "groups": [
                       "Employees"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read"
                     ]
                   }
                 ]
@@ -996,6 +1049,158 @@
                     "groups": [
                       "Employees"
                     ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
+        },
+        "ManagerStore": {
+          "name": "ManagerStore",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "managerId": {
+              "name": "managerId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "storeId": {
+              "name": "storeId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "manager": {
+              "name": "manager",
+              "isArray": false,
+              "type": {
+                "model": "Manager"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "managerId"
+                ]
+              }
+            },
+            "store": {
+              "name": "store",
+              "isArray": false,
+              "type": {
+                "model": "Store"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "storeId"
+                ]
+              }
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            }
+          },
+          "syncable": true,
+          "pluralName": "ManagerStores",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "key",
+              "properties": {
+                "fields": [
+                  "id"
+                ]
+              }
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ],
+                    "groups": [
+                      "SuperAdmin"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "read"
+                    ],
+                    "groups": [
+                      "Store"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "read"
+                    ],
+                    "groups": [
+                      "BusinessUnit"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "read"
+                    ],
+                    "groups": [
+                      "Managers"
+                    ]
                   }
                 ]
               }
@@ -1077,6 +1282,13 @@
               "isRequired": false,
               "attributes": []
             },
+            "trainingCompletedAt": {
+              "name": "trainingCompletedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -1130,10 +1342,18 @@
                     "provider": "userPools",
                     "allow": "groups",
                     "operations": [
-                      "read"
+                      "read",
+                      "update"
                     ],
                     "groups": [
                       "Employees"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read"
                     ]
                   }
                 ]
