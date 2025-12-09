@@ -35,6 +35,7 @@ const schema = a.schema({
       createdBy: a.string(), // userId of the BusinessUnit or Store person who created it
       managers: a.hasMany('Manager', 'storeId'),
       managerStores: a.hasMany('ManagerStore', 'storeId'),
+      employees: a.hasMany('Employee', 'storeId'), // Employees belonging to this store
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
