@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthUser } from 'aws-amplify/auth';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import {
@@ -22,10 +23,14 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
+  Paper,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import StoreIcon from '@mui/icons-material/Store';
 import CourseForm from './CourseForm';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
@@ -40,6 +45,7 @@ interface ManagerDashboardProps {
 }
 
 type ViewMode =
+  | 'store-selection'
   | 'dashboard'
   | 'courses'
   | 'create-course'
@@ -61,13 +67,125 @@ type CourseSummary = {
   readonly updatedAt: string;
 };
 
+type Store = {
+  id: string;
+  name: string;
+  description?: string | null;
+};
+
 const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) => {
-  const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewMode>('store-selection');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedCourse, setSelectedCourse] = useState<CourseSummary | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [selectedStoreName, setSelectedStoreName] = useState<string | null>(null);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [loadingStores, setLoadingStores] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  // Fetch manager's stores on mount
+  useEffect(() => {
+    const fetchManagerStores = async () => {
+      try {
+        setLoadingStores(true);
+        setStoreError(null);
+
+        // Get current user's manager record
+        const session = await fetchAuthSession();
+        const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+        if (!userId) {
+          throw new Error('User not authenticated');
+        }
+
+        // Get manager record
+        const managersResult = await client.models.Manager.list({
+          filter: { userId: { eq: userId } }
+        });
+
+        if (managersResult.errors && managersResult.errors.length > 0) {
+          throw new Error('Failed to fetch manager: ' + managersResult.errors.map((e: any) => e.message).join(', '));
+        }
+
+        const managers = managersResult.data as any[];
+        if (!managers || managers.length === 0) {
+          throw new Error('Manager record not found');
+        }
+
+        const manager = managers[0];
+
+        // Get manager's stores via ManagerStore relationship
+        const managerStoresResult = await client.models.ManagerStore.list({
+          filter: { managerId: { eq: manager.id } }
+        });
+
+        if (managerStoresResult.errors && managerStoresResult.errors.length > 0) {
+          throw new Error('Failed to fetch stores: ' + managerStoresResult.errors.map((e: any) => e.message).join(', '));
+        }
+
+        const managerStores = managerStoresResult.data as any[];
+        const storeIds = managerStores.map(ms => ms.storeId).filter(Boolean);
+
+        if (storeIds.length === 0) {
+          // If no stores via ManagerStore, check primary storeId
+          if (manager.storeId) {
+            storeIds.push(manager.storeId);
+          }
+        }
+
+        if (storeIds.length === 0) {
+          setStoreError('No stores assigned to this manager. Please contact your administrator.');
+          setLoadingStores(false);
+          return;
+        }
+
+        // Fetch store details
+        const storesData: Store[] = [];
+        for (const storeId of storeIds) {
+          try {
+            const storeResult = await client.models.Store.get({ id: storeId });
+            if (storeResult.data && storeResult.data.id) {
+              storesData.push({
+                id: storeResult.data.id,
+                name: storeResult.data.name || 'Unnamed Store',
+                description: storeResult.data.description || null
+              });
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch store ${storeId}:`, err);
+          }
+        }
+
+        setStores(storesData);
+
+        // Auto-select and proceed if only one store
+        if (storesData.length === 1) {
+          setSelectedStoreId(storesData[0].id);
+          setSelectedStoreName(storesData[0].name);
+          setCurrentView('dashboard');
+        }
+        // If multiple stores, stay on store-selection view
+      } catch (err) {
+        console.error('Error fetching stores:', err);
+        setStoreError(err instanceof Error ? err.message : 'Failed to load stores');
+      } finally {
+        setLoadingStores(false);
+      }
+    };
+
+    fetchManagerStores();
+  }, []);
+
+  const handleStoreSelect = (storeId: string, storeName: string) => {
+    setSelectedStoreId(storeId);
+    setSelectedStoreName(storeName);
+    setCurrentView('dashboard');
+    // Refresh data when store changes
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   const menuItems = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
@@ -92,6 +210,83 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   };
 
   const isCoursesView = currentView === 'courses' || currentView === 'create-course' || currentView === 'edit-course';
+
+  // Show store selection screen if no store selected
+  if (currentView === 'store-selection') {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
+        <AppBar position="static" elevation={2}>
+          <Toolbar>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 600 }}>
+              Manager Portal
+            </Typography>
+            <Button
+              color="inherit"
+              startIcon={<LogoutIcon />}
+              onClick={() => signOut?.()}
+            >
+              Sign Out
+            </Button>
+          </Toolbar>
+        </AppBar>
+        <Container maxWidth="sm" sx={{ py: 8, flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+          <Paper sx={{ p: 4, width: '100%' }}>
+            <Box sx={{ textAlign: 'center', mb: 4 }}>
+              <StoreIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
+              <Typography variant="h4" gutterBottom>
+                Select Store
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Please select which store you want to manage.
+              </Typography>
+            </Box>
+
+            {loadingStores ? (
+              <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+                <CircularProgress />
+              </Box>
+            ) : storeError ? (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {storeError}
+              </Alert>
+            ) : stores.length === 0 ? (
+              <Alert severity="warning">
+                No stores assigned to this manager. Please contact your administrator.
+              </Alert>
+            ) : (
+              <List>
+                {stores.map((store, index) => (
+                  <React.Fragment key={store.id}>
+                    <ListItem disablePadding>
+                      <ListItemButton
+                        onClick={() => handleStoreSelect(store.id, store.name)}
+                        sx={{
+                          borderRadius: 1,
+                          py: 2,
+                          '&:hover': {
+                            bgcolor: 'primary.light',
+                            color: 'white',
+                          },
+                        }}
+                      >
+                        <StoreIcon sx={{ mr: 2 }} />
+                        <ListItemText
+                          primary={store.name}
+                          secondary={store.description || null}
+                          primaryTypographyProps={{ variant: 'h6' }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                    {index < stores.length - 1 && <Divider />}
+                  </React.Fragment>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </Container>
+      </Box>
+    );
+  }
 
   const renderContent = () => {
     switch (currentView) {
@@ -209,8 +404,21 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           <Box>
             <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
               Employee Management
+              {selectedStoreName && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Store: {selectedStoreName}
+                </Typography>
+              )}
             </Typography>
-            <EmployeeList refreshTrigger={refreshTrigger} />
+            {selectedStoreId ? (
+              <EmployeeList refreshTrigger={refreshTrigger} selectedStoreId={selectedStoreId} />
+            ) : (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography color="text.secondary">
+                  Please select a store to view employees.
+                </Typography>
+              </Box>
+            )}
           </Box>
         );
 
@@ -382,6 +590,21 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
       </Drawer>
 
       <Container maxWidth="lg" sx={{ py: 4, flexGrow: 1 }}>
+        {/* Show selected store info in header */}
+        {selectedStoreName && (
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'primary.light', color: 'white', borderRadius: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <StoreIcon />
+            <Typography variant="h6">Store: {selectedStoreName}</Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setCurrentView('store-selection')}
+              sx={{ ml: 'auto', color: 'white', borderColor: 'white', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+            >
+              Change Store
+            </Button>
+          </Box>
+        )}
         {renderContent()}
       </Container>
     </Box>

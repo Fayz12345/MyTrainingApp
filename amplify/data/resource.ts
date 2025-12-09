@@ -112,6 +112,8 @@ const schema = a.schema({
       department: a.string(),
       managerId: a.id(), // Manager who created this employee
       manager: a.belongsTo('Manager', 'managerId'),
+      storeId: a.id(), // Store this employee belongs to (for multi-store managers)
+      store: a.belongsTo('Store', 'storeId'),
       createdBy: a.string(), // userId of the Manager who created it
       isActive: a.boolean().default(true),
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId

@@ -204,6 +204,7 @@ export const handler = async (event) => {
                                     name: nameFromEvent,
                                     department: null,
                                     managerId: null,
+                                    storeId: null, // Self-signup employees don't have a store initially - will be assigned later by manager/SuperAdmin
                                     createdBy: null,
                                     isActive: true,
                                     createdAt: nowIso,

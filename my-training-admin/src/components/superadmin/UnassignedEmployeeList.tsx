@@ -48,13 +48,22 @@ interface UnassignedEmployeeListProps {
   refreshTrigger?: number;
 }
 
+type Store = {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string | null;
+};
+
 const UnassignedEmployeeList: React.FC<UnassignedEmployeeListProps> = ({ refreshTrigger }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [managerStores, setManagerStores] = useState<Record<string, Store[]>>({}); // managerId -> stores[]
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [selectedManager, setSelectedManager] = useState<Record<string, string>>({});
+  const [selectedStore, setSelectedStore] = useState<Record<string, string>>({}); // employeeId -> storeId
 
   const fetchUnassignedEmployees = async () => {
     try {
@@ -83,16 +92,114 @@ const UnassignedEmployeeList: React.FC<UnassignedEmployeeListProps> = ({ refresh
       if (result.errors && result.errors.length > 0) {
         throw new Error(result.errors.map((e: { message: string }) => e.message).join(', '));
       }
-      setManagers((result.data || []) as Manager[]);
+      const managersData = (result.data || []) as Manager[];
+      setManagers(managersData);
+      
+      // Fetch stores for all managers
+      const storesMap: Record<string, Store[]> = {};
+      for (const manager of managersData) {
+        const managerStores = await fetchStoresForManager(manager.id);
+        storesMap[manager.id] = managerStores;
+      }
+      setManagerStores(storesMap);
     } catch (err) {
       console.error('[UnassignedEmployeeList] Error fetching managers', err);
       // non-blocking
     }
   };
 
+  const fetchStoresForManager = async (managerId: string): Promise<Store[]> => {
+    try {
+      // Get manager's primary storeId
+      const managerResult = await client.models.Manager.get({ id: managerId });
+      const manager = managerResult.data as any;
+      
+      const storeIds: string[] = [];
+      
+      // Check primary storeId
+      if (manager?.storeId) {
+        storeIds.push(manager.storeId);
+      }
+      
+      // Get stores from ManagerStore relationship
+      const managerStoresResult = await client.models.ManagerStore.list({
+        filter: { managerId: { eq: managerId } }
+      });
+      
+      if (managerStoresResult.data) {
+        const managerStores = managerStoresResult.data as any[];
+        managerStores.forEach(ms => {
+          if (ms.storeId && !storeIds.includes(ms.storeId)) {
+            storeIds.push(ms.storeId);
+          }
+        });
+      }
+      
+      // Fetch store details
+      const storesData: Store[] = [];
+      for (const storeId of storeIds) {
+        try {
+          const storeResult = await client.models.Store.get({ id: storeId });
+          if (storeResult.data && storeResult.data.id) {
+            storesData.push({
+              id: storeResult.data.id,
+              name: storeResult.data.name || 'Unnamed Store',
+              description: storeResult.data.description || null
+            });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch store ${storeId}:`, err);
+        }
+      }
+      
+      return storesData;
+    } catch (err) {
+      console.error(`[UnassignedEmployeeList] Error fetching stores for manager ${managerId}:`, err);
+      return [];
+    }
+  };
+
+  const handleManagerSelect = async (employeeId: string, managerId: string) => {
+    setSelectedManager((prev) => ({ ...prev, [employeeId]: managerId }));
+    
+    // Clear store selection when manager changes
+    setSelectedStore((prev) => {
+      const newState = { ...prev };
+      delete newState[employeeId];
+      return newState;
+    });
+    
+    // Fetch stores for selected manager if not already cached
+    if (!managerStores[managerId]) {
+      const stores = await fetchStoresForManager(managerId);
+      setManagerStores((prev) => ({ ...prev, [managerId]: stores }));
+      
+      // Auto-select store if manager has only one store
+      if (stores.length === 1) {
+        setSelectedStore((prev) => ({ ...prev, [employeeId]: stores[0].id }));
+      }
+    } else if (managerStores[managerId].length === 1) {
+      // Auto-select if already cached and only one store
+      setSelectedStore((prev) => ({ ...prev, [employeeId]: managerStores[managerId][0].id }));
+    }
+  };
+
   const handleAssign = async (employee: Employee) => {
     const managerId = selectedManager[employee.id];
-    if (!managerId) return;
+    const storeId = selectedStore[employee.id];
+    
+    if (!managerId) {
+      setError('Please select a manager');
+      return;
+    }
+    
+    // Check if manager has stores and store selection is required
+    const managerStoresList = managerStores[managerId] || [];
+    if (managerStoresList.length > 0 && !storeId) {
+      setError('Please select a store for this employee');
+      return;
+    }
+    
     try {
       setAssigning(employee.id);
       setError(null);
@@ -100,11 +207,31 @@ const UnassignedEmployeeList: React.FC<UnassignedEmployeeListProps> = ({ refresh
       const manager = managers.find(m => m.id === managerId);
       const nowIso = new Date().toISOString();
 
+      console.log('[UnassignedEmployeeList] Assigning employee to manager:', {
+        employeeId: employee.id,
+        managerId,
+        storeId,
+        hasStoreId: !!storeId
+      });
+
       await client.models.Employee.update({
         id: employee.id,
         managerId,
+        storeId: storeId || null, // Set storeId when assigning to manager
         createdBy: manager?.userId || employee.createdBy || null,
         updatedAt: nowIso
+      });
+
+      // Clear selections after successful assignment
+      setSelectedManager((prev) => {
+        const newState = { ...prev };
+        delete newState[employee.id];
+        return newState;
+      });
+      setSelectedStore((prev) => {
+        const newState = { ...prev };
+        delete newState[employee.id];
+        return newState;
       });
 
       await fetchUnassignedEmployees();
@@ -151,7 +278,9 @@ const UnassignedEmployeeList: React.FC<UnassignedEmployeeListProps> = ({ refresh
                     <TableCell>Department</TableCell>
                     <TableCell>Created By</TableCell>
                     <TableCell>Created At</TableCell>
-                    <TableCell>Assign Manager</TableCell>
+                    <TableCell>Manager</TableCell>
+                    <TableCell>Store</TableCell>
+                    <TableCell>Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -163,33 +292,67 @@ const UnassignedEmployeeList: React.FC<UnassignedEmployeeListProps> = ({ refresh
                       <TableCell>{emp.createdBy || '—'}</TableCell>
                       <TableCell>{new Date(emp.createdAt).toLocaleString()}</TableCell>
                       <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <FormControl size="small" sx={{ minWidth: 160 }}>
-                            <InputLabel id={`mgr-label-${emp.id}`}>Manager</InputLabel>
-                            <Select
-                              labelId={`mgr-label-${emp.id}`}
-                              label="Manager"
-                              value={selectedManager[emp.id] || ''}
-                              onChange={(e) =>
-                                setSelectedManager((prev) => ({ ...prev, [emp.id]: e.target.value as string }))
-                              }
-                            >
-                              {managers.map((m) => (
-                                <MenuItem key={m.id} value={m.id}>
-                                  {m.name || m.email || m.id}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            disabled={!selectedManager[emp.id] || assigning === emp.id}
-                            onClick={() => handleAssign(emp)}
+                        <FormControl size="small" sx={{ minWidth: 180 }}>
+                          <InputLabel id={`mgr-label-${emp.id}`}>Select Manager</InputLabel>
+                          <Select
+                            labelId={`mgr-label-${emp.id}`}
+                            label="Select Manager"
+                            value={selectedManager[emp.id] || ''}
+                            onChange={(e) => handleManagerSelect(emp.id, e.target.value as string)}
                           >
-                            {assigning === emp.id ? 'Assigning...' : 'Assign'}
-                          </Button>
-                        </Stack>
+                            {managers.map((m) => (
+                              <MenuItem key={m.id} value={m.id}>
+                                {m.name || m.email || m.id}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </TableCell>
+                      <TableCell>
+                        {selectedManager[emp.id] && managerStores[selectedManager[emp.id]] ? (
+                          managerStores[selectedManager[emp.id]].length > 0 ? (
+                            <FormControl size="small" sx={{ minWidth: 180 }}>
+                              <InputLabel id={`store-label-${emp.id}`}>Select Store</InputLabel>
+                              <Select
+                                labelId={`store-label-${emp.id}`}
+                                label="Select Store"
+                                value={selectedStore[emp.id] || ''}
+                                onChange={(e) =>
+                                  setSelectedStore((prev) => ({ ...prev, [emp.id]: e.target.value as string }))
+                                }
+                                required
+                              >
+                                {managerStores[selectedManager[emp.id]].map((store) => (
+                                  <MenuItem key={store.id} value={store.id}>
+                                    {store.name}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              No stores assigned
+                            </Typography>
+                          )
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            Select manager first
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          disabled={
+                            !selectedManager[emp.id] ||
+                            (managerStores[selectedManager[emp.id]]?.length > 0 && !selectedStore[emp.id]) ||
+                            assigning === emp.id
+                          }
+                          onClick={() => handleAssign(emp)}
+                        >
+                          {assigning === emp.id ? 'Assigning...' : 'Assign'}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

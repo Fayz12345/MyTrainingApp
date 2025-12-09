@@ -11,9 +11,10 @@ const client = generateClient<Schema>();
 interface EmployeeFormProps {
   onCancel: () => void;
   onEmployeeCreated: () => void;
+  selectedStoreId?: string | null;
 }
 
-const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated }) => {
+const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated, selectedStoreId }) => {
   const [formData, setFormData] = useState({
     email: '',
     name: '',
@@ -309,6 +310,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
                 await client.models.Employee.update({
                   id: result.employeeId,
                   managerId: managerId || existingEmployee.data.managerId || null,
+                  storeId: selectedStoreId || existingEmployee.data.storeId || null, // Set storeId based on selected store
                   createdBy: userId || existingEmployee.data.createdBy || null,
                   updatedAt: new Date().toISOString()
                 });
@@ -332,13 +334,27 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
               name: formData.name,
               department: formData.department || null,
               managerId: managerId || null,
+              storeId: selectedStoreId || null, // Set storeId based on selected store
               createdBy: userId || null,
               isActive: true,
               createdAt: now,
               updatedAt: now
             };
             
-            await client.models.Employee.create(employeeData);
+            const retryEmployeeData = {
+            id: result.employeeId,
+            userId: result.userId,
+            email: formData.email,
+            name: formData.name,
+            department: formData.department || null,
+            managerId: managerId || null,
+            storeId: selectedStoreId || null, // Set storeId based on selected store
+            createdBy: userId || null,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now
+          };
+          await client.models.Employee.create(retryEmployeeData);
           } catch (createError: any) {
             throw createError; // Re-throw to be caught by outer catch
           }
@@ -357,6 +373,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ onCancel, onEmployeeCreated
             name: formData.name,
             department: formData.department || null,
             managerId: managerId || null,
+            storeId: selectedStoreId || null, // Set storeId based on selected store
             createdBy: retryUserId || null,
             isActive: true,
             createdAt: now,

@@ -41,9 +41,10 @@ type Course = {
 
 interface EmployeeListProps {
   refreshTrigger?: number;
+  selectedStoreId?: string | null;
 }
 
-const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
+const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedStoreId }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -88,14 +89,18 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
       if (userId) {
         console.log('Filtering employees by createdBy:', userId);
         filteredEmployees = filteredEmployees.filter(emp => emp.createdBy === userId);
-        console.log('Filtered employees count:', filteredEmployees.length);
-        // Log employees that don't match for debugging
-        const nonMatching = (employeesResult.data as Employee[]).filter(emp => emp.createdBy !== userId);
-        if (nonMatching.length > 0) {
-          console.log('Employees not matching createdBy filter:', nonMatching.map(emp => ({ id: emp.id, name: emp.name, createdBy: emp.createdBy })));
-        }
+        console.log('Filtered employees by createdBy count:', filteredEmployees.length);
       } else {
         console.warn('No userId found, showing all employees');
+      }
+
+      // Filter employees by selected store (if store is selected)
+      if (selectedStoreId) {
+        console.log('Filtering employees by storeId:', selectedStoreId);
+        const beforeStoreFilter = filteredEmployees.length;
+        // Type assertion needed until schema is deployed and types are regenerated
+        filteredEmployees = filteredEmployees.filter(emp => (emp as any).storeId === selectedStoreId);
+        console.log(`Filtered employees by store: ${beforeStoreFilter} -> ${filteredEmployees.length}`);
       }
 
       setEmployees(filteredEmployees);
@@ -254,6 +259,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger }) => {
           setShowCreateForm(false);
           fetchData(); // Refresh the employee list
         }}
+        selectedStoreId={selectedStoreId}
       />
     );
   }
