@@ -338,9 +338,7 @@ const ManagerForm: React.FC<ManagerFormProps> = ({ onCancel, onManagerCreated, m
           name,
           password,
           role,
-          loginUrl: role === 'manager' 
-            ? window.location.origin + '/login' 
-            : window.location.origin.replace('admin', 'app') + '/login'
+          loginUrl: window.location.origin + '/login' // Both managers and employees use the same web portal
         })
       });
 
