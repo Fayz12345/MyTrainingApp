@@ -1054,6 +1054,7 @@
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
+                      "create",
                       "read"
                     ]
                   }

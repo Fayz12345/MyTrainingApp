@@ -194,11 +194,11 @@ export const handler = async (event) => {
                         console.log(`${logPrefix} [STEP 2.0] Creating Employee record for self-signup userId ${userIdFromEvent}`);
                         const createEmployeeMutation = {
                             query: `mutation CreateEmployee($input: CreateEmployeeInput!) {
-                                createEmployee(input: $input) { id userId email }
+                                createEmployee(input: $input) { id userId email name }
                             }`,
                             variables: {
                                 input: {
-                                    id: userIdFromEvent, // use Cognito sub as ID
+                                    // Don't set id - let AppSync auto-generate it
                                     userId: userIdFromEvent,
                                     email: emailFromEvent,
                                     name: nameFromEvent,
@@ -211,8 +211,12 @@ export const handler = async (event) => {
                                 }
                             }
                         };
-                        await executeGraphql(createEmployeeMutation);
+                        const createResult = await executeGraphql(createEmployeeMutation);
                         console.log(`${logPrefix} [STEP 2.0] ✅ Employee record created for ${emailFromEvent}`);
+                        console.log(`${logPrefix} [STEP 2.0] Created Employee ID:`, createResult?.data?.createEmployee?.id);
+                        if (createResult?.errors && createResult.errors.length > 0) {
+                            console.error(`${logPrefix} [STEP 2.0] ❌ GraphQL errors:`, JSON.stringify(createResult.errors, null, 2));
+                        }
                     }
                 }
             } catch (selfSignupDbError) {
