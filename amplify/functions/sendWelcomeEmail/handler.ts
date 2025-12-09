@@ -32,12 +32,31 @@ interface LambdaEvent {
   };
 }
 
+// CORS headers for all responses
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+};
+
 export const handler = async (event: LambdaEvent) => {
   const logPrefix = '[SEND_WELCOME_EMAIL]';
   console.log(`${logPrefix} ========================================`);
   console.log(`${logPrefix} 📧 Sending Welcome Email via SES`);
   console.log(`${logPrefix} Event:`, JSON.stringify(event, null, 2));
   console.log(`${logPrefix} ========================================`);
+
+  // Handle CORS preflight OPTIONS request
+  const httpMethod = event.httpMethod || event.requestContext?.http?.method;
+  if (httpMethod === 'OPTIONS') {
+    console.log(`${logPrefix} Handling CORS preflight request`);
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ message: 'CORS preflight successful' })
+    };
+  }
 
   try {
     // Parse request body
@@ -51,10 +70,7 @@ export const handler = async (event: LambdaEvent) => {
         console.error(`${logPrefix} ❌ Failed to parse request body:`, parseError);
         return {
           statusCode: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
+          headers: corsHeaders,
           body: JSON.stringify({
             success: false,
             error: 'Invalid JSON in request body'
@@ -64,10 +80,7 @@ export const handler = async (event: LambdaEvent) => {
     } else {
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers: corsHeaders,
         body: JSON.stringify({
           success: false,
           error: 'Request body is required'
@@ -82,10 +95,7 @@ export const handler = async (event: LambdaEvent) => {
       console.error(`${logPrefix} ❌ Missing required fields`);
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers: corsHeaders,
         body: JSON.stringify({
           success: false,
           error: 'Missing required fields: email, name, password, and role are required'
@@ -100,8 +110,8 @@ export const handler = async (event: LambdaEvent) => {
 
     // Determine login URL based on role
     const defaultLoginUrl = role === 'manager' 
-      ? 'https://admin.yourdomain.com/login' 
-      : 'https://app.yourdomain.com/login';
+      ? 'https://dev.d6c38s8spsb1t.amplifyapp.com/login' 
+      : 'https://dev.d6c38s8spsb1t.amplifyapp.com/login';
     const finalLoginUrl = loginUrl || defaultLoginUrl;
 
     // Create email content
@@ -334,10 +344,7 @@ Please do not reply to this email.
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: corsHeaders,
       body: JSON.stringify({
         success: true,
         messageId: result.MessageId,
@@ -356,10 +363,7 @@ Please do not reply to this email.
 
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: corsHeaders,
       body: JSON.stringify({
         success: false,
         error: error?.message || 'Unknown error'

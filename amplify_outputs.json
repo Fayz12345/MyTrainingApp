@@ -286,6 +286,22 @@
                 ]
               }
             },
+            "employees": {
+              "name": "employees",
+              "isArray": true,
+              "type": {
+                "model": "Employee"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "storeId"
+                ]
+              }
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -944,6 +960,28 @@
                 "connectionType": "BELONGS_TO",
                 "targetNames": [
                   "managerId"
+                ]
+              }
+            },
+            "storeId": {
+              "name": "storeId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "store": {
+              "name": "store",
+              "isArray": false,
+              "type": {
+                "model": "Store"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "storeId"
                 ]
               }
             },

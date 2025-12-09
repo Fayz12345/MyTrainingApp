@@ -192,24 +192,28 @@ export const handler = async (event) => {
                         console.log(`${logPrefix} [STEP 2.0] Employee already exists for userId ${userIdFromEvent}`);
                     } else {
                         console.log(`${logPrefix} [STEP 2.0] Creating Employee record for self-signup userId ${userIdFromEvent}`);
+                        
+                        // Build input object, omitting null values for GSI keys (managerId, storeId)
+                        // DynamoDB GSI doesn't allow NULL values in index keys - must omit the field entirely
+                        const employeeInput = {
+                                    // Don't set id - let AppSync auto-generate it
+                                    userId: userIdFromEvent,
+                                    email: emailFromEvent,
+                                    name: nameFromEvent,
+                                    isActive: true,
+                                    createdAt: nowIso,
+                                    updatedAt: nowIso
+                                    // Note: Omitting managerId, storeId, department, and createdBy
+                                    // because they are null and GSI keys (managerId, storeId) cannot be null
+                                    // Omitting fields is different from setting them to null in GraphQL
+                                };
+                        
                         const createEmployeeMutation = {
                             query: `mutation CreateEmployee($input: CreateEmployeeInput!) {
                                 createEmployee(input: $input) { id userId email name }
                             }`,
                             variables: {
-                                input: {
-                                    // Don't set id - let AppSync auto-generate it
-                                    userId: userIdFromEvent,
-                                    email: emailFromEvent,
-                                    name: nameFromEvent,
-                                    department: null,
-                                    managerId: null,
-                                    storeId: null, // Self-signup employees don't have a store initially - will be assigned later by manager/SuperAdmin
-                                    createdBy: null,
-                                    isActive: true,
-                                    createdAt: nowIso,
-                                    updatedAt: nowIso
-                                }
+                                input: employeeInput
                             }
                         };
                         const createResult = await executeGraphql(createEmployeeMutation);
