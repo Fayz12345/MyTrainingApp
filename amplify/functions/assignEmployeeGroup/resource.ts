@@ -5,15 +5,18 @@ import { defineFunction } from '@aws-amplify/backend';
  * This function is triggered by Cognito's Post Confirmation trigger
  * 
  * It also creates Employee records in DynamoDB for self-signup users
+ * 
+ * NOTE: AppSync API URL and API key are automatically injected by Amplify Console
+ * environment variables for each branch (dev, qa, main).
+ * 
+ * The handler reads from process.env.APPSYNC_API_URL and process.env.APPSYNC_API_KEY
+ * which are automatically set by Amplify during deployment.
  */
 export const assignEmployeeGroup = defineFunction({
   name: 'assignEmployeeGroup',
   // Use the existing JavaScript handler file
-  entry: './handler.js',
-  environment: {
-    // AppSync API configuration for creating Employee records
-    APPSYNC_API_URL: 'https://mswo73fsfjh4thfaalt7d63i4a.appsync-api.ca-central-1.amazonaws.com/graphql',
-    APPSYNC_API_KEY: 'da2-la7esrklanbehi5v7e574ao7fq'
-  }
+  entry: './handler.js'
+  // Environment variables APPSYNC_API_URL and APPSYNC_API_KEY are set automatically
+  // by Amplify Console environment variables for each branch
 });
 

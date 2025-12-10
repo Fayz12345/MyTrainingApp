@@ -47,8 +47,38 @@ class AmplifyService {
               '[LOGIN_FLOW] [STEP 1.1.2] ✅ Fixed null plugins field in auth config');
         }
 
-        // Add mobile redirect URLs if not present (for OAuth)
-        if (auth.containsKey('oauth') && auth['oauth'] is Map) {
+        // Add OAuth configuration if missing (required for Google login)
+        // Amplify Gen 2 may not include OAuth in outputs even if configured in Cognito
+        if (!auth.containsKey('oauth') || auth['oauth'] == null) {
+          safePrint(
+              '[LOGIN_FLOW] [STEP 1.1.2.1] ⚠️ OAuth section missing, adding from Cognito config...');
+          
+          // Get OAuth domain from Cognito (domain.auth.region.amazoncognito.com)
+          const region = 'ca-central-1';
+          const domain = 'mytrainingapp'; // From Cognito User Pool domain
+          const oauthDomain = '$domain.auth.$region.amazoncognito.com';
+          
+          // Build OAuth configuration
+          const mobileScheme = 'com.mytrainingapp://';
+          auth['oauth'] = {
+            'domain': oauthDomain,
+            'scopes': ['email', 'openid', 'profile', 'aws.cognito.signin.user.admin'],
+            'redirectSignIn': [
+              'http://localhost:3000',
+              'https://dev.d6c38s8spsb1t.amplifyapp.com',
+              mobileScheme, // Flutter mobile app redirect
+            ],
+            'redirectSignOut': [
+              'http://localhost:3000',
+              'https://dev.d6c38s8spsb1t.amplifyapp.com',
+              mobileScheme, // Flutter mobile app redirect
+            ],
+            'responseType': 'code',
+          };
+          safePrint(
+              '[LOGIN_FLOW] [STEP 1.1.2.2] ✅ Added OAuth configuration with mobile redirect URLs');
+        } else {
+          // OAuth exists, just ensure mobile redirect URLs are present
           final oauth = auth['oauth'] as Map<String, dynamic>;
           const mobileScheme = 'com.mytrainingapp://';
 

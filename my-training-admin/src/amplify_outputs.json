@@ -49,7 +49,27 @@
       "require_symbols": true,
       "require_uppercase": true
     },
-    "unauthenticated_identities_enabled": true
+    "unauthenticated_identities_enabled": true,
+    "oauth": {
+      "domain": "mytrainingapp.auth.ca-central-1.amazoncognito.com",
+      "scopes": [
+        "email",
+        "openid",
+        "profile",
+        "aws.cognito.signin.user.admin"
+      ],
+      "redirectSignIn": [
+        "http://localhost:3000",
+        "https://dev.d6c38s8spsb1t.amplifyapp.com",
+        "com.mytrainingapp://"
+      ],
+      "redirectSignOut": [
+        "http://localhost:3000",
+        "https://dev.d6c38s8spsb1t.amplifyapp.com",
+        "com.mytrainingapp://"
+      ],
+      "responseType": "code"
+    }
   },
   "data": {
     "url": "https://mswo73fsfjh4thfaalt7d63i4a.appsync-api.ca-central-1.amazonaws.com/graphql",
