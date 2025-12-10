@@ -17,12 +17,36 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     LoadCourses event,
     Emitter<CourseState> emit,
   ) async {
+    safePrint('[COURSE_API] ========================================');
+    safePrint('[COURSE_API] 🚀 LoadCourses event received');
+    safePrint('[COURSE_API] [STEP 1] Emitting CourseLoading state...');
     emit(const CourseLoading());
+    safePrint('[COURSE_API] [STEP 1] ✅ CourseLoading state emitted');
     try {
+      safePrint(
+          '[COURSE_API] [STEP 2] Calling CourseService.getAssignedCourses()...');
+      safePrint(
+          '[COURSE_API] [STEP 2.1] This will trigger GraphQL API call to fetch courses');
       final courses = await CourseService.getAssignedCourses();
+      safePrint('[COURSE_API] [STEP 3] ✅ Courses received from API');
+      safePrint('[COURSE_API] [STEP 3.1] Number of courses: ${courses.length}');
+      safePrint('[COURSE_API] [STEP 4] Emitting CourseLoaded state...');
       emit(CourseLoaded(courses));
-    } catch (e) {
+      safePrint('[COURSE_API] [STEP 4] ✅ CourseLoaded state emitted');
+      safePrint('[COURSE_API] ========================================');
+      safePrint('[COURSE_API] ✅ LoadCourses completed successfully');
+      safePrint('[COURSE_API] ========================================');
+    } catch (e, stackTrace) {
+      safePrint('[COURSE_API] [STEP 2] ❌ ERROR occurred during API call');
+      safePrint('[COURSE_API] [STEP 2.1] Error type: ${e.runtimeType}');
+      safePrint('[COURSE_API] [STEP 2.1] Error message: $e');
+      safePrint('[COURSE_API] [STEP 2.1] Stack trace: $stackTrace');
+      safePrint('[COURSE_API] [STEP 2.2] Emitting CourseError state...');
       emit(CourseError(e.toString()));
+      safePrint('[COURSE_API] [STEP 2.2] ✅ CourseError state emitted');
+      safePrint('[COURSE_API] ========================================');
+      safePrint('[COURSE_API] ❌ LoadCourses failed');
+      safePrint('[COURSE_API] ========================================');
     }
   }
 

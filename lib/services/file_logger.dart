@@ -50,10 +50,11 @@ class FileLogger {
 
       logEntry.writeln('---');
 
-      await _logFile!.writeAsString(
-        '${await _logFile!.readAsString()}$logEntry',
-        mode: FileMode.append,
-      );
+      // Use proper file appending to avoid memory issues
+      final sink = _logFile!.openWrite(mode: FileMode.append);
+      sink.write(logEntry.toString());
+      await sink.flush();
+      await sink.close();
     } catch (e) {
       safePrint('[LOGIN_FLOW] [FILE_LOGGER] ❌ Error writing to log file: $e');
     }

@@ -8,12 +8,14 @@ abstract class QuizEvent extends Equatable {
 }
 
 class LoadQuizQuestions extends QuizEvent {
-  final String courseId;
+  final String courseId; // For fetching questions
+  final String?
+      progressKey; // For saving/loading progress (assignmentId or courseId)
 
-  const LoadQuizQuestions(this.courseId);
+  const LoadQuizQuestions(this.courseId, {this.progressKey});
 
   @override
-  List<Object?> get props => [courseId];
+  List<Object?> get props => [courseId, progressKey];
 }
 
 class SelectAnswer extends QuizEvent {
