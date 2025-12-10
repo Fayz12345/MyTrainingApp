@@ -24,12 +24,17 @@ interface WelcomeEmailRequest {
 
 interface LambdaEvent {
   httpMethod?: string;
-  body?: string;
+  body?: string | any;
   requestContext?: {
     http?: {
       method?: string;
+      path?: string;
     };
   };
+  headers?: Record<string, string>;
+  rawPath?: string;
+  rawQueryString?: string;
+  isBase64Encoded?: boolean;
 }
 
 // CORS headers for all responses
@@ -63,21 +68,34 @@ export const handler = async (event: LambdaEvent) => {
     let requestBody: WelcomeEmailRequest;
     
     // Handle both API Gateway and Function URL formats
+    let bodyData: any = null;
+    
     if (event.body) {
-      try {
-        requestBody = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-      } catch (parseError) {
-        console.error(`${logPrefix} ❌ Failed to parse request body:`, parseError);
-        return {
-          statusCode: 400,
-          headers: corsHeaders,
-          body: JSON.stringify({
-            success: false,
-            error: 'Invalid JSON in request body'
-          })
-        };
+      // Function URL: body is a string
+      // API Gateway: body might be string or object
+      if (typeof event.body === 'string') {
+        try {
+          bodyData = JSON.parse(event.body);
+        } catch (parseError) {
+          // If parsing fails, try to use it as-is (shouldn't happen but handle gracefully)
+          console.error(`${logPrefix} ❌ Failed to parse request body:`, parseError);
+          return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({
+              success: false,
+              error: 'Invalid JSON in request body'
+            })
+          };
+        }
+      } else {
+        // Already an object
+        bodyData = event.body;
       }
-    } else {
+    }
+    
+    if (!bodyData) {
+      console.error(`${logPrefix} ❌ Request body is missing`);
       return {
         statusCode: 400,
         headers: corsHeaders,
@@ -87,6 +105,8 @@ export const handler = async (event: LambdaEvent) => {
         })
       };
     }
+    
+    requestBody = bodyData;
 
     const { email, name, password, role, loginUrl } = requestBody;
 
