@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "setup-secrets": "bash setup-secrets.sh"
   },
   "dependencies": {
     "@aws-amplify/backend": "latest",
