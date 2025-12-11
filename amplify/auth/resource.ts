@@ -1,4 +1,4 @@
-import { defineAuth, secret } from '@aws-amplify/backend';
+import { defineAuth } from '@aws-amplify/backend';
 import { assignEmployeeGroup } from '../functions/assignEmployeeGroup/resource';
 
 /**
@@ -42,15 +42,10 @@ const getLogoutUrls = (): string[] => {
 export const auth = defineAuth({
   loginWith: {
     email: true,
-    externalProviders: {
-      google: {
-        clientId: secret('GOOGLE_CLIENT_ID'),
-        clientSecret: secret('GOOGLE_CLIENT_SECRET'),
-        scopes: ['email', 'profile', 'openid'],
-      },
-      callbackUrls: getCallbackUrls(),
-      logoutUrls: getLogoutUrls(),
-    },
+    // Note: Google OAuth is configured manually in Cognito Console
+    // The domain 'mytrainingapp' already exists, so we can't use externalProviders here
+    // without causing a domain conflict. Configure Google OAuth in:
+    // AWS Console → Cognito → User Pools → ca-central-1_aKCLbCdhj → Identity providers
   },
   groups: ['Employees', 'Managers', 'Store', 'BusinessUnit', 'SuperAdmin'], // Define user groups for roles
   triggers: {
