@@ -10,17 +10,16 @@ REGION="ca-central-1"
 GOOGLE_CLIENT_ID="64933722244-t2lppekiik9oo1him4jd170tuhomletr.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET="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"
 
+# Cognito only accepts HTTP/HTTPS URLs for callback/logout URLs
+# Mobile app URLs (com.mytrainingapp://) are configured separately in the app
 CALLBACK_URLS=(
   "http://localhost:3000"
   "https://dev.d6c38s8spsb1t.amplifyapp.com"
-  "com.mytrainingapp://"
-  "myapp://callback"
 )
 
 LOGOUT_URLS=(
   "http://localhost:3000"
   "https://dev.d6c38s8spsb1t.amplifyapp.com"
-  "com.mytrainingapp://"
 )
 
 echo "🔐 Configuring Google OAuth in Cognito User Pool..."
@@ -65,16 +64,16 @@ echo ""
 # Configure app client settings
 echo "2️⃣  Configuring app client OAuth settings..."
 
-# Build callback URLs string
-CALLBACK_URLS_STR=$(IFS=','; echo "${CALLBACK_URLS[*]}")
-LOGOUT_URLS_STR=$(IFS=','; echo "${LOGOUT_URLS[*]}")
+# Convert arrays to space-separated strings for AWS CLI
+CALLBACK_URLS_STR=$(printf '%s ' "${CALLBACK_URLS[@]}" | sed 's/[[:space:]]*$//')
+LOGOUT_URLS_STR=$(printf '%s ' "${LOGOUT_URLS[@]}" | sed 's/[[:space:]]*$//')
 
 aws cognito-idp update-user-pool-client \
   --user-pool-id "$USER_POOL_ID" \
   --client-id "$APP_CLIENT_ID" \
   --supported-identity-providers Google \
-  --callback-urls $CALLBACK_URLS_STR \
-  --logout-urls $LOGOUT_URLS_STR \
+  --callback-urls "${CALLBACK_URLS[@]}" \
+  --logout-urls "${LOGOUT_URLS[@]}" \
   --allowed-o-auth-flows code \
   --allowed-o-auth-scopes openid email profile aws.cognito.signin.user.admin \
   --allowed-o-auth-flows-user-pool-client \
@@ -84,6 +83,21 @@ echo "   ✅ App client OAuth settings configured"
 echo ""
 
 echo "✅ Google OAuth configuration complete!"
+echo ""
+
+# Add OAuth to amplify_outputs.json if it exists
+echo "3️⃣  Adding OAuth configuration to amplify_outputs.json..."
+if [ -f "../amplify_outputs.json" ]; then
+  cd ..
+  ./amplify/add-oauth-to-outputs.sh
+  cd amplify
+elif [ -f "amplify_outputs.json" ]; then
+  ./add-oauth-to-outputs.sh
+else
+  echo "   ⚠️  amplify_outputs.json not found. Run this after deployment:"
+  echo "      cd .. && ./amplify/add-oauth-to-outputs.sh"
+fi
+
 echo ""
 echo "📝 Next steps:"
 echo "   1. Configure Google Cloud Console:"

@@ -1,4 +1,4 @@
-import { defineAuth, secret } from '@aws-amplify/backend';
+import { defineAuth } from '@aws-amplify/backend';
 import { assignEmployeeGroup } from '../functions/assignEmployeeGroup/resource';
 
 /**
@@ -7,20 +7,21 @@ import { assignEmployeeGroup } from '../functions/assignEmployeeGroup/resource';
  * 
  * Google OAuth Configuration:
  * 
- * DEVELOPMENT (Sandbox):
- * 1. Set secrets: echo "value" | npx ampx sandbox secret set GOOGLE_CLIENT_ID
- * 2. Deploy: npx ampx sandbox
+ * Since externalProviders is not configured here (to avoid sandbox secret permission issues),
+ * Google OAuth is configured manually in Cognito. To get OAuth in amplify_outputs.json:
  * 
- * PRODUCTION (Pipeline):
- * 1. Set secrets in AWS Secrets Manager with naming: amplify-{APP_ID}-{BRANCH}-GOOGLE_CLIENT_ID
- * 2. Run: ./set-production-secrets.sh (or use AWS CLI/Console)
- * 3. Deploy via CI/CD pipeline (amplify.yml)
+ * 1. Deploy backend: npx ampx sandbox
+ * 2. Configure Google OAuth in Cognito: ./configure-google-oauth.sh
+ * 3. Add OAuth to outputs: ./add-oauth-to-outputs.sh
  * 
- * Google Cloud Console Configuration (for all environments):
+ * This workflow ensures:
+ * - OAuth works in Cognito (configured via AWS CLI)
+ * - OAuth appears in amplify_outputs.json (added via script)
+ * - No sandbox secret permissions needed
+ * 
+ * Google Cloud Console Configuration:
  * - Authorized JavaScript Origins: https://mytrainingapp.auth.ca-central-1.amazoncognito.com
  * - Authorized Redirect URIs: https://mytrainingapp.auth.ca-central-1.amazoncognito.com/oauth2/idpresponse
- * 
- * See: amplify/PRODUCTION_SECRETS_SETUP.md for detailed instructions
  */
 
 // Get callback and logout URLs from environment or use defaults
@@ -52,15 +53,9 @@ const getLogoutUrls = (): string[] => {
 export const auth = defineAuth({
   loginWith: {
     email: true,
-    externalProviders: {
-      google: {
-        clientId: secret('GOOGLE_CLIENT_ID'),
-        clientSecret: secret('GOOGLE_CLIENT_SECRET'),
-        scopes: ['email', 'profile', 'openid'],
-      },
-      callbackUrls: getCallbackUrls(),
-      logoutUrls: getLogoutUrls(),
-    },
+    // Google OAuth is configured manually in Cognito to avoid sandbox secret permission issues
+    // Run: ./configure-google-oauth.sh after deployment
+    // This will configure Google OAuth and it will appear in amplify_outputs.json
   },
   groups: ['Employees', 'Managers', 'Store', 'BusinessUnit', 'SuperAdmin'], // Define user groups for roles
   triggers: {
