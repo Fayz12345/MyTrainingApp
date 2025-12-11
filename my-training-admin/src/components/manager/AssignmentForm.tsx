@@ -28,7 +28,11 @@ type Employee = {
   readonly updatedAt: string;
 };
 
-const AssignmentForm: React.FC = () => {
+interface AssignmentFormProps {
+  selectedStoreId?: string | null;
+}
+
+const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -58,8 +62,18 @@ const AssignmentForm: React.FC = () => {
         throw new Error('Failed to fetch employees: ' + employeesResult.errors.map((e: any) => e.message).join(', '));
       }
 
+      // Filter employees by selected store (if store is selected)
+      let filteredEmployees = employeesResult.data as Employee[];
+      if (selectedStoreId) {
+        console.log('[AssignmentForm] Filtering employees by storeId:', selectedStoreId);
+        const beforeStoreFilter = filteredEmployees.length;
+        // Type assertion needed until schema is deployed and types are regenerated
+        filteredEmployees = filteredEmployees.filter(emp => (emp as any).storeId === selectedStoreId);
+        console.log(`[AssignmentForm] Filtered employees by store: ${beforeStoreFilter} -> ${filteredEmployees.length}`);
+      }
+
       setCourses(coursesResult.data as Course[]);
-      setEmployees(employeesResult.data as Employee[]);
+      setEmployees(filteredEmployees);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -70,7 +84,7 @@ const AssignmentForm: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStoreId]); // Refetch when storeId changes
 
   const handleCourseSelection = (courseId: string, isSelected: boolean) => {
     if (isSelected) {
@@ -225,6 +239,18 @@ const AssignmentForm: React.FC = () => {
     );
   }
 
+  // Show message if no store is selected
+  if (!selectedStoreId) {
+    return (
+      <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+        <h2>Assign Courses to Employee</h2>
+        <p style={{ color: '#666', marginTop: '1rem', fontStyle: 'italic' }}>
+          Please select a store from the dashboard to assign courses to employees.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
       <h2>Assign Courses to Employee</h2>
@@ -237,7 +263,7 @@ const AssignmentForm: React.FC = () => {
           </label>
           {employees.length === 0 ? (
             <p style={{ color: '#d32f2f', fontStyle: 'italic' }}>
-              No employees found. You'll need to add employees first.
+              No employees found for the selected store. You'll need to add employees to this store first.
             </p>
           ) : (
             <>

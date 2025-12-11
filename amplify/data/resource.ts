@@ -173,6 +173,57 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('Managers').to(['read', 'update']),
       allow.group('Employees').to(['create', 'read'])
+    ]),
+  LearningPath: a
+    .model({
+      id: a.id(),
+      title: a.string().required(),
+      description: a.string(),
+      createdBy: a.string().required(), // managerId (userId from Cognito)
+      isSequential: a.boolean().default(true), // true = must complete in order, false = flexible
+      status: a.string(), // 'draft' or 'published' - default handled in application code
+      version: a.integer().default(1), // Version number (1, 2, 3, etc.)
+      parentPathId: a.id(), // ID of the original learning path (for version tracking)
+      isArchived: a.boolean().default(false), // Archived paths cannot be assigned but remain viewable
+      courses: a.hasMany('LearningPathCourse', 'learningPathId'),
+      assignments: a.hasMany('LearningPathAssignment', 'learningPathId'),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
+    ]),
+  LearningPathCourse: a
+    .model({
+      id: a.id(),
+      learningPathId: a.id().required(),
+      courseId: a.id().required(),
+      learningPath: a.belongsTo('LearningPath', 'learningPathId'),
+      course: a.belongsTo('Course', 'courseId'),
+      order: a.integer().required(), // Order/sequence in the learning path
+      isRequired: a.boolean().default(true), // true = required, false = optional
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
+    ]),
+  LearningPathAssignment: a
+    .model({
+      id: a.id(),
+      learningPathId: a.id().required(), // Which version of the learning path
+      employeeId: a.id().required(),
+      learningPath: a.belongsTo('LearningPath', 'learningPathId'),
+      employee: a.belongsTo('Employee', 'employeeId'),
+      status: a.string(), // 'assigned', 'in-progress', 'completed'
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read', 'update'])
     ])
 });
 

@@ -36,6 +36,7 @@ type Employee = {
   readonly managerId?: string | null;
   readonly createdBy?: string | null;
   readonly isActive?: boolean | null;
+  readonly storeId?: string | null;
 };
 
 interface OrganizationHierarchyProps {
@@ -191,6 +192,14 @@ const OrganizationHierarchy: React.FC<OrganizationHierarchyProps> = ({ refreshTr
       
       return false;
     });
+  };
+
+  const getStoreNameForEmployee = (employee: Employee): string | null => {
+    if (!employee.storeId) {
+      return null;
+    }
+    const store = stores.find(s => s.id === employee.storeId);
+    return store ? store.name : null;
   };
 
   useEffect(() => {
@@ -434,6 +443,11 @@ const OrganizationHierarchy: React.FC<OrganizationHierarchyProps> = ({ refreshTr
                                                     <p style={{ margin: '0.25rem 0 0 0', color: '#666', fontSize: '0.8rem' }}>
                                                       {employee.email}
                                                     </p>
+                                                    {getStoreNameForEmployee(employee) && (
+                                                      <p style={{ margin: '0.25rem 0 0 0', color: '#2e7d32', fontSize: '0.75rem', fontWeight: '500' }}>
+                                                        🏪 Store: {getStoreNameForEmployee(employee)}
+                                                      </p>
+                                                    )}
                                                     {employee.department && (
                                                       <p style={{ margin: '0.25rem 0 0 0', color: '#999', fontSize: '0.75rem' }}>
                                                         Department: {employee.department}

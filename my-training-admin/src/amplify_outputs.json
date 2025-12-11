@@ -53,10 +53,10 @@
     "oauth": {
       "domain": "mytrainingapp.auth.ca-central-1.amazoncognito.com",
       "scopes": [
+        "aws.cognito.signin.user.admin",
         "email",
         "openid",
-        "profile",
-        "aws.cognito.signin.user.admin"
+        "profile"
       ],
       "redirectSignIn": [
         "http://localhost:3000",
@@ -68,7 +68,8 @@
         "https://dev.d6c38s8spsb1t.amplifyapp.com",
         "com.mytrainingapp://"
       ],
-      "responseType": "code"
+      "responseType": "code",
+      "providers": ["Google"]
     }
   },
   "data": {

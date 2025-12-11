@@ -36,6 +36,9 @@ import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
 import EmployeeList from './EmployeeList';
 import TrainingAnalytics from './TrainingAnalytics';
+import CreateLearningPath from './CreateLearningPath';
+import LearningPathList from './LearningPathList';
+import EditLearningPath from './EditLearningPath';
 
 const client = generateClient<Schema>();
 
@@ -52,7 +55,10 @@ type ViewMode =
   | 'edit-course'
   | 'employees'
   | 'assignments'
-  | 'analytics';
+  | 'analytics'
+  | 'create-learning-path'
+  | 'learning-paths'
+  | 'edit-learning-path';
 
 type CourseSummary = {
   readonly id: string;
@@ -83,6 +89,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [stores, setStores] = useState<Store[]>([]);
   const [loadingStores, setLoadingStores] = useState(true);
   const [storeError, setStoreError] = useState<string | null>(null);
+  const [selectedLearningPath, setSelectedLearningPath] = useState<any | null>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -190,6 +197,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const menuItems = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'courses', label: 'Courses', icon: '📚' },
+    { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
     { key: 'employees', label: 'Employees', icon: '👥' },
     { key: 'assignments', label: 'Assignments', icon: '📋' },
     { key: 'analytics', label: 'Analytics', icon: '📈' }
@@ -432,7 +440,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             >
               Back to Dashboard
             </Button>
-            <AssignmentForm />
+            <AssignmentForm selectedStoreId={selectedStoreId} />
           </Box>
         );
 
@@ -446,7 +454,95 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             >
               Back to Dashboard
             </Button>
-            <TrainingAnalytics />
+            <TrainingAnalytics selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'create-learning-path':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('learning-paths')}
+              sx={{ mb: 2 }}
+            >
+              Back to Learning Paths
+            </Button>
+            <CreateLearningPath
+              onSuccess={() => {
+                setCurrentView('learning-paths');
+                setRefreshTrigger((prev) => prev + 1);
+              }}
+              onCancel={() => {
+                setCurrentView('learning-paths');
+              }}
+            />
+          </Box>
+        );
+
+      case 'learning-paths':
+        return (
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h4">
+                Learning Path Management
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => setCurrentView('create-learning-path')}
+              >
+                + Create New Learning Path
+              </Button>
+            </Box>
+            <LearningPathList
+              refreshTrigger={refreshTrigger}
+              onEdit={(learningPath) => {
+                setSelectedLearningPath(learningPath);
+                setCurrentView('edit-learning-path');
+              }}
+            />
+          </Box>
+        );
+
+      case 'edit-learning-path':
+        if (!selectedLearningPath) {
+          return (
+            <Box>
+              <Typography sx={{ mb: 2 }}>No learning path selected. Please go back to the learning paths list.</Typography>
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={() => setCurrentView('learning-paths')}
+              >
+                Back to Learning Paths
+              </Button>
+            </Box>
+          );
+        }
+
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => {
+                setCurrentView('learning-paths');
+                setSelectedLearningPath(null);
+              }}
+              sx={{ mb: 2 }}
+            >
+              Back to Learning Paths
+            </Button>
+            <EditLearningPath
+              learningPath={selectedLearningPath}
+              onSuccess={() => {
+                setCurrentView('learning-paths');
+                setSelectedLearningPath(null);
+                setRefreshTrigger((prev) => prev + 1);
+              }}
+              onCancel={() => {
+                setCurrentView('learning-paths');
+                setSelectedLearningPath(null);
+              }}
+            />
           </Box>
         );
 
@@ -469,6 +565,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'employees', title: 'Employee Management', description: 'View and manage employee information and assignments.', icon: '👥' },
                 { key: 'analytics', title: 'Training Analytics', description: 'View training completion rates and progress reports.', icon: '📈' },
                 { key: 'courses', title: 'Course Management', description: 'Create, edit, and manage training courses.', icon: '📚' },
+                { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
                 { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
@@ -490,7 +587,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : 'Assign Courses'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : 'Assign Courses'}
                       </Button>
                     </CardActions>
                   </Card>

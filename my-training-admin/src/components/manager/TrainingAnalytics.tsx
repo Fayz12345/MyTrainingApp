@@ -96,7 +96,11 @@ interface RecentCompletion {
   completedAt: string;
 }
 
-const TrainingAnalytics: React.FC = () => {
+interface TrainingAnalyticsProps {
+  selectedStoreId?: string | null;
+}
+
+const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }) => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +150,18 @@ const TrainingAnalytics: React.FC = () => {
 
       // Filter employees by createdBy - managers should only see employees they created
       if (userId) {
+        console.log('[TrainingAnalytics] Filtering employees by createdBy:', userId);
         employeesData = employeesData.filter(emp => emp.createdBy === userId);
+        console.log('[TrainingAnalytics] Employees after createdBy filter:', employeesData.length);
+      }
+
+      // Filter employees by selected store (if store is selected)
+      if (selectedStoreId) {
+        console.log('[TrainingAnalytics] Filtering employees by storeId:', selectedStoreId);
+        const beforeStoreFilter = employeesData.length;
+        // Type assertion needed until schema is deployed and types are regenerated
+        employeesData = employeesData.filter(emp => (emp as any).storeId === selectedStoreId);
+        console.log(`[TrainingAnalytics] Filtered employees by store: ${beforeStoreFilter} -> ${employeesData.length}`);
       }
 
       // Get employee IDs for filtering assignments and results
@@ -335,7 +350,19 @@ const TrainingAnalytics: React.FC = () => {
 
   useEffect(() => {
     fetchAnalytics();
-  }, []);
+  }, [selectedStoreId]); // Refetch when storeId changes
+
+  // Show message if no store is selected
+  if (!selectedStoreId) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <h2>Training Analytics</h2>
+        <p style={{ color: '#666', marginTop: '1rem', fontStyle: 'italic' }}>
+          Please select a store from the dashboard to view training analytics.
+        </p>
+      </div>
+    );
+  }
 
   if (loading) {
     return <Loader message="Loading analytics..." fullHeight />;

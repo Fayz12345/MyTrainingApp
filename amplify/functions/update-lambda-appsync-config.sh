@@ -8,7 +8,8 @@
 # - assignEmployeeGroup (needs APPSYNC_API_URL and APPSYNC_API_KEY)
 # - quizCompletion (needs APPSYNC_API_URL and APPSYNC_API_KEY)
 
-set -e
+# Don't exit on error - we want to process all functions even if one fails
+set +e
 
 echo "🔄 Updating Lambda functions AppSync configuration..."
 echo "   This will update all Lambda functions that use AppSync API"
@@ -54,6 +55,9 @@ AWS_REGION=${AWS_REGION:-ca-central-1}
 # List of Lambda function name patterns that need AppSync configuration
 FUNCTION_PATTERNS=("assignEmployeeGroup" "quizCompletion")
 
+# Filter for dev branch only (functions containing "-dev-")
+BRANCH_FILTER="dev"
+
 # Track success/failure
 SUCCESS_COUNT=0
 FAILED_FUNCTIONS=()
@@ -61,14 +65,15 @@ FAILED_FUNCTIONS=()
 # Update each function that needs AppSync configuration
 for PATTERN in "${FUNCTION_PATTERNS[@]}"; do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔍 Processing: $PATTERN"
+    echo "🔍 Processing: $PATTERN (dev branch only)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     
-    # Find all Lambda functions matching this pattern
+    # Find Lambda functions matching this pattern AND dev branch
+    # Filter for functions containing both the pattern and "-dev-"
     FUNCTIONS=$(aws lambda list-functions \
         --region "$AWS_REGION" \
-        --query "Functions[?contains(FunctionName, '$PATTERN')].FunctionName" \
+        --query "Functions[?contains(FunctionName, '$PATTERN') && contains(FunctionName, '-$BRANCH_FILTER-')].FunctionName" \
         --output text 2>/dev/null || echo "")
     
     if [ -z "$FUNCTIONS" ]; then
@@ -96,7 +101,7 @@ for PATTERN in "${FUNCTION_PATTERNS[@]}"; do
         # Add other existing environment variables (excluding the ones we're setting)
         if command -v jq &> /dev/null && [ "$CURRENT_ENV_JSON" != "{}" ]; then
             # Use jq to extract other environment variables
-            OTHER_VARS=$(echo "$CURRENT_ENV_JSON" | jq -r 'to_entries | map(select(.key != "APPSYNC_API_URL" and .key != "APPSYNC_API_KEY")) | map("\(.key)=\(.value)") | join(",")')
+            OTHER_VARS=$(echo "$CURRENT_ENV_JSON" | jq -r 'to_entries | map(select(.key != "APPSYNC_API_URL" and .key != "APPSYNC_API_KEY")) | map("\(.key)=\(.value)") | join(",")' 2>/dev/null || echo "")
             if [ -n "$OTHER_VARS" ]; then
                 ENV_VARS="$ENV_VARS,$OTHER_VARS"
             fi
@@ -104,15 +109,19 @@ for PATTERN in "${FUNCTION_PATTERNS[@]}"; do
         
         # Update Lambda environment variables
         echo "   📝 Updating environment variables..."
-        if aws lambda update-function-configuration \
+        UPDATE_OUTPUT=$(aws lambda update-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --region "$AWS_REGION" \
             --environment "Variables={$ENV_VARS}" \
-            --output json > /dev/null 2>&1; then
+            --output json 2>&1)
+        UPDATE_EXIT_CODE=$?
+        
+        if [ $UPDATE_EXIT_CODE -eq 0 ]; then
             echo "   ✅ Successfully updated: $FUNCTION_NAME"
             ((SUCCESS_COUNT++))
         else
             echo "   ❌ Failed to update: $FUNCTION_NAME"
+            echo "   Error: $UPDATE_OUTPUT" | head -3
             FAILED_FUNCTIONS+=("$FUNCTION_NAME")
         fi
         echo ""
