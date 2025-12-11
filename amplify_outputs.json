@@ -1901,6 +1901,27 @@
               "isRequired": false,
               "attributes": []
             },
+            "assignedDate": {
+              "name": "assignedDate",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "dueDate": {
+              "name": "dueDate",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "completedDate": {
+              "name": "completedDate",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,

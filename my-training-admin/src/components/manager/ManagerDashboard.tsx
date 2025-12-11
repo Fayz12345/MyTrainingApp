@@ -40,6 +40,7 @@ import CreateLearningPath from './CreateLearningPath';
 import LearningPathList from './LearningPathList';
 import EditLearningPath from './EditLearningPath';
 import AssignLearningPath from './AssignLearningPath';
+import LearningPathProgress from './LearningPathProgress';
 
 const client = generateClient<Schema>();
 
@@ -60,7 +61,8 @@ type ViewMode =
   | 'create-learning-path'
   | 'learning-paths'
   | 'edit-learning-path'
-  | 'assign-learning-path';
+  | 'assign-learning-path'
+  | 'learning-path-progress';
 
 type CourseSummary = {
   readonly id: string;
@@ -199,8 +201,10 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const menuItems = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'courses', label: 'Courses', icon: '📚' },
-    { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
-    { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
+    // Hidden: Learning Path menu items
+    // { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
+    // { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
+    // { key: 'learning-path-progress', label: 'Path Progress', icon: '📊' },
     { key: 'employees', label: 'Employees', icon: '👥' },
     { key: 'assignments', label: 'Assignments', icon: '📋' },
     { key: 'analytics', label: 'Analytics', icon: '📈' }
@@ -563,6 +567,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
+      case 'learning-path-progress':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <LearningPathProgress selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -582,7 +600,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'employees', title: 'Employee Management', description: 'View and manage employee information and assignments.', icon: '👥' },
                 { key: 'analytics', title: 'Training Analytics', description: 'View training completion rates and progress reports.', icon: '📈' },
                 { key: 'courses', title: 'Course Management', description: 'Create, edit, and manage training courses.', icon: '📚' },
-                { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
+                // Hidden: Learning Path dashboard cards
+                // { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
                 { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>

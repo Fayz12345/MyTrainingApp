@@ -65,6 +65,21 @@ interface AnalyticsData {
   courseStats: CourseStat[];
   employeeProgress: EmployeeProgress[];
   recentCompletions: RecentCompletion[];
+  // Learning Path Analytics
+  totalLearningPathAssignments: number;
+  completedLearningPathAssignments: number;
+  learningPathCompletionRate: number;
+  learningPathStats: LearningPathStat[];
+}
+
+interface LearningPathStat {
+  pathId: string;
+  pathTitle: string;
+  totalAssignments: number;
+  completedAssignments: number;
+  inProgressAssignments: number;
+  notStartedAssignments: number;
+  completionRate: number;
 }
 
 interface CourseStat {
@@ -86,6 +101,11 @@ interface EmployeeProgress {
   completedAssignments: number;
   completionRate: number;
   averageScore: number;
+  // Learning Path assignments
+  totalLearningPathAssignments: number;
+  completedLearningPathAssignments: number;
+  learningPathCompletionRate: number;
+  assignedLearningPaths: string[]; // Array of learning path titles
 }
 
 interface RecentCompletion {
@@ -139,7 +159,17 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         authMode: 'userPool'
       });
 
-      if (!assignments.data || !results.data || !courses.data || !employees.data || !managers.data) {
+      // Fetch learning path assignments
+      const learningPathAssignments = await client.models.LearningPathAssignment.list({
+        authMode: 'userPool'
+      });
+
+      // Fetch learning paths
+      const learningPaths = await client.models.LearningPath.list({
+        authMode: 'userPool'
+      });
+
+      if (!assignments.data || !results.data || !courses.data || !employees.data || !managers.data || !learningPathAssignments.data || !learningPaths.data) {
         throw new Error('Failed to fetch analytics data');
       }
 
@@ -171,6 +201,14 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
       const assignmentsData = (assignments.data as Assignment[]).filter(
         assignment => employeeIds.has(assignment.employeeId)
       );
+
+      // Filter learning path assignments to only include those for employees created by this manager
+      const learningPathAssignmentsData = (learningPathAssignments.data as any[]).filter(
+        assignment => employeeIds.has(assignment.employeeId)
+      );
+
+      // Cast learning paths data
+      const learningPathsData = learningPaths.data as any[];
 
       // Filter results to only include those for assignments of employees created by this manager
       const assignmentIds = new Set(assignmentsData.map(a => a.id));
@@ -279,6 +317,27 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           ? employeeScores.reduce((sum: number, score: number) => sum + score, 0) / employeeScores.length
           : 0;
 
+        // Get learning path assignments for this employee
+        const employeeLearningPathAssignments = learningPathAssignmentsData.filter(
+          (lpAssignment: any) => lpAssignment.employeeId === employee.id
+        );
+        
+        const completedLearningPathAssignments = employeeLearningPathAssignments.filter(
+          (lpAssignment: any) => lpAssignment.status === 'completed'
+        ).length;
+        
+        const learningPathCompletionRate = employeeLearningPathAssignments.length > 0
+          ? (completedLearningPathAssignments / employeeLearningPathAssignments.length) * 100
+          : 0;
+        
+        // Get assigned learning path titles
+        const assignedLearningPaths = employeeLearningPathAssignments
+          .map((lpAssignment: any) => {
+            const learningPath = learningPathsData.find((lp: any) => lp.id === lpAssignment.learningPathId);
+            return learningPath ? learningPath.title : null;
+          })
+          .filter((title: string | null): title is string => title !== null);
+
         // Get manager name who created this employee
         // Since we filter by createdBy, all employees are created by the current manager
         // But we can also check if there's a managerId assigned
@@ -301,12 +360,17 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           completionRate: employeeAssignments.length > 0
             ? (employeeCompleted.length / employeeAssignments.length) * 100
             : 0,
-          averageScore: employeeAverageScore
+          averageScore: employeeAverageScore,
+          // Learning Path assignments
+          totalLearningPathAssignments: employeeLearningPathAssignments.length,
+          completedLearningPathAssignments,
+          learningPathCompletionRate,
+          assignedLearningPaths
         };
       });
 
-      // Get recent completions (last 10)
-      const recentCompletions: RecentCompletion[] = resultsData
+      // Get recent completions (last 10) - include both course and learning path completions
+      const courseCompletions: RecentCompletion[] = resultsData
         .map((result: Result) => {
           const assignment = assignmentsData.find((a: Assignment) => a.id === result.assignmentId);
           if (!assignment) return null;
@@ -324,9 +388,63 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
             completedAt: result.createdAt
           };
         })
-        .filter((item: RecentCompletion | null): item is RecentCompletion => item !== null)
+        .filter((item: RecentCompletion | null): item is RecentCompletion => item !== null);
+
+      // Add learning path completions to recent completions
+      const learningPathCompletions: RecentCompletion[] = learningPathAssignmentsData
+        .filter((lpAssignment: any) => lpAssignment.status === 'completed' && lpAssignment.completedDate)
+        .map((lpAssignment: any) => {
+          const employee = employeesData.find((e: Employee) => e.id === lpAssignment.employeeId);
+          const learningPath = learningPathsData.find((lp: any) => lp.id === lpAssignment.learningPathId);
+          
+          if (!employee || !learningPath) return null;
+          
+          return {
+            employeeName: employee.name,
+            courseTitle: `Learning Path: ${learningPath.title}`,
+            score: 0, // Learning paths don't have scores
+            passed: true,
+            completedAt: lpAssignment.completedDate || lpAssignment.updatedAt
+          };
+        })
+        .filter((item: RecentCompletion | null): item is RecentCompletion => item !== null);
+
+      // Combine and sort all recent completions
+      const allRecentCompletions = [...courseCompletions, ...learningPathCompletions]
         .sort((a: RecentCompletion, b: RecentCompletion) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
         .slice(0, 10);
+
+      // Calculate learning path statistics
+      const totalLearningPathAssignments = learningPathAssignmentsData.length;
+      const completedLearningPathAssignments = learningPathAssignmentsData.filter(
+        (lpAssignment: any) => lpAssignment.status === 'completed'
+      ).length;
+      const learningPathCompletionRate = totalLearningPathAssignments > 0
+        ? (completedLearningPathAssignments / totalLearningPathAssignments) * 100
+        : 0;
+
+      // Calculate learning path stats by path
+      const learningPathStats: LearningPathStat[] = learningPathsData.map((learningPath: any) => {
+        const pathAssignments = learningPathAssignmentsData.filter(
+          (lpAssignment: any) => lpAssignment.learningPathId === learningPath.id
+        );
+        
+        const completed = pathAssignments.filter((a: any) => a.status === 'completed').length;
+        const inProgress = pathAssignments.filter((a: any) => a.status === 'in_progress').length;
+        const notStarted = pathAssignments.filter((a: any) => a.status === 'not_started').length;
+        
+        return {
+          pathId: learningPath.id,
+          pathTitle: learningPath.title,
+          totalAssignments: pathAssignments.length,
+          completedAssignments: completed,
+          inProgressAssignments: inProgress,
+          notStartedAssignments: notStarted,
+          completionRate: pathAssignments.length > 0
+            ? (completed / pathAssignments.length) * 100
+            : 0
+        };
+      });
 
       setAnalytics({
         totalAssignments,
@@ -338,7 +456,12 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         passRate: Math.round(passRate * 10) / 10,
         courseStats: courseStats.sort((a: CourseStat, b: CourseStat) => b.completionRate - a.completionRate),
         employeeProgress: employeeProgress.sort((a: EmployeeProgress, b: EmployeeProgress) => b.completionRate - a.completionRate),
-        recentCompletions
+        recentCompletions: allRecentCompletions,
+        // Learning Path Analytics
+        totalLearningPathAssignments,
+        completedLearningPathAssignments,
+        learningPathCompletionRate: Math.round(learningPathCompletionRate * 10) / 10,
+        learningPathStats: learningPathStats.sort((a: LearningPathStat, b: LearningPathStat) => b.completionRate - a.completionRate)
       });
     } catch (err) {
       console.error('Error fetching analytics:', err);
@@ -430,14 +553,31 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
           borderLeft: '4px solid #1976d2'
         }}>
-          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>Completion Rate</h3>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>Course Completion Rate</h3>
           <p style={{ margin: 0, fontSize: '2rem', fontWeight: 'bold', color: '#1976d2' }}>
             {analytics.completionRate.toFixed(1)}%
           </p>
           <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: '#999' }}>
-            {analytics.completedAssignments} / {analytics.totalAssignments} assignments
+            {analytics.completedAssignments} / {analytics.totalAssignments} course assignments
           </p>
         </div>
+
+        {/* Hidden: Learning Path Completion card */}
+        {/* <div style={{
+          backgroundColor: 'white',
+          padding: '1.5rem',
+          borderRadius: '8px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          borderLeft: '4px solid #9c27b0'
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>Learning Path Completion</h3>
+          <p style={{ margin: 0, fontSize: '2rem', fontWeight: 'bold', color: '#9c27b0' }}>
+            {analytics.learningPathCompletionRate.toFixed(1)}%
+          </p>
+          <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: '#999' }}>
+            {analytics.completedLearningPathAssignments} / {analytics.totalLearningPathAssignments} learning paths
+          </p>
+        </div> */}
 
         <div style={{
           backgroundColor: 'white',
@@ -476,10 +616,10 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           padding: '1.5rem',
           borderRadius: '8px',
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          borderLeft: '4px solid #9c27b0'
+          borderLeft: '4px solid #e91e63'
         }}>
           <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>Total Employees</h3>
-          <p style={{ margin: 0, fontSize: '2rem', fontWeight: 'bold', color: '#9c27b0' }}>
+          <p style={{ margin: 0, fontSize: '2rem', fontWeight: 'bold', color: '#e91e63' }}>
             {analytics.totalEmployees}
           </p>
           <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: '#999' }}>
@@ -487,6 +627,69 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           </p>
         </div>
       </div>
+
+      {/* Hidden: Learning Path Statistics */}
+      {/* {analytics.learningPathStats.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h3 style={{ marginBottom: '1rem' }}>Learning Path Performance</h3>
+          <div style={{ 
+            display: 'grid', 
+            gap: '1rem'
+          }}>
+            {analytics.learningPathStats.map((stat) => (
+              <div 
+                key={stat.pathId}
+                style={{
+                  backgroundColor: 'white',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}
+              >
+                <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 0.5rem 0', color: '#9c27b0' }}>{stat.pathTitle}</h4>
+                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>
+                      {stat.completedAssignments} / {stat.totalAssignments} completed
+                    </p>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#999' }}>
+                      {stat.inProgressAssignments} in progress • {stat.notStartedAssignments} not started
+                    </p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#9c27b0' }}>
+                      {stat.completionRate.toFixed(1)}%
+                    </p>
+                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: '#999' }}>
+                      Completion
+                    </p>
+                  </div>
+                </div>
+                <div style={{ 
+                  width: '100%', 
+                  height: '8px', 
+                  backgroundColor: '#f0f0f0', 
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  marginBottom: '0.5rem'
+                }}>
+                  <div style={{
+                    width: `${stat.completionRate}%`,
+                    height: '100%',
+                    backgroundColor: '#9c27b0',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                <div style={{ display: 'flex', gap: '2rem', fontSize: '0.9rem', color: '#666' }}>
+                  <span>Completed: <strong style={{ color: '#4caf50' }}>{stat.completedAssignments}</strong></span>
+                  <span>In Progress: <strong style={{ color: '#ff9800' }}>{stat.inProgressAssignments}</strong></span>
+                  <span>Not Started: <strong style={{ color: '#999' }}>{stat.notStartedAssignments}</strong></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )} */}
 
       {/* Course Statistics */}
       <div style={{ marginBottom: '2rem' }}>
@@ -560,9 +763,12 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Employee</th>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Email</th>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Manager</th>
-                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Completed</th>
-                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Completion Rate</th>
+                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Courses Completed</th>
+                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Course Completion Rate</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Avg Score</th>
+                {/* Hidden: Learning Path columns */}
+                {/* <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Learning Paths</th>
+                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>LP Completion</th> */}
               </tr>
             </thead>
             <tbody>
@@ -598,6 +804,58 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
                   <td style={{ padding: '1rem', textAlign: 'center', fontWeight: 'bold' }}>
                     {employee.averageScore > 0 ? `${employee.averageScore.toFixed(1)}%` : 'N/A'}
                   </td>
+                  {/* Hidden: Learning Path columns */}
+                  {/* <td style={{ padding: '1rem', textAlign: 'center' }}>
+                    {employee.assignedLearningPaths.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', color: '#9c27b0' }}>
+                          {employee.totalLearningPathAssignments}
+                        </span>
+                        <div style={{ fontSize: '0.8rem', color: '#666', maxWidth: '200px' }}>
+                          {employee.assignedLearningPaths.slice(0, 2).map((path, idx) => (
+                            <div key={idx} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              • {path}
+                            </div>
+                          ))}
+                          {employee.assignedLearningPaths.length > 2 && (
+                            <div style={{ color: '#999', fontStyle: 'italic' }}>
+                              +{employee.assignedLearningPaths.length - 2} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#999' }}>None</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '1rem', textAlign: 'center' }}>
+                    {employee.totalLearningPathAssignments > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', color: '#9c27b0' }}>
+                          {employee.completedLearningPathAssignments} / {employee.totalLearningPathAssignments}
+                        </span>
+                        <div style={{ 
+                          width: '100px', 
+                          height: '8px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '4px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${employee.learningPathCompletionRate}%`,
+                            height: '100%',
+                            backgroundColor: employee.learningPathCompletionRate >= 80 ? '#4caf50' : employee.learningPathCompletionRate >= 50 ? '#ff9800' : '#f44336',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                          {employee.learningPathCompletionRate.toFixed(1)}%
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#999' }}>N/A</span>
+                    )}
+                  </td> */}
                 </tr>
               ))}
             </tbody>
