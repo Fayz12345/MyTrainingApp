@@ -119,6 +119,7 @@ const schema = a.schema({
       createdBy: a.string(), // userId of the Manager who created it
       isActive: a.boolean().default(true),
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
+      learningPathAssignments: a.hasMany('LearningPathAssignment', 'employeeId'), // Links to LearningPathAssignment via employeeId
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
