@@ -6,11 +6,21 @@ import { assignEmployeeGroup } from '../functions/assignEmployeeGroup/resource';
  * @see https://docs.amplify.aws/gen2/build-a-backend/auth
  * 
  * Google OAuth Configuration:
- * 1. Set up secrets from .env file using: npm run setup-secrets
- *    OR manually: ampx sandbox secret add GOOGLE_CLIENT_ID <your-client-id>
- * 2. Configure Google Cloud Console:
- *    - Authorized JavaScript Origins: https://mytrainingapp.auth.ca-central-1.amazoncognito.com
- *    - Authorized Redirect URIs: https://mytrainingapp.auth.ca-central-1.amazoncognito.com/oauth2/idpresponse
+ * 
+ * DEVELOPMENT (Sandbox):
+ * 1. Set secrets: echo "value" | npx ampx sandbox secret set GOOGLE_CLIENT_ID
+ * 2. Deploy: npx ampx sandbox
+ * 
+ * PRODUCTION (Pipeline):
+ * 1. Set secrets in AWS Secrets Manager with naming: amplify-{APP_ID}-{BRANCH}-GOOGLE_CLIENT_ID
+ * 2. Run: ./set-production-secrets.sh (or use AWS CLI/Console)
+ * 3. Deploy via CI/CD pipeline (amplify.yml)
+ * 
+ * Google Cloud Console Configuration (for all environments):
+ * - Authorized JavaScript Origins: https://mytrainingapp.auth.ca-central-1.amazoncognito.com
+ * - Authorized Redirect URIs: https://mytrainingapp.auth.ca-central-1.amazoncognito.com/oauth2/idpresponse
+ * 
+ * See: amplify/PRODUCTION_SECRETS_SETUP.md for detailed instructions
  */
 
 // Get callback and logout URLs from environment or use defaults
