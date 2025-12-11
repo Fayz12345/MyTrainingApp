@@ -39,6 +39,7 @@ import TrainingAnalytics from './TrainingAnalytics';
 import CreateLearningPath from './CreateLearningPath';
 import LearningPathList from './LearningPathList';
 import EditLearningPath from './EditLearningPath';
+import AssignLearningPath from './AssignLearningPath';
 
 const client = generateClient<Schema>();
 
@@ -58,7 +59,8 @@ type ViewMode =
   | 'analytics'
   | 'create-learning-path'
   | 'learning-paths'
-  | 'edit-learning-path';
+  | 'edit-learning-path'
+  | 'assign-learning-path';
 
 type CourseSummary = {
   readonly id: string;
@@ -198,6 +200,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'courses', label: 'Courses', icon: '📚' },
     { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
+    { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
     { key: 'employees', label: 'Employees', icon: '👥' },
     { key: 'assignments', label: 'Assignments', icon: '📋' },
     { key: 'analytics', label: 'Analytics', icon: '📈' }
@@ -543,6 +546,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 setSelectedLearningPath(null);
               }}
             />
+          </Box>
+        );
+
+      case 'assign-learning-path':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <AssignLearningPath selectedStoreId={selectedStoreId} />
           </Box>
         );
 

@@ -219,7 +219,10 @@ const schema = a.schema({
       employeeId: a.id().required(),
       learningPath: a.belongsTo('LearningPath', 'learningPathId'),
       employee: a.belongsTo('Employee', 'employeeId'),
-      status: a.string(), // 'assigned', 'in-progress', 'completed'
+      status: a.string(), // 'not_started', 'in_progress', 'completed'
+      assignedDate: a.datetime(), // Date when the path was assigned
+      dueDate: a.datetime(), // Optional due date for completion
+      completedDate: a.datetime(), // Date when the path was completed
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
