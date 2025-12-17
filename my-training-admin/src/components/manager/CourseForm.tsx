@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
@@ -291,6 +292,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Get current manager's userId for createdBy field
+    let currentUserId: string | undefined;
+    try {
+      const session = await fetchAuthSession();
+      currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+    } catch (err) {
+      console.error('[CourseForm] Error getting auth session:', err);
+    }
+    
     // Validate title
     const errors: Record<string, string> = {};
     const touched: Record<string, boolean> = {};
@@ -485,6 +495,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         passingScore,
         duration: duration.trim() || null,
         category: category.trim() || null,
+        createdBy: currentUserId || null, // Track which manager created this course
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });

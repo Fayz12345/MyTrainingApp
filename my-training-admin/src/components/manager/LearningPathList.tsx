@@ -88,8 +88,20 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
       setLoading(true);
       setError(null);
 
-      // Fetch all learning paths (both archived and non-archived)
-      const allPathsResult = await client.models.LearningPath.list({});
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('[LearningPathList] Fetching learning paths for manager:', currentUserId);
+
+      // Fetch learning paths created by the current manager
+      const allPathsResult = await client.models.LearningPath.list({
+        filter: { createdBy: { eq: currentUserId } }
+      });
 
       if (allPathsResult.errors && allPathsResult.errors.length > 0) {
         throw new Error('Failed to fetch learning paths: ' + allPathsResult.errors.map((e: any) => e.message).join(', '));
@@ -143,14 +155,24 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
     try {
       setSelectedPathId(pathId);
       
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+      
       // Get the path to find its parentPathId or use itself as parent
       const pathResult = await client.models.LearningPath.get({ id: pathId });
       const path = pathResult.data;
       
       if (!path) return;
 
-      // Find all versions (either by parentPathId or by matching title/createdBy)
-      const allPathsResult = await client.models.LearningPath.list({});
+      // Find all versions created by the current manager
+      const allPathsResult = await client.models.LearningPath.list({
+        filter: { createdBy: { eq: currentUserId } }
+      });
       const allPaths = allPathsResult.data || [];
       
       // Group by parentPathId or by title+createdBy (for original paths)

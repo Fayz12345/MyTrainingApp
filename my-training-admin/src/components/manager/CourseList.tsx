@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { getUrl, remove } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 import {
@@ -61,8 +62,21 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching courses...');
-      const result = await client.models.Course.list({});
+      
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('[CourseList] Fetching courses for manager:', currentUserId);
+      
+      // Fetch courses created by the current manager
+      const result = await client.models.Course.list({
+        filter: { createdBy: { eq: currentUserId } }
+      });
       console.log('Course list result:', result);
       
       // Check for GraphQL errors

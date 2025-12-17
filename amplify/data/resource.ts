@@ -82,6 +82,7 @@ const schema = a.schema({
       category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
       tag: a.string(), // Course Tag
       status: a.string(), // Course status
+      createdBy: a.string(), // managerId (userId from Cognito) - for filtering courses by manager
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
