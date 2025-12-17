@@ -37,6 +37,7 @@ interface ManagerListProps {
 const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
   const [managers, setManagers] = useState<Manager[]>([]);
   const [stores, setStores] = useState<Record<string, Store>>({});
+  const [managerStores, setManagerStores] = useState<Record<string, string[]>>({}); // managerId -> storeIds[]
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -49,9 +50,10 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
 
       console.log('SuperAdmin ManagerList - Starting to fetch managers...');
 
-      const [managersResult, storesResult] = await Promise.all([
+      const [managersResult, storesResult, managerStoresResult] = await Promise.all([
         client.models.Manager.list({}),
-        client.models.Store.list({})
+        client.models.Store.list({}),
+        client.models.ManagerStore.list({})
       ]);
 
       console.log('SuperAdmin ManagerList - Managers result:', {
@@ -91,6 +93,35 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
         });
       }
       setStores(storeMap);
+
+      // Build manager -> stores mapping from ManagerStore relationships
+      const managerStoreMap: Record<string, string[]> = {};
+      if (managerStoresResult.data) {
+        (managerStoresResult.data as any[]).forEach(ms => {
+          if (ms.managerId && ms.storeId) {
+            if (!managerStoreMap[ms.managerId]) {
+              managerStoreMap[ms.managerId] = [];
+            }
+            if (!managerStoreMap[ms.managerId].includes(ms.storeId)) {
+              managerStoreMap[ms.managerId].push(ms.storeId);
+            }
+          }
+        });
+      }
+
+      // Also include primary storeId for managers that have one
+      managersData.forEach(manager => {
+        if (manager.storeId) {
+          if (!managerStoreMap[manager.id]) {
+            managerStoreMap[manager.id] = [];
+          }
+          if (!managerStoreMap[manager.id].includes(manager.storeId)) {
+            managerStoreMap[manager.id].push(manager.storeId);
+          }
+        }
+      });
+
+      setManagerStores(managerStoreMap);
     } catch (err) {
       console.error('SuperAdmin ManagerList - Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -236,7 +267,11 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
           </TableHead>
           <TableBody>
             {managers.map((manager) => {
-              const store = stores[manager.storeId];
+              const managerStoreIds = managerStores[manager.id] || [];
+              const managerStoresList = managerStoreIds
+                .map(storeId => stores[storeId])
+                .filter((store): store is Store => store !== undefined);
+              
               return (
                 <TableRow
                   key={manager.id}
@@ -265,13 +300,18 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {store ? (
+                    {managerStoresList.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {managerStoresList.map((store) => (
                       <Chip 
+                            key={store.id}
                         label={store.name} 
                         size="small" 
                         color="primary" 
                         variant="outlined"
                       />
+                        ))}
+                      </Box>
                     ) : (
                       <Typography variant="body2" color="text.disabled">
                         No store assigned

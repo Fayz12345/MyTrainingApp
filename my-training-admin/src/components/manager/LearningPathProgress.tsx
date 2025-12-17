@@ -46,11 +46,16 @@ interface LearningPath {
   id: string;
   title: string;
   description?: string | null;
+  version?: number | null;
+  isSequential?: boolean | null;
 }
 
 interface PathProgress {
   pathId: string;
   pathTitle: string;
+  version?: number | null;
+  isSequential?: boolean | null;
+  courseCount: number;
   assignedCount: number;
   startedCount: number;
   completedCount: number;
@@ -232,6 +237,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
           filter: { learningPathId: { eq: path.id } }
         });
         const pathCourses = pathCoursesResult.data || [];
+        const courseCount = pathCourses.length;
         const requiredCourses = pathCourses.filter((pc: any) => pc.isRequired !== false);
         const requiredCourseIds = new Set(requiredCourses.map((pc: any) => pc.courseId));
 
@@ -279,6 +285,9 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         progressMap.set(path.id, {
           pathId: path.id,
           pathTitle: path.title,
+          version: path.version || null,
+          isSequential: path.isSequential ?? null,
+          courseCount,
           assignedCount,
           startedCount,
           completedCount,
@@ -512,9 +521,12 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
   };
 
   const exportToCSV = () => {
-    const headers = ['Path Name', 'Assigned', 'Started', 'Completed', 'Completion %'];
-    const rows = pathProgress.map(p => [
+    const headers = ['Path Name', 'Version', 'Type', 'Courses', 'Assigned', 'Started', 'Completed', 'Completion %'];
+    const rows = filteredProgress.map(p => [
       p.pathTitle,
+      p.version ? `v${p.version}` : '-',
+      p.isSequential ? 'Sequential' : 'Flexible',
+      p.courseCount.toString(),
       p.assignedCount.toString(),
       p.startedCount.toString(),
       p.completedCount.toString(),
@@ -625,6 +637,9 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             <thead>
               <tr>
                 <th>Path Name</th>
+                <th>Version</th>
+                <th>Type</th>
+                <th>Courses</th>
                 <th>Assigned</th>
                 <th>Started</th>
                 <th>Completed</th>
@@ -635,6 +650,9 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
               ${filteredProgress.map(p => `
                 <tr>
                   <td>${p.pathTitle}</td>
+                  <td>${p.version ? `v${p.version}` : '-'}</td>
+                  <td>${p.isSequential ? 'Sequential' : 'Flexible'}</td>
+                  <td>${p.courseCount}</td>
                   <td>${p.assignedCount}</td>
                   <td>${p.startedCount}</td>
                   <td>${p.completedCount}</td>
@@ -761,6 +779,9 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             <TableHead>
               <TableRow>
                 <TableCell><strong>Path Name</strong></TableCell>
+                <TableCell align="center"><strong>Version</strong></TableCell>
+                <TableCell align="center"><strong>Type</strong></TableCell>
+                <TableCell align="center"><strong>Courses</strong></TableCell>
                 <TableCell align="right"><strong>Assigned</strong></TableCell>
                 <TableCell align="right"><strong>Started</strong></TableCell>
                 <TableCell align="right"><strong>Completed</strong></TableCell>
@@ -771,7 +792,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             <TableBody>
               {filteredProgress.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
+                  <TableCell colSpan={9} align="center">
                     <Typography color="text.secondary" sx={{ py: 3 }}>
                       No learning paths found matching the filters.
                     </Typography>
@@ -781,6 +802,25 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                 filteredProgress.map((progress) => (
                   <TableRow key={progress.pathId} hover>
                     <TableCell>{progress.pathTitle}</TableCell>
+                    <TableCell align="center">
+                      {progress.version ? (
+                        <Chip label={`v${progress.version}`} size="small" variant="outlined" />
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">-</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell align="center">
+                      {progress.isSequential ? (
+                        <Chip label="Sequential" size="small" color="primary" />
+                      ) : (
+                        <Chip label="Flexible" size="small" color="default" />
+                      )}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Typography variant="body2" fontWeight="medium">
+                        {progress.courseCount}
+                      </Typography>
+                    </TableCell>
                     <TableCell align="right">{progress.assignedCount}</TableCell>
                     <TableCell align="right">{progress.startedCount}</TableCell>
                     <TableCell align="right">{progress.completedCount}</TableCell>

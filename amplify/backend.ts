@@ -9,6 +9,8 @@ import { assignUserToGroup } from './functions/assignUserToGroup/resource';
 import { subscribeManagerToSNS } from './functions/subscribeManagerToSNS/resource';
 import { sendManagerNotification } from './functions/sendManagerNotification/resource';
 import { sendWelcomeEmail } from './functions/sendWelcomeEmail/resource';
+import { sendLearningPathAssignmentNotification } from './functions/sendLearningPathAssignmentNotification/resource';
+import { schedulingTest } from './functions/schedulingTest/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -23,6 +25,8 @@ defineBackend({
   assignUserToGroup,
   subscribeManagerToSNS,
   sendManagerNotification,
-  sendWelcomeEmail
+  sendWelcomeEmail,
+  sendLearningPathAssignmentNotification,
+  schedulingTest
 });
 

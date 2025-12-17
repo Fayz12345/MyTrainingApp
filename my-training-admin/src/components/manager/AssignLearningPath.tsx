@@ -35,6 +35,7 @@ interface LearningPath {
   title: string;
   description?: string | null;
   status?: string | null;
+  version?: number | null;
   isSequential?: boolean | null;
   courses?: {
     items?: Array<{
@@ -56,6 +57,49 @@ interface Employee {
   email: string;
   department?: string | null;
 }
+
+const sendLearningPathNotification = async (notificationData: {
+  employeeEmail: string;
+  employeeName: string;
+  learningPathTitle: string;
+  learningPathDescription?: string;
+  courseCount: number;
+  dueDate?: string;
+  isSequential?: boolean;
+  assignmentId?: string;
+}) => {
+  // Lambda Function URL - Configure after deployment
+  // Get this from AWS Lambda Console → Function → Configuration → Function URL
+  const LAMBDA_FUNCTION_URL = process.env.REACT_APP_LEARNING_PATH_NOTIFICATION_LAMBDA_URL || '';
+  
+  if (!LAMBDA_FUNCTION_URL) {
+    console.log('[AssignLearningPath] Lambda Function URL not configured. Skipping notification.');
+    return;
+  }
+
+  try {
+    console.log('[AssignLearningPath] Sending learning path assignment notification...');
+    const response = await fetch(LAMBDA_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(notificationData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Lambda returned status ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('[AssignLearningPath] Notification sent:', result);
+    return result;
+  } catch (err) {
+    console.error('[AssignLearningPath] Notification error (non-critical):', err);
+    // Don't throw - notification failure shouldn't block assignment creation
+    return null;
+  }
+};
 
 interface AssignLearningPathProps {
   selectedStoreId?: string | null;
@@ -266,6 +310,35 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
       const selectedEmployees = employees.filter((emp) => selectedEmployeeIds.includes(emp.id));
       const employeeNames = selectedEmployees.map((e) => e.name).join(', ');
 
+      // Send notifications to employees (non-blocking)
+      console.log('[AssignLearningPath] Sending notifications to employees...');
+      const notificationPromises = selectedEmployees.map(async (employee) => {
+        try {
+          const assignment = results.find(r => (r.pathAssignment as any)?.employeeId === employee.id);
+          const assignmentId = assignment?.pathAssignment?.id;
+          await sendLearningPathNotification({
+            employeeEmail: employee.email,
+            employeeName: employee.name,
+            learningPathTitle: selectedPath.title,
+            learningPathDescription: selectedPath.description ?? undefined,
+            courseCount: sortedCourses.length,
+            dueDate: dueDateISO || undefined,
+            isSequential: isSequential,
+            assignmentId: assignmentId ? String(assignmentId) : undefined
+          });
+        } catch (err) {
+          console.error(`[AssignLearningPath] Failed to send notification to ${employee.email}:`, err);
+          // Continue with other notifications even if one fails
+        }
+      });
+
+      // Send notifications in background (don't wait)
+      Promise.all(notificationPromises).then(() => {
+        console.log('[AssignLearningPath] All notifications sent');
+      }).catch((err) => {
+        console.error('[AssignLearningPath] Some notifications failed:', err);
+      });
+
       await MySwal.fire({
         title: 'Success!',
         html: `
@@ -273,6 +346,7 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
           <p><strong>${employeeNames}</strong></p>
           <p>Total courses assigned: <strong>${sortedCourses.length}</strong></p>
           ${isSequential ? '<p><em>Note: This is a sequential path. Employees must complete courses in order.</em></p>' : ''}
+          <p><em>Notifications have been sent to all assigned employees.</em></p>
         `,
         icon: 'success',
         timer: 5000,
@@ -335,10 +409,22 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
               >
                 {learningPaths.map((path) => (
                   <MenuItem key={path.id} value={path.id}>
-                    {path.title}
-                    {path.isSequential && (
-                      <Chip label="Sequential" size="small" sx={{ ml: 1 }} />
-                    )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                      <Typography variant="body1" sx={{ flexGrow: 1 }}>
+                        {path.title}
+                      </Typography>
+                      {path.version && (
+                        <Chip 
+                          label={`v${path.version}`} 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ mr: 0.5 }}
+                        />
+                      )}
+                      {path.isSequential && (
+                        <Chip label="Sequential" size="small" />
+                      )}
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
