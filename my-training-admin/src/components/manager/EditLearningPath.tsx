@@ -433,7 +433,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
 
         // Track which courses are new (need assignments created)
         const newCourseIds: string[] = [];
-        
+
         // Update or create courses
         for (const selectedCourse of selectedCourses) {
           if (selectedCourse.id) {
@@ -507,7 +507,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
         const statusMessage = saveStatus === 'published' && learningPath.status !== 'published' 
           ? 'Learning path published successfully.' 
           : 'Learning path updated successfully.';
-        
+
         await MySwal.fire({
           title: 'Success!',
           text: statusMessage,

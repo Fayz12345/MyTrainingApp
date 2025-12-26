@@ -216,8 +216,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
 
   const learningPathSubmenuItems = [
     { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
-    // { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
-    // { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
+    { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
+    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
   ];
 
   const handleMenuClick = (view: ViewMode) => {
@@ -621,8 +621,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'analytics', title: 'Training Analytics', description: 'View training completion rates and progress reports.', icon: '📈' },
                 { key: 'courses', title: 'Course Management', description: 'Create, edit, and manage training courses.', icon: '📚' },
                 { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
-                // { key: 'assign-learning-path', title: 'Assign Learning Path', description: 'Assign learning paths to employees for structured training.', icon: '🎯' },
-                // { key: 'learning-path-progress', title: 'Track Learning Path Completion', description: 'Monitor and track employee progress on assigned learning paths.', icon: '📊' },
+                { key: 'assign-learning-path', title: 'Assign Learning Path', description: 'Assign learning paths to employees for structured training.', icon: '🎯' },
+                { key: 'learning-path-progress', title: 'Track Learning Path Completion', description: 'Monitor and track employee progress on assigned learning paths.', icon: '📊' },
                 { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>

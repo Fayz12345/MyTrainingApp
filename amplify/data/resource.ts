@@ -74,6 +74,9 @@ const schema = a.schema({
       description: a.string(), // Course description
       videoKey: a.string(), // S3 key for video
       imageKey: a.string(), // S3 key for course image/thumbnail
+      pdfKey: a.string(), // S3 key for PDF document
+      pdfTitle: a.string(), // Display name for PDF document
+      contentType: a.string(), // 'video', 'pdf', or 'both' - indicates course content type
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
       assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
       learningPathCourses: a.hasMany('LearningPathCourse', 'courseId'), // Links to LearningPathCourse via courseId
@@ -156,6 +159,7 @@ const schema = a.schema({
       status: a.enum(['assigned', 'completed']),
       isTrainingComplete: a.boolean().default(false),
       trainingCompletedAt: a.datetime(), // Date when training was completed (for recertification tracking)
+      hasViewedPdf: a.boolean().default(false), // Track if employee has viewed the PDF document
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
