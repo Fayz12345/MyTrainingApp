@@ -53,7 +53,8 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated, store }
           const allBusinessUnits = result.data as BusinessUnit[];
           
           // For BusinessUnit users, try to find their business unit by checking stores they created
-          if (userId) {
+          // Only auto-select when creating a new store, not when editing
+          if (userId && !isEditMode) {
             const storesResult = await client.models.Store.list({});
             const stores = storesResult.data as any[];
             const userStores = stores.filter((s: any) => s.createdBy === userId);
@@ -64,7 +65,7 @@ const StoreForm: React.FC<StoreFormProps> = ({ onCancel, onStoreCreated, store }
               const userBusinessUnit = allBusinessUnits.find(bu => bu.id === businessUnitId);
               
               if (userBusinessUnit) {
-                // Auto-select the business unit they belong to
+                // Auto-select the business unit they belong to (only when creating, not editing)
                 setFormData(prev => ({ ...prev, businessUnitId }));
               }
             }

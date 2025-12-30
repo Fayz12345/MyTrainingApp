@@ -26,11 +26,17 @@ import {
   Paper,
   CircularProgress,
   Alert,
+  Menu,
+  MenuItem,
+  Collapse,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import StoreIcon from '@mui/icons-material/Store';
+import ExpandLess from '@mui/icons-material/ExpandLess';
+import ExpandMore from '@mui/icons-material/ExpandMore';
+import ArrowDropDown from '@mui/icons-material/ArrowDropDown';
 import CourseForm from './CourseForm';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
@@ -94,6 +100,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [loadingStores, setLoadingStores] = useState(true);
   const [storeError, setStoreError] = useState<string | null>(null);
   const [selectedLearningPath, setSelectedLearningPath] = useState<any | null>(null);
+  const [learningPathMenuAnchor, setLearningPathMenuAnchor] = useState<null | HTMLElement>(null);
+  const [mobileLearningPathMenuOpen, setMobileLearningPathMenuOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -201,21 +209,33 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const menuItems = [
     { key: 'dashboard', label: 'Dashboard', icon: '📊' },
     { key: 'courses', label: 'Courses', icon: '📚' },
-    // Hidden: Learning Path menu items
-    // { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
-    // { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
-    // { key: 'learning-path-progress', label: 'Path Progress', icon: '📊' },
     { key: 'employees', label: 'Employees', icon: '👥' },
     { key: 'assignments', label: 'Assignments', icon: '📋' },
     { key: 'analytics', label: 'Analytics', icon: '📈' }
   ];
 
+  const learningPathSubmenuItems = [
+    { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
+    { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
+    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
+  ];
+
   const handleMenuClick = (view: ViewMode) => {
     setCurrentView(view);
     setMobileMenuOpen(false);
+    setLearningPathMenuAnchor(null);
+    setMobileLearningPathMenuOpen(false);
     if (view === 'courses') {
       setSelectedCourse(null);
     }
+  };
+
+  const handleLearningPathMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setLearningPathMenuAnchor(event.currentTarget);
+  };
+
+  const handleLearningPathMenuClose = () => {
+    setLearningPathMenuAnchor(null);
   };
 
   const navigateToCourses = () => {
@@ -600,8 +620,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'employees', title: 'Employee Management', description: 'View and manage employee information and assignments.', icon: '👥' },
                 { key: 'analytics', title: 'Training Analytics', description: 'View training completion rates and progress reports.', icon: '📈' },
                 { key: 'courses', title: 'Course Management', description: 'Create, edit, and manage training courses.', icon: '📚' },
-                // Hidden: Learning Path dashboard cards
-                // { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
+                { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
+                { key: 'assign-learning-path', title: 'Assign Learning Path', description: 'Assign learning paths to employees for structured training.', icon: '🎯' },
+                { key: 'learning-path-progress', title: 'Track Learning Path Completion', description: 'Monitor and track employee progress on assigned learning paths.', icon: '📊' },
                 { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
@@ -623,7 +644,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : 'Assign Courses'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : 'Open'}
                       </Button>
                     </CardActions>
                   </Card>
@@ -679,6 +700,58 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                   {item.label}
                 </Button>
               ))}
+              <Button
+                color="inherit"
+                onClick={handleLearningPathMenuOpen}
+                startIcon={<Box component="span"></Box>}
+                endIcon={<ArrowDropDown />}
+                variant={
+                  (currentView === 'learning-paths' || 
+                   currentView === 'assign-learning-path' || 
+                   currentView === 'learning-path-progress' ||
+                   currentView === 'create-learning-path' ||
+                   currentView === 'edit-learning-path')
+                    ? 'outlined'
+                    : 'text'
+                }
+                sx={{
+                  borderColor: (currentView === 'learning-paths' || 
+                   currentView === 'assign-learning-path' || 
+                   currentView === 'learning-path-progress' ||
+                   currentView === 'create-learning-path' ||
+                   currentView === 'edit-learning-path')
+                    ? 'inherit'
+                    : 'transparent',
+                }}
+              >
+                Learning Paths
+              </Button>
+              <Menu
+                anchorEl={learningPathMenuAnchor}
+                open={Boolean(learningPathMenuAnchor)}
+                onClose={handleLearningPathMenuClose}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'left',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'left',
+                }}
+              >
+                {learningPathSubmenuItems.map((item) => (
+                  <MenuItem
+                    key={item.key}
+                    onClick={() => handleMenuClick(item.key as ViewMode)}
+                    selected={currentView === item.key}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box>{item.icon}</Box>
+                      <Typography>{item.label}</Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Menu>
             </Box>
           )}
           <Button
@@ -718,6 +791,42 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 </ListItemButton>
               </ListItem>
             ))}
+            <ListItem disablePadding>
+              <ListItemButton
+                onClick={() => setMobileLearningPathMenuOpen(!mobileLearningPathMenuOpen)}
+                selected={
+                  currentView === 'learning-paths' || 
+                  currentView === 'assign-learning-path' || 
+                  currentView === 'learning-path-progress' ||
+                  currentView === 'create-learning-path' ||
+                  currentView === 'edit-learning-path'
+                }
+              >
+                <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+                  🛤️
+                </Box>
+                <ListItemText primary="Learning Paths" />
+                {mobileLearningPathMenuOpen ? <ExpandLess /> : <ExpandMore />}
+              </ListItemButton>
+            </ListItem>
+            <Collapse in={mobileLearningPathMenuOpen} timeout="auto" unmountOnExit>
+              <List component="div" disablePadding>
+                {learningPathSubmenuItems.map((item) => (
+                  <ListItem key={item.key} disablePadding>
+                    <ListItemButton
+                      sx={{ pl: 4 }}
+                      selected={currentView === item.key}
+                      onClick={() => handleMenuClick(item.key as ViewMode)}
+                    >
+                      <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+                        {item.icon}
+                      </Box>
+                      <ListItemText primary={item.label} />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            </Collapse>
           </List>
         </Box>
       </Drawer>

@@ -17,7 +17,6 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  TextField,
   Select,
   MenuItem,
   FormControl,
@@ -33,11 +32,17 @@ import {
   IconButton,
   Tooltip,
   Divider,
+  Collapse,
 } from '@mui/material';
-// Note: DatePicker removed to avoid dependency issues - using native date inputs if needed
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DownloadIcon from '@mui/icons-material/Download';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import GroupIcon from '@mui/icons-material/Group';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import PendingIcon from '@mui/icons-material/Pending';
 import Loader from '../common/Loader';
 
 const client = generateClient<Schema>();
@@ -46,18 +51,41 @@ interface LearningPath {
   id: string;
   title: string;
   description?: string | null;
+  version?: number | null;
+  isSequential?: boolean | null;
 }
 
-interface PathProgress {
-  pathId: string;
-  pathTitle: string;
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  department?: string | null;
+}
+
+interface EmployeeAssignment {
+  id: string;
+  employeeId: string;
+  employee?: Employee;
+  status: string;
+  assignedDate: string;
+  dueDate?: string | null;
+  completedDate?: string | null;
+  coursesCompleted: number;
+  totalCourses: number;
+  progressPercentage: number;
+}
+
+interface PathProgressGroup {
+  learningPath: LearningPath;
+  courseCount: number;
+  employeeAssignments: EmployeeAssignment[];
   assignedCount: number;
   startedCount: number;
   completedCount: number;
   completionPercentage: number;
 }
 
-interface EmployeeProgress {
+interface EmployeeProgressDetail {
   employeeId: string;
   employeeName: string;
   employeeEmail: string;
@@ -87,14 +115,15 @@ interface LearningPathProgressProps {
 }
 
 const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedStoreId }) => {
-  const [pathProgress, setPathProgress] = useState<PathProgress[]>([]);
+  const [pathProgressGroups, setPathProgressGroups] = useState<PathProgressGroup[]>([]);
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPathId, setSelectedPathId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [employeeDialogOpen, setEmployeeDialogOpen] = useState(false);
-  const [selectedEmployeeProgress, setSelectedEmployeeProgress] = useState<EmployeeProgress | null>(null);
+  const [selectedEmployeeProgress, setSelectedEmployeeProgress] = useState<EmployeeProgressDetail | null>(null);
   const [loadingEmployeeDetails, setLoadingEmployeeDetails] = useState(false);
 
   useEffect(() => {
@@ -190,7 +219,20 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         throw new Error('Failed to fetch learning paths: ' + pathsResult.errors.map((e: any) => e.message).join(', '));
       }
 
-      setLearningPaths(pathsResult.data as LearningPath[]);
+      const paths = pathsResult.data as LearningPath[];
+      setLearningPaths(paths);
+
+      // Fetch all employees
+      const employeesResult = await client.models.Employee.list({
+        filter: { isActive: { eq: true } }
+      });
+      
+      let filteredEmployees = employeesResult.data as Employee[];
+      if (selectedStoreId) {
+        filteredEmployees = filteredEmployees.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+      const employeeMap = new Map(filteredEmployees.map(e => [e.id, e]));
+      const storeEmployeeIds = new Set(filteredEmployees.map(e => e.id));
 
       // Fetch all learning path assignments
       const assignmentsResult = await client.models.LearningPathAssignment.list({});
@@ -201,48 +243,45 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
 
       const allAssignments = assignmentsResult.data || [];
 
-      // Check and update status for each assignment (in background, don't wait)
-      allAssignments.forEach((assignment: any) => {
+      // Filter by store if selected
+      const filteredAssignments = selectedStoreId 
+        ? allAssignments.filter((a: any) => storeEmployeeIds.has(a.employeeId))
+        : allAssignments;
+
+      // Update statuses in background
+      filteredAssignments.forEach((assignment: any) => {
         if (assignment.status !== 'completed') {
           checkAndUpdatePathStatus(assignment.id, assignment.learningPathId, assignment.employeeId)
             .catch(err => console.error('Error updating path status:', err));
         }
       });
 
-      // Filter by store if selected
-      let filteredAssignments = allAssignments;
-      if (selectedStoreId) {
-        // Get employee IDs for this store
-        const employeesResult = await client.models.Employee.list({
-          filter: { storeId: { eq: selectedStoreId } }
-        });
-        const storeEmployeeIds = new Set((employeesResult.data || []).map((e: any) => e.id));
-        filteredAssignments = allAssignments.filter((a: any) => storeEmployeeIds.has(a.employeeId));
-      }
+      // Build progress groups
+      const progressGroups: PathProgressGroup[] = [];
 
-      // Calculate progress for each path by checking actual course completion
-      const progressMap = new Map<string, PathProgress>();
-
-      for (const path of pathsResult.data as LearningPath[]) {
+      for (const path of paths) {
         const pathAssignments = filteredAssignments.filter((a: any) => a.learningPathId === path.id);
-        const assignedCount = pathAssignments.length;
 
-        // Get all courses in this path
+        if (pathAssignments.length === 0) continue; // Skip paths with no assignments
+
+        // Get course count for this path
         const pathCoursesResult = await client.models.LearningPathCourse.list({
           filter: { learningPathId: { eq: path.id } }
         });
-        const pathCourses = pathCoursesResult.data || [];
-        const requiredCourses = pathCourses.filter((pc: any) => pc.isRequired !== false);
-        const requiredCourseIds = new Set(requiredCourses.map((pc: any) => pc.courseId));
+        const courseCount = (pathCoursesResult.data || []).length;
+        const requiredCourses = (pathCoursesResult.data || []).filter((pc: any) => pc.isRequired !== false);
 
+        // Build employee assignments with progress
+        const employeeAssignments: EmployeeAssignment[] = [];
         let startedCount = 0;
         let completedCount = 0;
 
-        // Check each assignment's actual course completion status
-        for (const pathAssignment of pathAssignments) {
-          // Get all course assignments for this employee
+        for (const assignment of pathAssignments) {
+          const employee = employeeMap.get(assignment.employeeId);
+          
+          // Get course assignments for this employee
           const courseAssignmentsResult = await client.models.Assignment.list({
-            filter: { employeeId: { eq: pathAssignment.employeeId } }
+            filter: { employeeId: { eq: assignment.employeeId } }
           });
 
           const courseAssignments = (courseAssignmentsResult.data || []) as Array<{
@@ -254,31 +293,47 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             courseAssignments.map((ca) => [ca.courseId, ca])
           );
 
-          // Check if at least one required course is completed (started)
-          const hasStarted = requiredCourses.some((pathCourse: any) => {
-            const courseAssignment = courseAssignmentMap.get(pathCourse.courseId);
-            return courseAssignment && courseAssignment.status === 'completed';
-          });
+          // Calculate courses completed
+          let coursesCompleted = 0;
+          for (const pathCourse of requiredCourses) {
+            const courseAssignment = courseAssignmentMap.get((pathCourse as any).courseId);
+            if (courseAssignment && courseAssignment.status === 'completed') {
+              coursesCompleted++;
+            }
+          }
 
-          // Check if all required courses are completed
-          const allCompleted = requiredCourses.every((pathCourse: any) => {
-            const courseAssignment = courseAssignmentMap.get(pathCourse.courseId);
-            return courseAssignment && courseAssignment.status === 'completed';
-          });
+          const totalCourses = requiredCourses.length;
+          const progressPercentage = totalCourses > 0 ? (coursesCompleted / totalCourses) * 100 : 0;
 
-          if (allCompleted) {
+          // Update counts
+          if (progressPercentage === 100) {
             completedCount++;
-            startedCount++; // Completed also counts as started
-          } else if (hasStarted) {
+            startedCount++;
+          } else if (coursesCompleted > 0) {
             startedCount++;
           }
+
+          employeeAssignments.push({
+            id: String(assignment.id || ''),
+            employeeId: String(assignment.employeeId || ''),
+            employee: employee,
+            status: String(assignment.status || 'not_started'),
+            assignedDate: String(assignment.assignedDate || assignment.createdAt || new Date().toISOString()),
+            dueDate: assignment.dueDate ? String(assignment.dueDate) : null,
+            completedDate: assignment.completedDate ? String(assignment.completedDate) : null,
+            coursesCompleted,
+            totalCourses,
+            progressPercentage,
+          });
         }
 
+        const assignedCount = employeeAssignments.length;
         const completionPercentage = assignedCount > 0 ? (completedCount / assignedCount) * 100 : 0;
 
-        progressMap.set(path.id, {
-          pathId: path.id,
-          pathTitle: path.title,
+        progressGroups.push({
+          learningPath: path,
+          courseCount,
+          employeeAssignments,
           assignedCount,
           startedCount,
           completedCount,
@@ -286,15 +341,10 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         });
       }
 
-      setPathProgress(Array.from(progressMap.values()));
+      // Sort by assigned count (most assigned first)
+      progressGroups.sort((a, b) => b.assignedCount - a.assignedCount);
 
-      // Update statuses in background (for future refreshes)
-      allAssignments.forEach((assignment: any) => {
-        if (assignment.status !== 'completed') {
-          checkAndUpdatePathStatus(assignment.id, assignment.learningPathId, assignment.employeeId)
-            .catch(err => console.error('Error updating path status:', err));
-        }
-      });
+      setPathProgressGroups(progressGroups);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -303,11 +353,24 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
     }
   };
 
+  const toggleGroupExpand = (pathId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(pathId)) {
+        newSet.delete(pathId);
+      } else {
+        newSet.add(pathId);
+      }
+      return newSet;
+    });
+  };
+
   const fetchEmployeeDetails = async (pathId: string, employeeId: string) => {
     try {
       setLoadingEmployeeDetails(true);
+      setEmployeeDialogOpen(true);
 
-      // Fetch all data in parallel for better performance
+      // Fetch all data in parallel
       const [
         assignmentResult,
         employeeResult,
@@ -336,15 +399,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       }
 
       const assignment = assignmentResult.data[0] as any;
-
-      if (!employeeResult.data) {
-        throw new Error('Employee not found');
-      }
       const employee = employeeResult.data as any;
-
-      if (!pathResult.data) {
-        throw new Error('Learning path not found');
-      }
       const path = pathResult.data as any;
 
       const pathCourses = pathCoursesResult.data || [];
@@ -361,15 +416,12 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         courseAssignments.map((ca) => [ca.courseId, ca])
       );
 
-      // Get all course IDs to fetch in parallel
+      // Get all course details
       const courseIds = sortedPathCourses.map((pc: any) => pc.courseId);
-      
-      // Fetch all courses in parallel
       const courseResults = await Promise.all(
         courseIds.map(courseId => client.models.Course.get({ id: courseId }))
       );
 
-      // Create course map
       const courseMap = new Map<string, any>();
       courseResults.forEach((result, index) => {
         if (result.data) {
@@ -377,12 +429,11 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         }
       });
 
-      // Get all assignment IDs for completed courses to fetch results in parallel
+      // Get quiz results for completed courses
       const completedAssignmentIds = courseAssignments
         .filter(ca => ca.status === 'completed')
         .map(ca => ca.id);
 
-      // Fetch all quiz results in parallel
       const resultPromises = completedAssignmentIds.map(assignmentId =>
         client.models.Result.list({
           filter: { assignmentId: { eq: assignmentId } }
@@ -390,7 +441,6 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       );
       const resultResults = await Promise.all(resultPromises);
 
-      // Create result map by assignment ID
       const resultMap = new Map<string, any>();
       completedAssignmentIds.forEach((assignmentId, index) => {
         const result = resultResults[index].data?.[0];
@@ -400,17 +450,8 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       });
 
       // Build completed and pending courses lists
-      const completedCourses: Array<{
-        courseId: string;
-        courseTitle: string;
-        completedDate: string;
-        score?: number | null;
-      }> = [];
-      const pendingCourses: Array<{
-        courseId: string;
-        courseTitle: string;
-        order: number;
-      }> = [];
+      const completedCourses: EmployeeProgressDetail['completedCourses'] = [];
+      const pendingCourses: EmployeeProgressDetail['pendingCourses'] = [];
 
       for (const pathCourse of sortedPathCourses) {
         const courseId = (pathCourse as any).courseId;
@@ -419,9 +460,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
 
         const courseAssignment = courseAssignmentMap.get(courseId);
         if (courseAssignment && courseAssignment.status === 'completed') {
-          // Get quiz result for score
           const result = resultMap.get(courseAssignment.id);
-
           completedCourses.push({
             courseId,
             courseTitle,
@@ -437,7 +476,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         }
       }
 
-      const employeeProgress: EmployeeProgress = {
+      const employeeProgress: EmployeeProgressDetail = {
         employeeId: employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
@@ -453,53 +492,43 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         pendingCourses,
       };
 
-      // Check and update path status before showing
-      await checkAndUpdatePathStatus(assignment.id, pathId, employeeId);
-      
-      // Re-fetch assignment to get updated status
-      const updatedAssignmentResult = await client.models.LearningPathAssignment.get({ id: assignment.id });
-      if (updatedAssignmentResult.data) {
-        employeeProgress.status = updatedAssignmentResult.data.status || employeeProgress.status;
-        employeeProgress.completedDate = updatedAssignmentResult.data.completedDate || employeeProgress.completedDate;
-      }
-
       setSelectedEmployeeProgress(employeeProgress);
-      setEmployeeDialogOpen(true);
     } catch (err) {
       console.error('Error fetching employee details:', err);
+      setEmployeeDialogOpen(false);
       alert('Failed to load employee details: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoadingEmployeeDetails(false);
     }
   };
 
-  const handleViewEmployees = async (pathId: string) => {
-    try {
-      // Open dialog immediately with loading state
-      setLoadingEmployeeDetails(true);
-      setEmployeeDialogOpen(true);
-      setSelectedEmployeeProgress(null);
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
 
-      // Get all assignments for this path
-      const assignmentsResult = await client.models.LearningPathAssignment.list({
-        filter: { learningPathId: { eq: pathId } }
-      });
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircleIcon fontSize="small" color="success" />;
+      case 'in_progress':
+        return <HourglassEmptyIcon fontSize="small" color="warning" />;
+      default:
+        return <PendingIcon fontSize="small" color="disabled" />;
+    }
+  };
 
-      if (!assignmentsResult.data || assignmentsResult.data.length === 0) {
-        setLoadingEmployeeDetails(false);
-        setEmployeeDialogOpen(false);
-        alert('No employees assigned to this learning path');
-        return;
-      }
-
-      // Show first employee (could be enhanced to show a selection dialog)
-      const firstAssignment = assignmentsResult.data[0] as any;
-      await fetchEmployeeDetails(pathId, firstAssignment.employeeId);
-    } catch (err) {
-      console.error('Error fetching employees:', err);
-      setLoadingEmployeeDetails(false);
-      setEmployeeDialogOpen(false);
-      alert('Failed to load employees: ' + (err instanceof Error ? err.message : 'Unknown error'));
+  const getStatusColor = (status: string): 'success' | 'warning' | 'default' => {
+    switch (status) {
+      case 'completed':
+        return 'success';
+      case 'in_progress':
+        return 'warning';
+      default:
+        return 'default';
     }
   };
 
@@ -512,119 +541,170 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
   };
 
   const exportToCSV = () => {
-    const headers = ['Path Name', 'Assigned', 'Started', 'Completed', 'Completion %'];
-    const rows = pathProgress.map(p => [
-      p.pathTitle,
+    // Summary section headers
+    const summaryHeaders = ['Learning Path', 'Version', 'Type', 'Courses', 'Assigned', 'Started', 'Completed', 'Completion %'];
+    const summaryRows = filteredProgress.map(p => [
+      `"${p.learningPath.title}"`,
+      p.learningPath.version ? `v${p.learningPath.version}` : '-',
+      p.learningPath.isSequential ? 'Sequential' : 'Flexible',
+      p.courseCount.toString(),
       p.assignedCount.toString(),
       p.startedCount.toString(),
       p.completedCount.toString(),
       p.completionPercentage.toFixed(1) + '%'
     ]);
 
+    // Detailed employee data headers
+    const detailHeaders = ['Learning Path', 'Employee Name', 'Employee Email', 'Status', 'Progress', 'Courses Completed', 'Total Courses', 'Assigned Date', 'Due Date', 'Completed Date'];
+    const detailRows: string[][] = [];
+
+    filteredProgress.forEach(group => {
+      group.employeeAssignments.forEach(emp => {
+        detailRows.push([
+          `"${group.learningPath.title}"`,
+          `"${emp.employee?.name || 'Unknown'}"`,
+          `"${emp.employee?.email || '-'}"`,
+          emp.status.replace('_', ' '),
+          emp.progressPercentage.toFixed(0) + '%',
+          emp.coursesCompleted.toString(),
+          emp.totalCourses.toString(),
+          formatDate(emp.assignedDate),
+          emp.dueDate ? formatDate(emp.dueDate) : '-',
+          emp.completedDate ? formatDate(emp.completedDate) : '-'
+        ]);
+      });
+    });
+
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
+      '=== LEARNING PATH PROGRESS SUMMARY ===',
+      '',
+      summaryHeaders.join(','),
+      ...summaryRows.map(row => row.join(',')),
+      '',
+      '',
+      '=== DETAILED EMPLOYEE PROGRESS ===',
+      '',
+      detailHeaders.join(','),
+      ...detailRows.map(row => row.join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `learning-path-progress-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `learning-path-progress-detailed-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
 
   const exportToPDF = () => {
-    // Create a new window with only the table data for PDF export
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('Please allow popups to export PDF');
       return;
     }
 
+    // Generate detailed sections for each learning path
+    const detailedSections = filteredProgress.map(group => `
+      <div class="path-section">
+        <h3 class="path-title">${group.learningPath.title} ${group.learningPath.version ? `(v${group.learningPath.version})` : ''}</h3>
+        <div class="path-summary">
+          <span class="badge">${group.learningPath.isSequential ? 'Sequential' : 'Flexible'}</span>
+          <span>Courses: ${group.courseCount}</span>
+          <span>Employees: ${group.assignedCount}</span>
+          <span>Completed: ${group.completedCount}</span>
+          <span>Progress: ${group.completionPercentage.toFixed(0)}%</span>
+        </div>
+        <table class="employee-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Assigned</th>
+              <th>Due Date</th>
+              <th>Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${group.employeeAssignments.map(emp => `
+              <tr class="status-${emp.status}">
+                <td>${emp.employee?.name || 'Unknown'}</td>
+                <td>${emp.employee?.email || '-'}</td>
+                <td>
+                  <span class="status-badge status-${emp.status}">${emp.status.replace('_', ' ')}</span>
+                </td>
+                <td>
+                  <div class="progress-container">
+                    <div class="progress-bar-small">
+                      <div class="progress-fill" style="width: ${emp.progressPercentage}%"></div>
+                    </div>
+                    <span>${emp.coursesCompleted}/${emp.totalCourses}</span>
+                  </div>
+                </td>
+                <td>${formatDate(emp.assignedDate)}</td>
+                <td>${emp.dueDate ? formatDate(emp.dueDate) : '-'}</td>
+                <td>${emp.completedDate ? formatDate(emp.completedDate) : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('');
+
     const tableHTML = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Learning Path Progress Report</title>
+          <title>Learning Path Progress Report - Detailed</title>
           <style>
             @media print {
-              @page {
-                margin: 1cm;
-                size: A4 landscape;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-              }
+              @page { margin: 1cm; size: A4 landscape; }
+              body { margin: 0; padding: 0; }
+              .path-section { page-break-inside: avoid; }
             }
-            body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-            }
-            h1 {
-              text-align: center;
-              color: #1976d2;
-              margin-bottom: 20px;
-            }
-            .report-info {
-              margin-bottom: 20px;
-              font-size: 12px;
-              color: #666;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 20px;
-            }
-            th {
-              background-color: #1976d2;
-              color: white;
-              padding: 12px;
-              text-align: left;
-              font-weight: bold;
-              border: 1px solid #1565c0;
-            }
-            td {
-              padding: 10px 12px;
-              border: 1px solid #ddd;
-            }
-            tr:nth-child(even) {
-              background-color: #f5f5f5;
-            }
-            .progress-bar {
-              display: inline-block;
-              width: 100px;
-              height: 20px;
-              background-color: #e0e0e0;
-              border-radius: 10px;
-              position: relative;
-              margin-right: 10px;
-            }
-            .progress-fill {
-              height: 100%;
-              background-color: #4caf50;
-              border-radius: 10px;
-            }
-            .footer {
-              margin-top: 30px;
-              text-align: center;
-              font-size: 12px;
-              color: #666;
-            }
+            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
+            h1 { text-align: center; color: #1976d2; margin-bottom: 10px; }
+            h2 { color: #1976d2; margin-top: 30px; border-bottom: 2px solid #1976d2; padding-bottom: 5px; }
+            h3.path-title { color: #333; margin: 20px 0 10px 0; background: #f5f5f5; padding: 10px; border-left: 4px solid #1976d2; }
+            .report-info { margin-bottom: 20px; font-size: 11px; color: #666; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+            th { background-color: #1976d2; color: white; padding: 8px; text-align: left; font-weight: bold; font-size: 11px; }
+            td { padding: 6px 8px; border: 1px solid #ddd; font-size: 11px; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+            .summary-table th { background-color: #2196f3; }
+            .employee-table th { background-color: #607d8b; }
+            .progress-bar { display: inline-block; width: 80px; height: 16px; background-color: #e0e0e0; border-radius: 8px; margin-right: 8px; vertical-align: middle; }
+            .progress-bar-small { display: inline-block; width: 50px; height: 10px; background-color: #e0e0e0; border-radius: 5px; margin-right: 5px; vertical-align: middle; }
+            .progress-fill { height: 100%; background-color: #4caf50; border-radius: inherit; }
+            .progress-container { display: flex; align-items: center; gap: 5px; }
+            .path-summary { display: flex; gap: 15px; margin-bottom: 10px; font-size: 11px; color: #666; flex-wrap: wrap; }
+            .path-section { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+            .badge { background: #1976d2; color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px; }
+            .status-badge { padding: 2px 8px; border-radius: 10px; font-size: 10px; text-transform: capitalize; }
+            .status-badge.status-completed { background: #4caf50; color: white; }
+            .status-badge.status-in_progress { background: #ff9800; color: white; }
+            .status-badge.status-not_started { background: #9e9e9e; color: white; }
+            .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
+            .totals { display: flex; justify-content: center; gap: 30px; margin-top: 10px; }
           </style>
         </head>
         <body>
           <h1>Learning Path Progress Report</h1>
           <div class="report-info">
             Generated on: ${new Date().toLocaleString()}<br>
-            ${selectedStoreId ? `Store Filter: Applied` : 'All Stores'}
+            ${selectedStoreId ? 'Store Filter: Applied' : 'All Stores'}
           </div>
-          <table>
+          
+          <h2>Summary Overview</h2>
+          <table class="summary-table">
             <thead>
               <tr>
-                <th>Path Name</th>
+                <th>Learning Path</th>
+                <th>Version</th>
+                <th>Type</th>
+                <th>Courses</th>
                 <th>Assigned</th>
                 <th>Started</th>
                 <th>Completed</th>
@@ -634,7 +714,10 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             <tbody>
               ${filteredProgress.map(p => `
                 <tr>
-                  <td>${p.pathTitle}</td>
+                  <td><strong>${p.learningPath.title}</strong></td>
+                  <td>${p.learningPath.version ? `v${p.learningPath.version}` : '-'}</td>
+                  <td>${p.learningPath.isSequential ? 'Sequential' : 'Flexible'}</td>
+                  <td>${p.courseCount}</td>
                   <td>${p.assignedCount}</td>
                   <td>${p.startedCount}</td>
                   <td>${p.completedCount}</td>
@@ -642,16 +725,22 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                     <div class="progress-bar">
                       <div class="progress-fill" style="width: ${p.completionPercentage}%"></div>
                     </div>
-                    ${p.completionPercentage.toFixed(1)}%
+                    ${p.completionPercentage.toFixed(0)}%
                   </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
+
+          <h2>Detailed Employee Progress</h2>
+          ${detailedSections}
+
           <div class="footer">
-            <p>Total Learning Paths: ${filteredProgress.length}</p>
-            <p>Total Assigned: ${filteredProgress.reduce((sum, p) => sum + p.assignedCount, 0)}</p>
-            <p>Total Completed: ${filteredProgress.reduce((sum, p) => sum + p.completedCount, 0)}</p>
+            <div class="totals">
+              <span><strong>Total Learning Paths:</strong> ${filteredProgress.length}</span>
+              <span><strong>Total Employees Assigned:</strong> ${filteredProgress.reduce((sum, p) => sum + p.assignedCount, 0)}</span>
+              <span><strong>Total Completed:</strong> ${filteredProgress.reduce((sum, p) => sum + p.completedCount, 0)}</span>
+            </div>
           </div>
         </body>
       </html>
@@ -659,18 +748,12 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
 
     printWindow.document.write(tableHTML);
     printWindow.document.close();
-    
-    // Wait for content to load, then trigger print
-    setTimeout(() => {
-      printWindow.print();
-      // Close window after printing (optional)
-      // printWindow.close();
-    }, 250);
+    setTimeout(() => { printWindow.print(); }, 250);
   };
 
   // Apply filters
-  const filteredProgress = pathProgress.filter(p => {
-    if (selectedPathId && p.pathId !== selectedPathId) return false;
+  const filteredProgress = pathProgressGroups.filter(p => {
+    if (selectedPathId && p.learningPath.id !== selectedPathId) return false;
     if (statusFilter === 'completed' && p.completedCount === 0) return false;
     if (statusFilter === 'in_progress' && p.startedCount === 0) return false;
     if (statusFilter === 'not_started' && p.startedCount > 0) return false;
@@ -746,74 +829,213 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                   label="Filter by Status"
                 >
                   <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="completed">Completed</MenuItem>
-                  <MenuItem value="in_progress">In Progress</MenuItem>
-                  <MenuItem value="not_started">Not Started</MenuItem>
+                <MenuItem value="completed">Has Completed</MenuItem>
+                <MenuItem value="in_progress">Has In Progress</MenuItem>
+                <MenuItem value="not_started">None Started</MenuItem>
                 </Select>
               </FormControl>
             </Box>
           </CardContent>
         </Card>
 
-        {/* Progress Table */}
+      {/* Progress Table with Expandable Rows */}
+      {filteredProgress.length === 0 ? (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            No learning paths with assignments found.
+          </Typography>
+        </Paper>
+      ) : (
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
-              <TableRow>
-                <TableCell><strong>Path Name</strong></TableCell>
-                <TableCell align="right"><strong>Assigned</strong></TableCell>
-                <TableCell align="right"><strong>Started</strong></TableCell>
-                <TableCell align="right"><strong>Completed</strong></TableCell>
-                <TableCell align="right"><strong>Completion %</strong></TableCell>
-                <TableCell align="center"><strong>Actions</strong></TableCell>
+              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                <TableCell sx={{ fontWeight: 600 }}>Learning Path</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="center">Version</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="center">Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="center">Courses</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="center">
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                    <GroupIcon fontSize="small" />
+                    Employees
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="center">Progress</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredProgress.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    <Typography color="text.secondary" sx={{ py: 3 }}>
-                      No learning paths found matching the filters.
+              {filteredProgress.map((group) => (
+                <React.Fragment key={group.learningPath.id}>
+                  <TableRow
+                    hover
+                    sx={{
+                      cursor: 'pointer',
+                      '& > *': { borderBottom: expandedGroups.has(group.learningPath.id) ? 'none' : undefined }
+                    }}
+                    onClick={() => toggleGroupExpand(group.learningPath.id)}
+                  >
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <IconButton size="small">
+                          {expandedGroups.has(group.learningPath.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                          {group.learningPath.title}
                     </Typography>
+                      </Box>
                   </TableCell>
-                </TableRow>
-              ) : (
-                filteredProgress.map((progress) => (
-                  <TableRow key={progress.pathId} hover>
-                    <TableCell>{progress.pathTitle}</TableCell>
-                    <TableCell align="right">{progress.assignedCount}</TableCell>
-                    <TableCell align="right">{progress.startedCount}</TableCell>
-                    <TableCell align="right">{progress.completedCount}</TableCell>
-                    <TableCell align="right">
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
-                        <Box sx={{ width: 100 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={progress.completionPercentage}
-                            sx={{ height: 8, borderRadius: 4 }}
-                          />
-                        </Box>
-                        <Typography variant="body2" sx={{ minWidth: 50 }}>
-                          {progress.completionPercentage.toFixed(1)}%
+                    <TableCell align="center">
+                      {group.learningPath.version ? (
+                        <Chip label={`v${group.learningPath.version}`} size="small" variant="outlined" />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip
+                        label={group.learningPath.isSequential ? 'Sequential' : 'Flexible'}
+                        size="small"
+                        color={group.learningPath.isSequential ? 'info' : 'default'}
+                      />
+                    </TableCell>
+                    <TableCell align="center">{group.courseCount}</TableCell>
+                    <TableCell align="center">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                        <Chip icon={<GroupIcon />} label={group.assignedCount} color="primary" variant="outlined" />
+                        <Typography variant="caption" color="text.secondary">
+                          ({group.completedCount} done)
                         </Typography>
                       </Box>
                     </TableCell>
                     <TableCell align="center">
-                      <Tooltip title="View Employee Progress">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                        <Box sx={{ width: 80 }}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={group.completionPercentage}
+                            sx={{ height: 8, borderRadius: 4 }}
+                            color={group.completionPercentage === 100 ? 'success' : 'primary'}
+                          />
+                        </Box>
+                        <Typography variant="body2" sx={{ minWidth: 45 }}>
+                          {group.completionPercentage.toFixed(0)}%
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Expanded Employee List */}
+                  <TableRow>
+                    <TableCell colSpan={6} sx={{ py: 0 }}>
+                      <Collapse in={expandedGroups.has(group.learningPath.id)} timeout="auto" unmountOnExit>
+                        <Box sx={{ py: 2, px: 4 }}>
+                          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                            Assigned Employees ({group.employeeAssignments.length})
+                          </Typography>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Employee</TableCell>
+                                <TableCell>Email</TableCell>
+                                <TableCell align="center">Status</TableCell>
+                                <TableCell align="center">Progress</TableCell>
+                                <TableCell>Assigned</TableCell>
+                                <TableCell>Due Date</TableCell>
+                                <TableCell align="center">Details</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {group.employeeAssignments.map((empAssignment) => (
+                                <TableRow key={empAssignment.id}>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      {getStatusIcon(empAssignment.status)}
+                                      <Typography variant="body2">
+                                        {empAssignment.employee?.name || 'Unknown'}
+                                      </Typography>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2" color="text.secondary">
+                                      {empAssignment.employee?.email || '-'}
+                                    </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                                    <Chip
+                                      label={empAssignment.status.replace('_', ' ')}
+                                      size="small"
+                                      color={getStatusColor(empAssignment.status)}
+                                    />
+                                  </TableCell>
+                                  <TableCell align="center">
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Box sx={{ width: 60 }}>
+                                        <LinearProgress
+                                          variant="determinate"
+                                          value={empAssignment.progressPercentage}
+                                          sx={{ height: 6, borderRadius: 3 }}
+                                          color={empAssignment.progressPercentage === 100 ? 'success' : 'primary'}
+                                        />
+                                      </Box>
+                                      <Typography variant="caption">
+                                        {empAssignment.coursesCompleted}/{empAssignment.totalCourses}
+                                      </Typography>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2">
+                                      {formatDate(empAssignment.assignedDate)}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    {empAssignment.dueDate ? (
+                                      <Box>
+                                        <Typography variant="body2">
+                                          {formatDate(empAssignment.dueDate)}
+                                        </Typography>
+                                        {(() => {
+                                          const days = calculateDaysRemaining(empAssignment.dueDate);
+                                          if (days !== null && empAssignment.status !== 'completed') {
+                                            return (
+                                              <Typography
+                                                variant="caption"
+                                                color={days < 0 ? 'error' : days <= 3 ? 'warning.main' : 'text.secondary'}
+                                              >
+                                                {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d left`}
+                                              </Typography>
+                                            );
+                                          }
+                                          return null;
+                                        })()}
+                                      </Box>
+                                    ) : '-'}
+                                  </TableCell>
+                                  <TableCell align="center">
+                                    <Tooltip title="View Details">
                         <IconButton
                           size="small"
-                          onClick={() => handleViewEmployees(progress.pathId)}
+                                        color="primary"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          fetchEmployeeDetails(group.learningPath.id, empAssignment.employeeId);
+                                        }}
                         >
-                          <VisibilityIcon />
+                                        <VisibilityIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
+              ))}
             </TableBody>
           </Table>
         </TableContainer>
+      )}
 
         {/* Employee Details Dialog */}
         <Dialog
@@ -841,24 +1063,20 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                   <Typography variant="h6" gutterBottom>
                     {selectedEmployeeProgress.pathTitle}
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 2 }}>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 2, alignItems: 'center' }}>
                     <Chip
-                      label={`Status: ${selectedEmployeeProgress.status}`}
-                      color={
-                        selectedEmployeeProgress.status === 'completed' ? 'success' :
-                        selectedEmployeeProgress.status === 'in_progress' ? 'warning' :
-                        'default'
-                      }
+                    label={`Status: ${selectedEmployeeProgress.status.replace('_', ' ')}`}
+                    color={getStatusColor(selectedEmployeeProgress.status)}
                     />
                     <Chip
                       label={`Progress: ${selectedEmployeeProgress.coursesCompleted} / ${selectedEmployeeProgress.totalCourses} courses`}
                     />
                     <Typography variant="body2" color="text.secondary">
-                      Assigned: {new Date(selectedEmployeeProgress.assignedDate).toLocaleDateString()}
+                    Assigned: {formatDate(selectedEmployeeProgress.assignedDate)}
                     </Typography>
                     {selectedEmployeeProgress.dueDate && (
                       <Typography variant="body2" color="text.secondary">
-                        Due: {new Date(selectedEmployeeProgress.dueDate).toLocaleDateString()}
+                      Due: {formatDate(selectedEmployeeProgress.dueDate)}
                         {(() => {
                           const daysRemaining = calculateDaysRemaining(selectedEmployeeProgress.dueDate);
                           if (daysRemaining !== null) {
@@ -872,7 +1090,7 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                     )}
                     {selectedEmployeeProgress.completedDate && (
                       <Typography variant="body2" color="success.main">
-                        Completed: {new Date(selectedEmployeeProgress.completedDate).toLocaleDateString()}
+                      Completed: {formatDate(selectedEmployeeProgress.completedDate)}
                       </Typography>
                     )}
                   </Box>
@@ -884,18 +1102,23 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                   Completed Courses ({selectedEmployeeProgress.completedCourses.length})
                 </Typography>
                 {selectedEmployeeProgress.completedCourses.length > 0 ? (
-                  <List>
+                <List dense>
                     {selectedEmployeeProgress.completedCourses.map((course) => (
                       <ListItem key={course.courseId}>
                         <ListItemText
-                          primary={course.courseTitle}
-                          secondary={`Completed: ${new Date(course.completedDate).toLocaleDateString()}${course.score !== null ? ` | Score: ${course.score}%` : ''}`}
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon color="success" fontSize="small" />
+                            {course.courseTitle}
+                          </Box>
+                        }
+                        secondary={`Completed: ${formatDate(course.completedDate)}${course.score !== null ? ` | Score: ${course.score}%` : ''}`}
                         />
                       </ListItem>
                     ))}
                   </List>
                 ) : (
-                  <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
                     No courses completed yet.
                   </Typography>
                 )}
@@ -906,18 +1129,23 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                   Pending Courses ({selectedEmployeeProgress.pendingCourses.length})
                 </Typography>
                 {selectedEmployeeProgress.pendingCourses.length > 0 ? (
-                  <List>
+                <List dense>
                     {selectedEmployeeProgress.pendingCourses.map((course) => (
                       <ListItem key={course.courseId}>
                         <ListItemText
-                          primary={`${course.order}. ${course.courseTitle}`}
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <PendingIcon color="disabled" fontSize="small" />
+                            {`${course.order}. ${course.courseTitle}`}
+                          </Box>
+                        }
                         />
                       </ListItem>
                     ))}
                   </List>
                 ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    All courses completed!
+                <Typography variant="body2" color="success.main" sx={{ ml: 2 }}>
+                  All courses completed! 🎉
                   </Typography>
                 )}
               </Box>
@@ -932,4 +1160,3 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
 };
 
 export default LearningPathProgress;
-

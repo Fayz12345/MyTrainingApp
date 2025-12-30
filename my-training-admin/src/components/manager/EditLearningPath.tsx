@@ -78,6 +78,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
   const [title, setTitle] = useState(learningPath.title);
   const [description, setDescription] = useState(learningPath.description || '');
   const [isSequential, setIsSequential] = useState(learningPath.isSequential ?? true);
+  const [status, setStatus] = useState<'draft' | 'published'>(learningPath.status === 'published' ? 'published' : 'draft');
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<LearningPathCourse[]>([]);
   const [originalCourses, setOriginalCourses] = useState<LearningPathCourse[]>([]);
@@ -216,6 +217,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
     if (title !== learningPath.title) return true;
     if (description !== (learningPath.description || '')) return true;
     if (isSequential !== (learningPath.isSequential ?? true)) return true;
+    if (status !== (learningPath.status || 'draft')) return true;
     if (selectedCourses.length !== originalCourses.length) return true;
     
     for (let i = 0; i < selectedCourses.length; i++) {
@@ -246,7 +248,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
     return Object.keys(errors).length === 0;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (publish: boolean = false) => {
     if (!validateForm()) {
       MySwal.fire({
         title: 'Validation Error',
@@ -256,7 +258,27 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
       return;
     }
 
-    if (!hasChanges()) {
+    // If publish button was clicked, set status to published
+    const finalStatus = publish ? 'published' : status;
+    
+    // Check if status is changing
+    const statusChanged = finalStatus !== (learningPath.status || 'draft');
+    
+    // Check if there are other changes (excluding status since we check it separately)
+    const hasOtherChanges = title !== learningPath.title ||
+      description !== (learningPath.description || '') ||
+      isSequential !== (learningPath.isSequential ?? true) ||
+      selectedCourses.length !== originalCourses.length ||
+      selectedCourses.some((selected, i) => {
+        const original = originalCourses[i];
+        return !original || 
+          selected.courseId !== original.courseId ||
+          selected.isRequired !== original.isRequired ||
+          selected.order !== original.order;
+      });
+
+    // If no changes at all, show message
+    if (!hasOtherChanges && !statusChanged) {
       MySwal.fire({
         title: 'No Changes',
         text: 'No changes were made to the learning path.',
@@ -267,17 +289,39 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
       return;
     }
 
-    // If path is published and has active assignments, show version dialog
-    if (learningPath.status === 'published' && activeAssignments > 0) {
+    // If path is published and we're not changing status, show version dialog
+    // This allows choosing between creating new version or updating existing
+    if (learningPath.status === 'published' && finalStatus === 'published' && !statusChanged && hasOtherChanges) {
       setVersionDialogOpen(true);
       return;
     }
 
+    // If changing from draft to published, show confirmation
+    if (learningPath.status !== 'published' && finalStatus === 'published') {
+      const confirmResult = await MySwal.fire({
+        title: 'Publish Learning Path?',
+        text: 'Are you sure you want to publish this learning path? Once published, it will be available for assignment.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Publish',
+        cancelButtonText: 'Cancel',
+      });
+
+      if (!confirmResult.isConfirmed) {
+        return;
+      }
+    }
+
+    // Update status if publish button was clicked
+    if (publish) {
+      setStatus('published');
+    }
+
     // Otherwise proceed with save
-    await performSave('update');
+    await performSave('update', finalStatus);
   };
 
-  const performSave = async (mode: 'new' | 'update') => {
+  const performSave = async (mode: 'new' | 'update', finalStatus?: 'draft' | 'published') => {
     setSubmitting(true);
     setError(null);
     setVersionDialogOpen(false);
@@ -291,6 +335,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
       }
 
       const now = new Date().toISOString();
+      const saveStatus = finalStatus || status;
 
       if (mode === 'new') {
         // Create new version
@@ -302,7 +347,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           description: description.trim() || null,
           createdBy: userId,
           isSequential,
-          status: learningPath.status || 'draft',
+          status: saveStatus,
           version: maxVersion + 1,
           parentPathId,
           isArchived: false,
@@ -368,6 +413,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           title: title.trim(),
           description: description.trim() || null,
           isSequential,
+          status: saveStatus,
           updatedAt: now,
         });
 
@@ -385,6 +431,9 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           await client.models.LearningPathCourse.delete({ id: courseToDelete.id });
         }
 
+        // Track which courses are new (need assignments created)
+        const newCourseIds: string[] = [];
+
         // Update or create courses
         for (const selectedCourse of selectedCourses) {
           if (selectedCourse.id) {
@@ -396,7 +445,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
               updatedAt: now,
             });
           } else {
-            // Create new
+            // Create new course in path
             await client.models.LearningPathCourse.create({
               learningPathId: learningPath.id,
               courseId: selectedCourse.courseId,
@@ -405,12 +454,63 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
               createdAt: now,
               updatedAt: now,
             });
+            newCourseIds.push(selectedCourse.courseId);
           }
         }
 
+        // If new courses were added, create assignments for employees with active path assignments
+        if (newCourseIds.length > 0 && activeAssignments > 0) {
+          // Get all active path assignments for this learning path
+          const pathAssignmentsResult = await client.models.LearningPathAssignment.list({
+            filter: { 
+              learningPathId: { eq: learningPath.id },
+              status: { ne: 'completed' } // Only for in-progress assignments
+            }
+          });
+
+          const pathAssignments = pathAssignmentsResult.data || [];
+          
+          // Create course assignments for each employee with an active path assignment
+          for (const pathAssignment of pathAssignments) {
+            const employeeId = (pathAssignment as any).employeeId;
+            if (!employeeId) continue;
+
+            // Create assignments for each new course
+            for (const courseId of newCourseIds) {
+              try {
+                // Check if assignment already exists
+                const existingAssignments = await client.models.Assignment.list({
+                  filter: {
+                    employeeId: { eq: employeeId },
+                    courseId: { eq: courseId }
+                  }
+                });
+
+                // Only create if it doesn't exist
+                if (!existingAssignments.data || existingAssignments.data.length === 0) {
+                  await client.models.Assignment.create({
+                    employeeId: employeeId,
+                    courseId: courseId,
+                    status: 'assigned',
+                    createdAt: now,
+                    updatedAt: now,
+                  });
+                }
+              } catch (err) {
+                console.error(`Error creating assignment for employee ${employeeId}, course ${courseId}:`, err);
+                // Continue with other assignments even if one fails
+              }
+            }
+          }
+        }
+
+        const statusMessage = saveStatus === 'published' && learningPath.status !== 'published' 
+          ? 'Learning path published successfully.' 
+          : 'Learning path updated successfully.';
+
         await MySwal.fire({
           title: 'Success!',
-          text: 'Learning path updated successfully.',
+          text: statusMessage,
           icon: 'success',
           timer: 2000,
           showConfirmButton: false,
@@ -502,7 +602,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
             rows={3}
             sx={{ mb: 2 }}
           />
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
             <FormControlLabel
               control={
                 <Switch
@@ -512,6 +612,17 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
               }
               label="Sequential (courses must be completed in order)"
             />
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
+                label="Status"
+              >
+                <MenuItem value="draft">Draft</MenuItem>
+                <MenuItem value="published">Published</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
         </CardContent>
       </Card>
@@ -640,9 +751,19 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
         >
           Cancel
         </Button>
+        {learningPath.status === 'draft' && (
+          <Button
+            variant="outlined"
+            onClick={() => handleSave(true)}
+            disabled={submitting || selectedCourses.length === 0}
+            color="success"
+          >
+            {submitting ? <CircularProgress size={24} /> : 'Publish'}
+          </Button>
+        )}
         <Button
           variant="contained"
-          onClick={handleSave}
+          onClick={() => handleSave(false)}
           disabled={submitting || selectedCourses.length === 0}
         >
           {submitting ? <CircularProgress size={24} /> : 'Save Changes'}
@@ -708,7 +829,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           <Button onClick={() => setVersionDialogOpen(false)}>Cancel</Button>
           <Button
             variant="contained"
-            onClick={() => performSave(versionChoice)}
+            onClick={() => performSave(versionChoice, status)}
             disabled={submitting}
           >
             {submitting ? <CircularProgress size={24} /> : 'Save'}

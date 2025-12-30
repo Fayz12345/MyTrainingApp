@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { getUrl, remove } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 import {
@@ -37,6 +38,9 @@ type Course = {
   readonly description?: string | null;
   readonly videoKey?: string | null;
   readonly imageKey?: string | null;
+  readonly pdfKey?: string | null;
+  readonly pdfTitle?: string | null;
+  readonly contentType?: string | null;
   readonly passingScore?: number | null;
   readonly duration?: string | null;
   readonly category?: string | null;
@@ -61,8 +65,21 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching courses...');
-      const result = await client.models.Course.list({});
+      
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('[CourseList] Fetching courses for manager:', currentUserId);
+      
+      // Fetch courses created by the current manager
+      const result = await client.models.Course.list({
+        filter: { createdBy: { eq: currentUserId } }
+      });
       console.log('Course list result:', result);
       
       // Check for GraphQL errors
@@ -113,6 +130,9 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                   description: fullCourse.data.description ?? course.description ?? null,
                   videoKey: fullCourse.data.videoKey ?? course.videoKey ?? null,
                   imageKey: fullCourse.data.imageKey ?? course.imageKey ?? null,
+                  pdfKey: fullCourse.data.pdfKey ?? course.pdfKey ?? null,
+                  pdfTitle: fullCourse.data.pdfTitle ?? course.pdfTitle ?? null,
+                  contentType: fullCourse.data.contentType ?? course.contentType ?? null,
                   passingScore: fullCourse.data.passingScore ?? course.passingScore ?? null,
                   duration: fullCourse.data.duration ?? course.duration ?? null,
                   category: fullCourse.data.category ?? course.category ?? null,
@@ -170,7 +190,7 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
     }
   };
 
-  const deleteCourse = async (courseId: string, videoKey?: string | null, imageKey?: string | null) => {
+  const deleteCourse = async (courseId: string, videoKey?: string | null, imageKey?: string | null, pdfKey?: string | null) => {
     const result = await MySwal.fire({
       title: "Are you sure?",
       text: "Are you sure you want to delete this course? This action cannot be undone.",
@@ -214,6 +234,15 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
           await remove({ path: imageKey });
         } catch (storageError) {
           console.warn('Failed to delete image from storage:', storageError);
+        }
+      }
+
+      // Delete PDF from S3 if it exists
+      if (pdfKey) {
+        try {
+          await remove({ path: pdfKey });
+        } catch (storageError) {
+          console.warn('Failed to delete PDF from storage:', storageError);
         }
       }
 
@@ -393,7 +422,32 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                 )}
 
                 {/* Tags */}
-                <Box sx={{ display: 'flex', gap: { xs: 0.25, sm: 0.5 }, mb: { xs: 1, sm: 1.5 }, flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', gap: { xs: 0.25, sm: 0.5 }, mb: { xs: 1, sm: 1.5 }, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {/* Content Type Icon */}
+                  {(() => {
+                    const contentType = course.contentType || (course.videoKey && course.pdfKey ? 'both' : course.pdfKey ? 'pdf' : 'video');
+                    const iconMap: Record<string, string> = {
+                      'video': '🎥',
+                      'pdf': '📄',
+                      'both': '🎥📄'
+                    };
+                    return (
+                      <Chip
+                        icon={<span style={{ fontSize: '1rem' }}>{iconMap[contentType] || '🎥'}</span>}
+                        label={contentType === 'both' ? 'Video & PDF' : contentType === 'pdf' ? 'PDF' : 'Video'}
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                        sx={{ 
+                          fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                          height: { xs: 20, sm: 24 },
+                          '& .MuiChip-label': {
+                            px: { xs: 0.75, sm: 1 },
+                          },
+                        }}
+                      />
+                    );
+                  })()}
                   {course.duration && (
                     <Chip
                       label={course.duration}
@@ -486,7 +540,7 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                 <IconButton
                   color="error"
                   size="small"
-                  onClick={() => deleteCourse(course.id, course.videoKey, course.imageKey)}
+                  onClick={() => deleteCourse(course.id, course.videoKey, course.imageKey, course.pdfKey)}
                   aria-label="delete course"
                   sx={{
                     '&:hover': {

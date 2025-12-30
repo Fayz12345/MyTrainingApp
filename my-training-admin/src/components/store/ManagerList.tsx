@@ -28,6 +28,7 @@ interface ManagerListProps {
 const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
   const [managers, setManagers] = useState<Manager[]>([]);
   const [stores, setStores] = useState<Record<string, Store>>({});
+  const [managerStores, setManagerStores] = useState<Record<string, string[]>>({}); // managerId -> storeIds[]
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -42,9 +43,10 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
       const session = await fetchAuthSession();
       const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
 
-      const [managersResult, storesResult] = await Promise.all([
+      const [managersResult, storesResult, managerStoresResult] = await Promise.all([
         client.models.Manager.list({}),
-        client.models.Store.list({})
+        client.models.Store.list({}),
+        client.models.ManagerStore.list({})
       ]);
 
       if (managersResult.errors && managersResult.errors.length > 0) {
@@ -69,6 +71,35 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
         storeMap[store.id] = store;
       });
       setStores(storeMap);
+
+      // Build manager -> stores mapping from ManagerStore relationships
+      const managerStoreMap: Record<string, string[]> = {};
+      if (managerStoresResult.data) {
+        (managerStoresResult.data as any[]).forEach(ms => {
+          if (ms.managerId && ms.storeId) {
+            if (!managerStoreMap[ms.managerId]) {
+              managerStoreMap[ms.managerId] = [];
+            }
+            if (!managerStoreMap[ms.managerId].includes(ms.storeId)) {
+              managerStoreMap[ms.managerId].push(ms.storeId);
+            }
+          }
+        });
+      }
+
+      // Also include primary storeId for managers that have one
+      filteredManagers.forEach(manager => {
+        if (manager.storeId) {
+          if (!managerStoreMap[manager.id]) {
+            managerStoreMap[manager.id] = [];
+          }
+          if (!managerStoreMap[manager.id].includes(manager.storeId)) {
+            managerStoreMap[manager.id].push(manager.storeId);
+          }
+        }
+      });
+
+      setManagerStores(managerStoreMap);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -194,7 +225,11 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
 
       <div style={{ display: 'grid', gap: '1rem' }}>
         {managers.map((manager) => {
-          const store = stores[manager.storeId];
+          const managerStoreIds = managerStores[manager.id] || [];
+          const managerStoresList = managerStoreIds
+            .map(storeId => stores[storeId])
+            .filter((store): store is Store => store !== undefined);
+          
           return (
             <div 
               key={manager.id} 
@@ -211,14 +246,19 @@ const ManagerList: React.FC<ManagerListProps> = ({ refreshTrigger }) => {
                   <h4 style={{ margin: 0, color: '#1976d2', marginBottom: '0.5rem', fontSize: 'clamp(1rem, 2.5vw, 1.25rem)' }}>
                     {manager.name}
                   </h4>
-                  <div style={{ display: 'flex', gap: '2rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '2rem', marginBottom: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                     <p style={{ margin: 0, color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>
                       <strong>Email:</strong> {manager.email}
                     </p>
-                    {store && (
-                      <p style={{ margin: 0, color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>
-                        <strong>Store:</strong> {store.name}
-                      </p>
+                    {managerStoresList.length > 0 && (
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <strong style={{ color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>Store{managerStoresList.length > 1 ? 's' : ''}:</strong>
+                        {managerStoresList.map((store, index) => (
+                          <span key={store.id} style={{ color: '#666', fontSize: 'clamp(0.875rem, 2vw, 1rem)' }}>
+                            {store.name}{index < managerStoresList.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
                   <p style={{ margin: '0.5rem 0', color: '#999', fontSize: 'clamp(0.8rem, 1.8vw, 0.9rem)' }}>

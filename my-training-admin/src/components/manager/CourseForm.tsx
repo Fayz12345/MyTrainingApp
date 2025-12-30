@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
@@ -21,6 +22,9 @@ type CourseFormProps = {
     readonly description?: string | null;
     readonly videoKey?: string | null;
     readonly imageKey?: string | null;
+    readonly pdfKey?: string | null;
+    readonly pdfTitle?: string | null;
+    readonly contentType?: string | null;
     readonly passingScore?: number | null;
     readonly duration?: string | null;
     readonly category?: string | null;
@@ -41,6 +45,14 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const [existingImageKey, setExistingImageKey] = useState<string | null>(
     course?.imageKey ?? null
   );
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [existingPdfKey, setExistingPdfKey] = useState<string | null>(
+    course?.pdfKey ?? null
+  );
+  const [pdfTitle, setPdfTitle] = useState(course?.pdfTitle ?? '');
+  const [contentType, setContentType] = useState<'video' | 'pdf' | 'both'>(
+    (course?.contentType as 'video' | 'pdf' | 'both') || 'video'
+  );
   const [passingScore, setPassingScore] = useState(course?.passingScore ?? 80);
   const [duration, setDuration] = useState(course?.duration ?? '');
   const [category, setCategory] = useState(course?.category ?? '');
@@ -50,13 +62,31 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
+  const [pdfUploadProgress, setPdfUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [imageDragActive, setImageDragActive] = useState(false);
+  const [pdfDragActive, setPdfDragActive] = useState(false);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [isLoadingExistingImage, setIsLoadingExistingImage] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  // Sanitize PDF filename - remove special characters and ensure .pdf extension
+  const sanitizePdfFilename = (filename: string): string => {
+    // Remove path if present, get just the filename
+    const name = filename.split('/').pop() || filename;
+    // Remove extension
+    const nameWithoutExt = name.replace(/\.pdf$/i, '');
+    // Sanitize: keep only alphanumeric, spaces, hyphens, underscores
+    const sanitized = nameWithoutExt.replace(/[^a-zA-Z0-9\s\-_]/g, '_');
+    // Replace multiple spaces/underscores with single underscore
+    const cleaned = sanitized.replace(/[\s_]+/g, '_');
+    // Ensure it's not empty
+    const final = cleaned || 'document';
+    // Add .pdf extension
+    return `${final}.pdf`;
+  };
 
   const loadExistingQuiz = async (courseId: string) => {
     setIsLoadingQuiz(true);
@@ -140,8 +170,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         
         let courseData = course;
         
-        if (needsFullData) {
-          console.log('[CourseForm] Missing description or imageKey, fetching full course data...');
+        if (needsFullData || course.pdfKey === undefined || course.contentType === undefined) {
+          console.log('[CourseForm] Missing fields, fetching full course data...');
           try {
             const fullCourse = await client.models.Course.get({ id: course.id });
             if (fullCourse.data) {
@@ -153,6 +183,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
                 description: fullCourse.data.description ?? course.description,
                 videoKey: fullCourse.data.videoKey ?? course.videoKey,
                 imageKey: fullCourse.data.imageKey ?? course.imageKey,
+                pdfKey: fullCourse.data.pdfKey ?? course.pdfKey,
+                pdfTitle: fullCourse.data.pdfTitle ?? course.pdfTitle,
+                contentType: fullCourse.data.contentType ?? course.contentType,
                 passingScore: fullCourse.data.passingScore ?? course.passingScore,
                 duration: fullCourse.data.duration ?? course.duration,
                 category: fullCourse.data.category ?? course.category
@@ -187,6 +220,16 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         setCategory(courseData.category ?? '');
         setExistingVideoKey(courseData.videoKey ?? null);
         setExistingImageKey(courseData.imageKey ?? null);
+        setExistingPdfKey(courseData.pdfKey ?? null);
+        setPdfTitle(courseData.pdfTitle ?? '');
+        // Determine content type: if both video and pdf exist, it's 'both', else check what exists
+        if (courseData.videoKey && courseData.pdfKey) {
+          setContentType('both');
+        } else if (courseData.pdfKey) {
+          setContentType('pdf');
+        } else {
+          setContentType('video');
+        }
         
         // Load image if imageKey exists
         if (courseData.imageKey && courseData.imageKey.trim() !== '') {
@@ -217,8 +260,10 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       
       setVideoFile(null);
       setImageFile(null);
+      setPdfFile(null);
       setUploadProgress(0);
       setImageUploadProgress(0);
+      setPdfUploadProgress(0);
     };
     
     initializeForm();
@@ -260,6 +305,67 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
     }
   };
 
+  const handlePdfDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setPdfDragActive(true);
+  };
+
+  const handlePdfDragLeave = () => {
+    setPdfDragActive(false);
+  };
+
+  const handlePdfDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setPdfDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files[0] && files[0].type === 'application/pdf') {
+      // Validate file size (10MB limit)
+      if (files[0].size > 10 * 1024 * 1024) {
+        MySwal.fire({
+          title: "File Too Large",
+          text: "PDF file must be 10MB or smaller",
+          icon: "error",
+        });
+        return;
+      }
+      setPdfFile(files[0]);
+      // Auto-set PDF title from filename if not already set
+      if (!pdfTitle) {
+        const sanitized = sanitizePdfFilename(files[0].name);
+        setPdfTitle(sanitized.replace('.pdf', ''));
+      }
+    }
+  };
+
+  const handlePdfFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        MySwal.fire({
+          title: "Invalid File Type",
+          text: "Please select a PDF file",
+          icon: "error",
+        });
+        return;
+      }
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        MySwal.fire({
+          title: "File Too Large",
+          text: "PDF file must be 10MB or smaller",
+          icon: "error",
+        });
+        return;
+      }
+      setPdfFile(file);
+      // Auto-set PDF title from filename if not already set
+      if (!pdfTitle) {
+        const sanitized = sanitizePdfFilename(file.name);
+        setPdfTitle(sanitized.replace('.pdf', ''));
+      }
+    }
+  };
+
   const addQuizQuestion = () => {
     if (quiz.length < 10) {
       setQuiz([...quiz, { question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
@@ -291,6 +397,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Get current manager's userId for createdBy field
+    let currentUserId: string | undefined;
+    try {
+      const session = await fetchAuthSession();
+      currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+    } catch (err) {
+      console.error('[CourseForm] Error getting auth session:', err);
+    }
+    
     // Validate title
     const errors: Record<string, string> = {};
     const touched: Record<string, boolean> = {};
@@ -319,10 +434,24 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       return;
     }
 
-    if (!isEditMode && !videoFile) {
+    // Validate that at least one content type is provided
+    const hasVideo = isEditMode ? (existingVideoKey || videoFile) : videoFile;
+    const hasPdf = isEditMode ? (existingPdfKey || pdfFile) : pdfFile;
+    
+    if (!isEditMode && !hasVideo && !hasPdf) {
       await MySwal.fire({
         title: "Validation Error",
-        text: "Please provide a video file",
+        text: "Please provide either a video file or a PDF document",
+        icon: "warning",
+      });
+      return;
+    }
+
+    // Validate PDF title if PDF is provided
+    if ((pdfFile || existingPdfKey) && !pdfTitle.trim()) {
+      await MySwal.fire({
+        title: "Validation Error",
+        text: "Please provide a title for the PDF document",
         icon: "warning",
       });
       return;
@@ -349,6 +478,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
     try {
       let resolvedVideoKey = existingVideoKey;
       let resolvedImageKey = existingImageKey;
+      let resolvedPdfKey = existingPdfKey;
 
       if (videoFile) {
         // Upload video to S3
@@ -422,12 +552,68 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         resolvedImageKey = imageKey;
       }
 
-      if (!resolvedVideoKey) {
+      if (pdfFile) {
+        // Upload PDF to S3
+        const timestamp = Date.now();
+        const sanitizedFilename = sanitizePdfFilename(pdfFile.name);
+        const pdfKey = `courses/pdfs/${timestamp}_${sanitizedFilename}`;
+
+        console.log('[CourseForm] Uploading PDF to:', pdfKey);
+        if (pdfFile) {
+          console.log('[CourseForm] PDF file:', {
+            name: pdfFile.name,
+            size: pdfFile.size,
+            type: pdfFile.type
+          });
+        }
+
+        try {
+          await uploadData({
+            path: pdfKey,
+            data: pdfFile,
+            options: {
+              onProgress: ({ transferredBytes, totalBytes }) => {
+                if (totalBytes) {
+                  setPdfUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+                }
+              }
+            }
+          });
+          console.log('[CourseForm] ✅ PDF uploaded successfully to:', pdfKey);
+        } catch (uploadError) {
+          console.error('[CourseForm] ❌ PDF upload failed:', uploadError);
+          throw new Error(`Failed to upload PDF: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`);
+        }
+
+        if (isEditMode && existingPdfKey) {
+          try {
+            console.log('[CourseForm] Deleting old PDF:', existingPdfKey);
+            await remove({ path: existingPdfKey });
+            console.log('[CourseForm] ✅ Old PDF deleted');
+          } catch (storageError) {
+            console.warn('[CourseForm] ⚠️ Failed to delete existing PDF. Continuing update.', storageError);
+          }
+        }
+
+        resolvedPdfKey = pdfKey;
+        console.log('[CourseForm] PDF key resolved to:', resolvedPdfKey);
+      }
+
+      // Determine content type based on what's available
+      const finalContentType = (() => {
+        if (resolvedVideoKey && resolvedPdfKey) return 'both';
+        if (resolvedPdfKey) return 'pdf';
+        return 'video';
+      })();
+
+      // Validate that at least one content type exists
+      if (!resolvedVideoKey && !resolvedPdfKey) {
         await MySwal.fire({
           title: "Validation Error",
-          text: "Please provide a course video before saving",
+          text: "Please provide either a video file or a PDF document before saving",
           icon: "warning",
         });
+        setIsSubmitting(false);
         return;
       }
 
@@ -436,8 +622,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           id: course.id,
           title: title.trim(),
           description: description.trim() || null,
-          videoKey: resolvedVideoKey,
+          videoKey: resolvedVideoKey || null,
           imageKey: resolvedImageKey || null,
+          pdfKey: resolvedPdfKey || null,
+          pdfTitle: pdfTitle.trim() || null,
+          contentType: finalContentType,
           passingScore,
           duration: duration.trim() || null,
           category: category.trim() || null,
@@ -480,11 +669,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       const courseResult = await client.models.Course.create({
         title: title.trim(),
         description: description.trim() || null,
-        videoKey: resolvedVideoKey,
+        videoKey: resolvedVideoKey || null,
         imageKey: resolvedImageKey || null,
+        pdfKey: resolvedPdfKey || null,
+        pdfTitle: pdfTitle.trim() || null,
+        contentType: finalContentType,
         passingScore,
         duration: duration.trim() || null,
         category: category.trim() || null,
+        createdBy: currentUserId || null, // Track which manager created this course
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -516,14 +709,19 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         setDescription('');
         setVideoFile(null);
         setImageFile(null);
+        setPdfFile(null);
+        setPdfTitle('');
+        setContentType('video');
         setPassingScore(80);
         setDuration('');
         setCategory('');
         setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
         setUploadProgress(0);
         setImageUploadProgress(0);
+        setPdfUploadProgress(0);
         setExistingVideoKey(null);
         setExistingImageKey(null);
+        setExistingPdfKey(null);
         onSuccess?.();
       } else {
         console.error('No course data returned from creation');
@@ -641,10 +839,38 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           />
         </div>
 
-        {/* Video Upload */}
+        {/* Content Type Selector - HIDDEN FOR NOW */}
+        {false && (
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Course Video {isEditMode ? '(leave empty to keep current video)' : '*'}
+            Content Type *
+          </label>
+          <select
+            value={contentType}
+            onChange={(e) => setContentType(e.target.value as 'video' | 'pdf' | 'both')}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '1rem',
+              backgroundColor: 'white'
+            }}
+          >
+            <option value="video">🎥 Video Only</option>
+            <option value="pdf">📄 PDF Document Only</option>
+            <option value="both">🎥📄 Both Video and PDF</option>
+          </select>
+          <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+            Select the type of content this course will contain. You can upload both video and PDF files.
+          </p>
+        </div>
+        )}
+
+        {/* Video Upload */}
+          <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Course Video {isEditMode ? '(leave empty to keep current video)' : (contentType === 'both' ? '(optional if PDF is provided)' : '*')}
           </label>
           <div
             onDragOver={handleDragOver}
@@ -822,6 +1048,132 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
             </div>
           )}
         </div>
+
+        {/* PDF Upload - HIDDEN FOR NOW */}
+        {/* @ts-ignore - Code is hidden with false &&, TypeScript still checks it */}
+        {false && (contentType === 'pdf' || contentType === 'both') && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              PDF Document {isEditMode ? '(leave empty to keep current PDF)' : '*'}
+            </label>
+            <div
+              onDragOver={handlePdfDragOver}
+              onDragLeave={handlePdfDragLeave}
+              onDrop={handlePdfDrop}
+              style={{
+                border: `2px dashed ${pdfDragActive ? '#1976d2' : '#ccc'}`,
+                borderRadius: '8px',
+                padding: '2rem',
+                textAlign: 'center',
+                backgroundColor: pdfDragActive ? '#f5f5f5' : 'white',
+                cursor: 'pointer'
+              }}
+            >
+              {pdfFile ? (
+                <div>
+                  <p>✅ {pdfFile?.name || 'PDF file'}</p>
+                  <p style={{ fontSize: '0.9rem', color: '#666', margin: '0.5rem 0' }}>
+                    {(() => {
+                      if (!pdfFile) return null;
+                      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                      const fileSize = pdfFile!.size; // Safe: checked above and code is hidden
+                      return (
+                        <>
+                          Size: {((fileSize / (1024 * 1024)).toFixed(2))} MB
+                          {fileSize > 10 * 1024 * 1024 ? (
+                            <span style={{ color: '#ff9800', marginLeft: '0.5rem' }}>
+                              ⚠️ File exceeds 10MB limit
+                            </span>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                  </p>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setPdfFile(null);
+                      if (!existingPdfKey) {
+                        setPdfTitle('');
+                      }
+                    }}
+                    style={{ color: 'red', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  {isEditMode && existingPdfKey && (
+                    <p style={{ marginBottom: '0.5rem', color: '#555' }}>
+                      Current PDF: <code>{existingPdfKey}</code>
+                      {pdfTitle && (
+                        <span style={{ marginLeft: '0.5rem' }}>({pdfTitle})</span>
+                      )}
+                    </p>
+                  )}
+                  <p>Drag and drop a PDF file here, or click to select</p>
+                  <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>
+                    Maximum file size: 10MB
+                  </p>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handlePdfFileSelect}
+                    style={{ marginTop: '1rem' }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* PDF Title Input */}
+            {(pdfFile || existingPdfKey) && (
+              <div style={{ marginTop: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  PDF Document Title *
+                </label>
+                <input
+                  type="text"
+                  value={pdfTitle}
+                  onChange={(e) => setPdfTitle(e.target.value)}
+                  placeholder="Enter PDF document title (e.g., Safety Procedures Manual)"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem'
+                  }}
+                  required
+                />
+                <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                  This title will be displayed to employees when they view the course.
+                </p>
+              </div>
+            )}
+            
+            {pdfUploadProgress > 0 && pdfUploadProgress < 100 && (
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{ 
+                  width: '100%', 
+                  backgroundColor: '#f0f0f5', 
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    width: `${pdfUploadProgress}%`,
+                    backgroundColor: '#1976d2',
+                    height: '8px',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                <p style={{ textAlign: 'center', margin: '0.5rem 0' }}>
+                  Uploading PDF: {pdfUploadProgress}%
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Passing Score */}
         <div>

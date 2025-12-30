@@ -27,6 +27,8 @@ import {
   ListItem,
   ListItemText,
   Divider,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import ArchiveIcon from '@mui/icons-material/Archive';
@@ -68,6 +70,8 @@ interface LearningPathListProps {
 
 const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onEdit }) => {
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
+  const [archivedPaths, setArchivedPaths] = useState<LearningPath[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [versionsDialogOpen, setVersionsDialogOpen] = useState(false);
@@ -84,17 +88,30 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
       setLoading(true);
       setError(null);
 
-      const result = await client.models.LearningPath.list({
-        filter: { isArchived: { ne: true } } // Only show non-archived by default
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('[LearningPathList] Fetching learning paths for manager:', currentUserId);
+
+      // Fetch learning paths created by the current manager
+      const allPathsResult = await client.models.LearningPath.list({
+        filter: { createdBy: { eq: currentUserId } }
       });
 
-      if (result.errors && result.errors.length > 0) {
-        throw new Error('Failed to fetch learning paths: ' + result.errors.map((e: any) => e.message).join(', '));
+      if (allPathsResult.errors && allPathsResult.errors.length > 0) {
+        throw new Error('Failed to fetch learning paths: ' + allPathsResult.errors.map((e: any) => e.message).join(', '));
       }
+
+      const allPaths = allPathsResult.data as LearningPath[];
 
       // Fetch courses for each learning path
       const pathsWithCourses = await Promise.all(
-        (result.data as LearningPath[]).map(async (path) => {
+        allPaths.map(async (path) => {
           try {
             const coursesResult = await client.models.LearningPathCourse.list({
               filter: { learningPathId: { eq: path.id } }
@@ -120,7 +137,12 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
         })
       );
 
-      setLearningPaths(pathsWithCourses);
+      // Separate archived and non-archived paths
+      const activePaths = pathsWithCourses.filter(path => !path.isArchived);
+      const archivedPathsList = pathsWithCourses.filter(path => path.isArchived);
+
+      setLearningPaths(activePaths);
+      setArchivedPaths(archivedPathsList);
     } catch (err) {
       console.error('Error fetching learning paths:', err);
       setError(err instanceof Error ? err.message : 'Failed to load learning paths');
@@ -133,14 +155,24 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
     try {
       setSelectedPathId(pathId);
       
+      // Get current manager's userId
+      const session = await fetchAuthSession();
+      const currentUserId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+      
       // Get the path to find its parentPathId or use itself as parent
       const pathResult = await client.models.LearningPath.get({ id: pathId });
       const path = pathResult.data;
       
       if (!path) return;
 
-      // Find all versions (either by parentPathId or by matching title/createdBy)
-      const allPathsResult = await client.models.LearningPath.list({});
+      // Find all versions created by the current manager
+      const allPathsResult = await client.models.LearningPath.list({
+        filter: { createdBy: { eq: currentUserId } }
+      });
       const allPaths = allPathsResult.data || [];
       
       // Group by parentPathId or by title+createdBy (for original paths)
@@ -263,30 +295,26 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
     );
   }
 
-  return (
-    <Box>
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell><strong>Title</strong></TableCell>
-              <TableCell><strong>Version</strong></TableCell>
-              <TableCell><strong>Status</strong></TableCell>
-              <TableCell><strong>Courses</strong></TableCell>
-              <TableCell><strong>Type</strong></TableCell>
-              <TableCell><strong>Created</strong></TableCell>
-              <TableCell><strong>Actions</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {learningPaths.map((path) => {
+  const renderPathRow = (path: LearningPath, isArchived: boolean = false) => {
               const courseCount = path.courses?.items?.length || 0;
               return (
-                <TableRow key={path.id} hover>
+      <TableRow 
+        key={path.id} 
+        hover={!isArchived}
+        sx={{ 
+          opacity: isArchived ? 0.7 : 1,
+          bgcolor: isArchived ? 'grey.50' : 'inherit'
+        }}
+      >
                   <TableCell>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="body1" fontWeight="medium">
                       {path.title}
                     </Typography>
+            {isArchived && (
+              <Chip label="Archived" size="small" color="default" />
+            )}
+          </Box>
                     {path.description && (
                       <Typography variant="body2" color="text.secondary">
                         {path.description}
@@ -297,11 +325,21 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
                     <Chip label={`v${path.version || 1}`} size="small" />
                   </TableCell>
                   <TableCell>
+          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     <Chip
                       label={path.status === 'published' ? 'Published' : 'Draft'}
                       color={path.status === 'published' ? 'success' : 'default'}
                       size="small"
                     />
+            {isArchived && (
+              <Chip
+                label="Cannot be assigned"
+                size="small"
+                variant="outlined"
+                color="warning"
+              />
+            )}
+          </Box>
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
@@ -353,10 +391,89 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
                   </TableCell>
                 </TableRow>
               );
-            })}
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6">
+          Active Learning Paths ({learningPaths.length})
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+          }
+          label="Show Archived Paths"
+        />
+      </Box>
+
+      {learningPaths.length === 0 && archivedPaths.length === 0 ? (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              No Learning Paths
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Create your first learning path to get started.
+            </Typography>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <TableContainer component={Paper} sx={{ mb: showArchived && archivedPaths.length > 0 ? 3 : 0 }}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Title</strong></TableCell>
+                  <TableCell><strong>Version</strong></TableCell>
+                  <TableCell><strong>Status</strong></TableCell>
+                  <TableCell><strong>Courses</strong></TableCell>
+                  <TableCell><strong>Type</strong></TableCell>
+                  <TableCell><strong>Created</strong></TableCell>
+                  <TableCell><strong>Actions</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {learningPaths.map((path) => renderPathRow(path, false))}
           </TableBody>
         </Table>
       </TableContainer>
+
+          {showArchived && archivedPaths.length > 0 && (
+            <Box>
+              <Box sx={{ mb: 2, mt: 3 }}>
+                <Typography variant="h6" color="text.secondary">
+                  Archived Learning Paths ({archivedPaths.length})
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Archived paths are viewable for historical tracking but cannot be assigned to employees.
+                </Typography>
+              </Box>
+              <TableContainer component={Paper}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Title</strong></TableCell>
+                      <TableCell><strong>Version</strong></TableCell>
+                      <TableCell><strong>Status</strong></TableCell>
+                      <TableCell><strong>Courses</strong></TableCell>
+                      <TableCell><strong>Type</strong></TableCell>
+                      <TableCell><strong>Created</strong></TableCell>
+                      <TableCell><strong>Actions</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {archivedPaths.map((path) => renderPathRow(path, true))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+        </>
+      )}
 
       {/* Versions Dialog */}
       <Dialog

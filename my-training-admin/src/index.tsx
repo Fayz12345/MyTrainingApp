@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Amplify } from 'aws-amplify';
-import { Authenticator } from '@aws-amplify/ui-react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { ThemeProvider, createTheme, CssBaseline, Box, Container, Paper, Typography, Button } from '@mui/material';
+import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import './index.css';
 import outputs from './amplify_outputs.json';
@@ -13,7 +13,37 @@ import StoreDashboard from './components/store/StoreDashboard';
 import ManagerDashboard from './components/manager/ManagerDashboard';
 import EmployeeDashboard from './components/employee/EmployeeDashboard';
 
+// Configure Amplify with outputs
+// Note: Amplify Gen 2 should automatically read OAuth from amplify_outputs.json
 Amplify.configure(outputs);
+
+// Log OAuth configuration for debugging
+const authConfig = outputs.auth as any;
+if (authConfig?.oauth) {
+  const oauth = authConfig.oauth;
+  console.log('✅ Amplify configured with OAuth:', {
+    domain: oauth.domain,
+    identity_providers: oauth.identity_providers,
+    redirect_sign_in_uri: oauth.redirect_sign_in_uri,
+    redirect_sign_out_uri: oauth.redirect_sign_out_uri,
+    response_type: oauth.response_type,
+    scopes: oauth.scopes
+  });
+  
+  // Verify Amplify can access the OAuth config after configuration
+  try {
+    const config = Amplify.getConfig();
+    console.log('Amplify config structure:', {
+      hasAuth: !!config.Auth,
+      authConfig: config.Auth,
+      oauthFromOutputs: authConfig.oauth
+    });
+  } catch (e) {
+    console.warn('Could not verify Amplify config:', e);
+  }
+} else {
+  console.warn('⚠️ OAuth configuration not found in amplify_outputs.json');
+}
 
 // Material UI Theme
 const theme = createTheme({
@@ -208,13 +238,11 @@ const AuthWrapper = ({ signOut, user }: { signOut: (() => void) | undefined; use
 const App = () => (
   <ThemeProvider theme={theme}>
     <CssBaseline />
-    <Authenticator.Provider>
-      <Authenticator>
-        {({ signOut, user }) => (
-          <AuthWrapper signOut={signOut} user={user} />
-        )}
-      </Authenticator>
-    </Authenticator.Provider>
+    <Authenticator hideSignUp={false}>
+      {({ signOut, user }) => (
+        <AuthWrapper signOut={signOut} user={user} />
+      )}
+    </Authenticator>
   </ThemeProvider>
 );
 
