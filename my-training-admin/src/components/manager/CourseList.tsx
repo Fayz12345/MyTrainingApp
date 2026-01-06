@@ -44,6 +44,11 @@ type Course = {
   readonly passingScore?: number | null;
   readonly duration?: string | null;
   readonly category?: string | null;
+  readonly randomizeQuestions?: boolean | null;
+  readonly randomizeOptions?: boolean | null;
+  readonly useQuestionPool?: boolean | null;
+  readonly poolSize?: number | null;
+  readonly questionsToDisplay?: number | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly quiz?: any;
@@ -136,6 +141,11 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                   passingScore: fullCourse.data.passingScore ?? course.passingScore ?? null,
                   duration: fullCourse.data.duration ?? course.duration ?? null,
                   category: fullCourse.data.category ?? course.category ?? null,
+                  randomizeQuestions: fullCourse.data.randomizeQuestions ?? course.randomizeQuestions ?? false,
+                  randomizeOptions: fullCourse.data.randomizeOptions ?? course.randomizeOptions ?? false,
+                  useQuestionPool: fullCourse.data.useQuestionPool ?? course.useQuestionPool ?? false,
+                  poolSize: fullCourse.data.poolSize ?? course.poolSize ?? null,
+                  questionsToDisplay: fullCourse.data.questionsToDisplay ?? course.questionsToDisplay ?? null,
                   createdAt: fullCourse.data.createdAt || course.createdAt,
                   updatedAt: fullCourse.data.updatedAt || course.updatedAt
                 } as Course;
@@ -489,6 +499,36 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
                   >
                     <strong>Passing Score:</strong> {course.passingScore ?? 'Not set'}%
                   </Typography>
+                  {course.randomizeQuestions && (
+                    <Typography 
+                      variant="caption" 
+                      color="info.main"
+                      sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <span>🔀</span>
+                      <strong>Questions Randomized</strong>
+                    </Typography>
+                  )}
+                  {course.randomizeOptions && (
+                    <Typography 
+                      variant="caption" 
+                      color="info.main"
+                      sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <span>🔀</span>
+                      <strong>Options Randomized</strong>
+                    </Typography>
+                  )}
+                  {course.useQuestionPool && (
+                    <Typography 
+                      variant="caption" 
+                      color="success.main"
+                      sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <span>📚</span>
+                      <strong>Question Pool: {course.questionsToDisplay}/{course.poolSize}</strong>
+                    </Typography>
+                  )}
                   <Typography 
                     variant="caption" 
                     color="text.secondary"

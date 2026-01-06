@@ -47,6 +47,7 @@ import LearningPathList from './LearningPathList';
 import EditLearningPath from './EditLearningPath';
 import AssignLearningPath from './AssignLearningPath';
 import LearningPathProgress from './LearningPathProgress';
+import TrainingStatusDashboard from './TrainingStatusDashboard';
 
 const client = generateClient<Schema>();
 
@@ -94,6 +95,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedCourse, setSelectedCourse] = useState<CourseSummary | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true); // Desktop sidebar open by default
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedStoreName, setSelectedStoreName] = useState<string | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
@@ -102,6 +104,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [selectedLearningPath, setSelectedLearningPath] = useState<any | null>(null);
   const [learningPathMenuAnchor, setLearningPathMenuAnchor] = useState<null | HTMLElement>(null);
   const [mobileLearningPathMenuOpen, setMobileLearningPathMenuOpen] = useState(false);
+  const [desktopLearningPathMenuOpen, setDesktopLearningPathMenuOpen] = useState(false);
+  const [logoImageError, setLogoImageError] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -658,19 +662,28 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="static" elevation={2}>
+      <AppBar 
+        position="fixed" 
+        elevation={2}
+        sx={{ 
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          ...(isMobile ? {} : { 
+            left: desktopSidebarOpen ? '250px' : 0, 
+            width: desktopSidebarOpen ? 'calc(100% - 250px)' : '100%', 
+            transition: 'all 0.3s' 
+          })
+        }}
+      >
         <Toolbar>
-          {isMobile && (
             <IconButton
               edge="start"
               color="inherit"
               aria-label="menu"
-              onClick={() => setMobileMenuOpen(true)}
+            onClick={() => isMobile ? setMobileMenuOpen(true) : setDesktopSidebarOpen(!desktopSidebarOpen)}
               sx={{ mr: 2 }}
             >
               <MenuIcon />
             </IconButton>
-          )}
           <Typography
             variant="h6"
             component="div"
@@ -679,83 +692,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           >
             Manager Portal
           </Typography>
-          {!isMobile && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              {menuItems.map((item) => (
                 <Button
-                  key={item.key}
                   color="inherit"
-                  onClick={() => handleMenuClick(item.key as ViewMode)}
-                  variant={
-                    (currentView === item.key || (item.key === 'courses' && isCoursesView))
-                      ? 'outlined'
-                      : 'text'
-                  }
-                  sx={{
-                    borderColor: (currentView === item.key || (item.key === 'courses' && isCoursesView))
-                      ? 'inherit'
-                      : 'transparent',
-                  }}
-                >
-                  {item.label}
-                </Button>
-              ))}
-              <Button
-                color="inherit"
-                onClick={handleLearningPathMenuOpen}
-                startIcon={<Box component="span"></Box>}
-                endIcon={<ArrowDropDown />}
-                variant={
-                  (currentView === 'learning-paths' || 
-                   currentView === 'assign-learning-path' || 
-                   currentView === 'learning-path-progress' ||
-                   currentView === 'create-learning-path' ||
-                   currentView === 'edit-learning-path')
-                    ? 'outlined'
-                    : 'text'
-                }
-                sx={{
-                  borderColor: (currentView === 'learning-paths' || 
-                   currentView === 'assign-learning-path' || 
-                   currentView === 'learning-path-progress' ||
-                   currentView === 'create-learning-path' ||
-                   currentView === 'edit-learning-path')
-                    ? 'inherit'
-                    : 'transparent',
-                }}
-              >
-                Learning Paths
-              </Button>
-              <Menu
-                anchorEl={learningPathMenuAnchor}
-                open={Boolean(learningPathMenuAnchor)}
-                onClose={handleLearningPathMenuClose}
-                anchorOrigin={{
-                  vertical: 'bottom',
-                  horizontal: 'left',
-                }}
-                transformOrigin={{
-                  vertical: 'top',
-                  horizontal: 'left',
-                }}
-              >
-                {learningPathSubmenuItems.map((item) => (
-                  <MenuItem
-                    key={item.key}
-                    onClick={() => handleMenuClick(item.key as ViewMode)}
-                    selected={currentView === item.key}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box>{item.icon}</Box>
-                      <Typography>{item.label}</Typography>
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Menu>
-            </Box>
-          )}
-          <Button
-            color="inherit"
             startIcon={<LogoutIcon />}
             onClick={() => signOut?.()}
             sx={{ ml: 2 }}
@@ -765,10 +703,181 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
         </Toolbar>
       </AppBar>
 
+      {/* Desktop Persistent Sidebar */}
+      {!isMobile && (
+        <Drawer
+          variant="persistent"
+          anchor="left"
+          open={desktopSidebarOpen}
+          sx={{
+            width: desktopSidebarOpen ? 250 : 0,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: 250,
+              boxSizing: 'border-box',
+              height: '100vh',
+              top: 0,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            },
+          }}
+        >
+          <Box 
+            sx={{ 
+              width: '100%', 
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Logo Section */}
+            <Box
+              sx={{
+                p: 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                flexShrink: 0,
+                minHeight: 64,
+              }}
+            >
+              {!logoImageError ? (
+                <Box
+                  component="img"
+                  src="/logo.png"
+                  alt="Logo"
+                  onError={() => setLogoImageError(true)}
+                  sx={{
+                    maxWidth: '100%',
+                    maxHeight: 40,
+                    objectFit: 'contain',
+                  }}
+                />
+              ) : (
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 700,
+                    color: 'primary.main',
+                  }}
+                >
+                  MyTraining
+                </Typography>
+              )}
+            </Box>
+            <List 
+              sx={{ 
+                flexGrow: 1,
+                overflow: 'hidden',
+                py: 0,
+                '& .MuiListItem-root': {
+                  py: 0,
+                  minHeight: 'auto',
+                },
+                '& .MuiListItemButton-root': {
+                  minHeight: 40,
+                  py: 0.25,
+                  px: 2,
+                },
+              }}
+            >
+              {menuItems.map((item) => (
+                <ListItem key={item.key} disablePadding>
+                  <ListItemButton
+                    selected={currentView === item.key || (item.key === 'courses' && isCoursesView)}
+                  onClick={() => handleMenuClick(item.key as ViewMode)}
+                  sx={{
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.dark',
+                        },
+                      },
+                    }}
+                  >
+                    <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', fontSize: '1.2rem' }}>
+                      {item.icon}
+                    </Box>
+                    <ListItemText 
+                      primary={item.label} 
+                      primaryTypographyProps={{
+                        fontSize: '0.875rem',
+                      }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+              <ListItem disablePadding>
+                <ListItemButton
+                  onClick={() => setDesktopLearningPathMenuOpen(!desktopLearningPathMenuOpen)}
+                  selected={
+                    currentView === 'learning-paths' || 
+                   currentView === 'assign-learning-path' || 
+                   currentView === 'learning-path-progress' ||
+                   currentView === 'create-learning-path' ||
+                    currentView === 'edit-learning-path'
+                }
+                sx={{
+                    '&.Mui-selected': {
+                      bgcolor: 'primary.main',
+                      color: 'primary.contrastText',
+                      '&:hover': {
+                        bgcolor: 'primary.dark',
+                      },
+                    },
+                  }}
+                >
+                  <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', fontSize: '1.2rem' }}>
+                    🛤️
+                  </Box>
+                  <ListItemText 
+                    primary="Learning Paths" 
+                    primaryTypographyProps={{
+                      fontSize: '0.875rem',
+                    }}
+                  />
+                  {desktopLearningPathMenuOpen ? <ExpandLess /> : <ExpandMore />}
+                </ListItemButton>
+              </ListItem>
+              <Collapse in={desktopLearningPathMenuOpen} timeout="auto" unmountOnExit>
+                <List component="div" disablePadding>
+                {learningPathSubmenuItems.map((item) => (
+                    <ListItem key={item.key} disablePadding>
+                      <ListItemButton
+                        sx={{ pl: 4, minHeight: 40, py: 0.5 }}
+                    selected={currentView === item.key}
+                        onClick={() => handleMenuClick(item.key as ViewMode)}
+                  >
+                        <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
+                          {item.icon}
+                    </Box>
+                        <ListItemText 
+                          primary={item.label} 
+                          primaryTypographyProps={{
+                            fontSize: '0.8125rem',
+                          }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                ))}
+                </List>
+              </Collapse>
+            </List>
+            </Box>
+        </Drawer>
+      )}
+
+      {/* Mobile Temporary Drawer */}
       <Drawer
         anchor="left"
         open={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
+        variant="temporary"
       >
         <Box sx={{ width: 250 }}>
           <Toolbar>
@@ -831,10 +940,24 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
         </Box>
       </Drawer>
 
-      <Container maxWidth="lg" sx={{ py: 4, flexGrow: 1 }}>
-        {/* Show selected store info in header */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          mt: '64px', // AppBar height
+          marginLeft: !isMobile && desktopSidebarOpen ? '250px' : 0,
+          transition: 'margin-left 0.3s',
+          width: !isMobile && desktopSidebarOpen ? 'calc(100% - 250px)' : '100%',
+          height: 'calc(100vh - 64px)',
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+        }}
+      >
+        {/* Show selected store info at top */}
         {selectedStoreName && (
-          <Box sx={{ mb: 3, p: 2, bgcolor: 'primary.light', color: 'white', borderRadius: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ p: 2, bgcolor: 'primary.light', color: 'white', display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             <StoreIcon />
             <Typography variant="h6">Store: {selectedStoreName}</Typography>
             <Button
@@ -847,8 +970,10 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             </Button>
           </Box>
         )}
+        <Container maxWidth="lg" sx={{ pt: 2, pb: 2, px: 3, flexGrow: 1 }}>
         {renderContent()}
       </Container>
+      </Box>
     </Box>
   );
 };

@@ -85,6 +85,11 @@ const schema = a.schema({
       category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
       tag: a.string(), // Course Tag
       status: a.string(), // Course status
+      randomizeQuestions: a.boolean().default(false), // Whether to randomize quiz question order for each attempt
+      randomizeOptions: a.boolean().default(false), // Whether to randomize answer option order for multiple-choice questions
+      useQuestionPool: a.boolean().default(false), // Whether to use question pool mode (randomly select subset of questions)
+      poolSize: a.integer(), // Total number of questions in the pool (only used if useQuestionPool is true)
+      questionsToDisplay: a.integer(), // Number of questions to randomly select and display per quiz attempt (only used if useQuestionPool is true)
       createdBy: a.string(), // managerId (userId from Cognito) - for filtering courses by manager
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
@@ -100,8 +105,13 @@ const schema = a.schema({
       courseId: a.id(), // Foreign key linking to Course
       course: a.belongsTo('Course', 'courseId'), // Added: Reciprocal relationship
       question: a.string().required(),
+      questionType: a.string().default('multiple_choice'), // 'multiple_choice', 'true_false', 'fill_blank'
       options: a.string().array().required(),
-      correctAnswer: a.integer().required(),
+      correctAnswer: a.integer(), // For multiple_choice and true_false (index or 0/1)
+      correctAnswerText: a.string(), // For fill_blank (comma-separated accepted answers)
+      caseSensitive: a.boolean().default(false), // For fill_blank: whether answer matching is case-sensitive
+      fuzzyMatching: a.boolean().default(false), // For fill_blank: enable Levenshtein distance matching (≤2 chars)
+      isActive: a.boolean().default(true), // Whether question is active and can be selected for question pools
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

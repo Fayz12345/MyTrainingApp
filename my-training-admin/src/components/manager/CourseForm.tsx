@@ -11,8 +11,12 @@ const client = generateClient<Schema>();
 
 interface QuizQuestion {
   question: string;
+  questionType?: 'multiple_choice' | 'true_false' | 'fill_blank';
   options: string[];
-  correctAnswer: number;
+  correctAnswer?: number; // For multiple_choice and true_false
+  correctAnswerText?: string; // For fill_blank (comma-separated accepted answers)
+  caseSensitive?: boolean; // For fill_blank
+  fuzzyMatching?: boolean; // For fill_blank
 }
 
 type CourseFormProps = {
@@ -28,6 +32,11 @@ type CourseFormProps = {
     readonly passingScore?: number | null;
     readonly duration?: string | null;
     readonly category?: string | null;
+    readonly randomizeQuestions?: boolean | null;
+    readonly randomizeOptions?: boolean | null;
+    readonly useQuestionPool?: boolean | null;
+    readonly poolSize?: number | null;
+    readonly questionsToDisplay?: number | null;
   };
   onSuccess?: () => void;
   onCancel?: () => void;
@@ -56,6 +65,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   const [passingScore, setPassingScore] = useState(course?.passingScore ?? 80);
   const [duration, setDuration] = useState(course?.duration ?? '');
   const [category, setCategory] = useState(course?.category ?? '');
+  const [randomizeQuestions, setRandomizeQuestions] = useState(course?.randomizeQuestions ?? false);
+  const [randomizeOptions, setRandomizeOptions] = useState(course?.randomizeOptions ?? false);
+  const [useQuestionPool, setUseQuestionPool] = useState(course?.useQuestionPool ?? false);
+  const [poolSize, setPoolSize] = useState(course?.poolSize ?? 10);
+  const [questionsToDisplay, setQuestionsToDisplay] = useState(course?.questionsToDisplay ?? 5);
   const [quiz, setQuiz] = useState<QuizQuestion[]>([
     { question: '', options: ['', '', '', ''], correctAnswer: 0 }
   ]);
@@ -97,18 +111,22 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
       if (quizResult.data && quizResult.data.length > 0) {
         setQuiz(
-          quizResult.data.map((question: { question: string; options: unknown; correctAnswer: number }) => ({
+          quizResult.data.map((question: any) => ({
             question: question.question,
+            questionType: (question.questionType || 'multiple_choice') as 'multiple_choice' | 'true_false' | 'fill_blank',
             options: question.options as string[],
-            correctAnswer: question.correctAnswer
+            correctAnswer: question.correctAnswer,
+            correctAnswerText: question.correctAnswerText || undefined,
+            caseSensitive: question.caseSensitive ?? false,
+            fuzzyMatching: question.fuzzyMatching ?? false
           }))
         );
       } else {
-        setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+        setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
       }
     } catch (error) {
       console.error('Failed to load quiz questions:', error);
-      setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+      setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
     } finally {
       setIsLoadingQuiz(false);
     }
@@ -188,7 +206,12 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
                 contentType: fullCourse.data.contentType ?? course.contentType,
                 passingScore: fullCourse.data.passingScore ?? course.passingScore,
                 duration: fullCourse.data.duration ?? course.duration,
-                category: fullCourse.data.category ?? course.category
+                category: fullCourse.data.category ?? course.category,
+                randomizeQuestions: fullCourse.data.randomizeQuestions ?? course.randomizeQuestions ?? false,
+                randomizeOptions: fullCourse.data.randomizeOptions ?? course.randomizeOptions ?? false,
+                useQuestionPool: fullCourse.data.useQuestionPool ?? course.useQuestionPool ?? false,
+                poolSize: fullCourse.data.poolSize ?? course.poolSize ?? null,
+                questionsToDisplay: fullCourse.data.questionsToDisplay ?? course.questionsToDisplay ?? null
               };
             } else {
               console.warn('[CourseForm] Could not fetch full course data, using provided data');
@@ -218,6 +241,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         setPassingScore(courseData.passingScore ?? 80);
         setDuration(courseData.duration ?? '');
         setCategory(courseData.category ?? '');
+        setRandomizeQuestions(courseData.randomizeQuestions ?? false);
+        setRandomizeOptions(courseData.randomizeOptions ?? false);
         setExistingVideoKey(courseData.videoKey ?? null);
         setExistingImageKey(courseData.imageKey ?? null);
         setExistingPdfKey(courseData.pdfKey ?? null);
@@ -251,11 +276,16 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         setPassingScore(80);
         setDuration('');
         setCategory('');
+        setRandomizeQuestions(false);
+        setRandomizeOptions(false);
+        setUseQuestionPool(false);
+        setPoolSize(10);
+        setQuestionsToDisplay(5);
         setExistingVideoKey(null);
         setExistingImageKey(null);
         setExistingImageUrl(null);
         setIsLoadingExistingImage(false);
-        setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+        setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
       }
       
       setVideoFile(null);
@@ -368,8 +398,46 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
 
   const addQuizQuestion = () => {
     if (quiz.length < 10) {
-      setQuiz([...quiz, { question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+      setQuiz([...quiz, { question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
     }
+  };
+
+  const handleQuestionTypeChange = (questionIndex: number, newType: 'multiple_choice' | 'true_false' | 'fill_blank') => {
+    const updatedQuiz = [...quiz];
+    updatedQuiz[questionIndex].questionType = newType;
+    
+    // If switching to true/false, set options to ["True", "False"]
+    if (newType === 'true_false') {
+      updatedQuiz[questionIndex].options = ['True', 'False'];
+      // Reset correct answer to 0 (True) if it was out of range
+      if ((updatedQuiz[questionIndex].correctAnswer ?? 0) > 1) {
+        updatedQuiz[questionIndex].correctAnswer = 0;
+      }
+      // Clear fill_blank specific fields
+      delete updatedQuiz[questionIndex].correctAnswerText;
+      delete updatedQuiz[questionIndex].caseSensitive;
+      delete updatedQuiz[questionIndex].fuzzyMatching;
+    } else if (newType === 'fill_blank') {
+      // If switching to fill_blank, initialize fields
+      updatedQuiz[questionIndex].options = []; // Not used for fill_blank
+      updatedQuiz[questionIndex].correctAnswerText = updatedQuiz[questionIndex].correctAnswerText || '';
+      updatedQuiz[questionIndex].caseSensitive = updatedQuiz[questionIndex].caseSensitive ?? false;
+      updatedQuiz[questionIndex].fuzzyMatching = updatedQuiz[questionIndex].fuzzyMatching ?? false;
+      // Clear correctAnswer (used for multiple_choice/true_false)
+      delete updatedQuiz[questionIndex].correctAnswer;
+    } else if (newType === 'multiple_choice') {
+      // If switching back to multiple choice, ensure 4 options
+      if (updatedQuiz[questionIndex].options.length !== 4) {
+        updatedQuiz[questionIndex].options = ['', '', '', ''];
+        updatedQuiz[questionIndex].correctAnswer = 0;
+      }
+      // Clear fill_blank specific fields
+      delete updatedQuiz[questionIndex].correctAnswerText;
+      delete updatedQuiz[questionIndex].caseSensitive;
+      delete updatedQuiz[questionIndex].fuzzyMatching;
+    }
+    
+    setQuiz(updatedQuiz);
   };
 
   const removeQuizQuestion = (index: number) => {
@@ -457,12 +525,58 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
       return;
     }
 
+    // Validate question pool settings
+    if (useQuestionPool) {
+      if (!poolSize || poolSize < 2) {
+        await MySwal.fire({
+          title: "Validation Error",
+          text: "Question pool size must be at least 2",
+          icon: "warning",
+        });
+        return;
+      }
+      if (!questionsToDisplay || questionsToDisplay < 1) {
+        await MySwal.fire({
+          title: "Validation Error",
+          text: "Number of questions to display must be at least 1",
+          icon: "warning",
+        });
+        return;
+      }
+      if (questionsToDisplay > poolSize) {
+        await MySwal.fire({
+          title: "Validation Error",
+          text: `Questions to display (${questionsToDisplay}) cannot exceed pool size (${poolSize})`,
+          icon: "warning",
+        });
+        return;
+      }
+    }
+
     // Validate quiz questions
-    const validQuestions = quiz.filter(q => 
-      q.question.trim() && 
-      q.options.every(opt => opt.trim()) &&
-      q.correctAnswer >= 0 && q.correctAnswer < 4
-    );
+    const validQuestions = quiz.filter(q => {
+      if (!q.question.trim()) return false;
+      
+      const questionType = q.questionType || 'multiple_choice';
+      
+      if (questionType === 'true_false') {
+        // True/False: options should be ["True", "False"], correctAnswer 0 or 1
+        return q.options.length === 2 && 
+               q.options[0] === 'True' && 
+               q.options[1] === 'False' &&
+               (q.correctAnswer === 0 || q.correctAnswer === 1);
+      } else if (questionType === 'fill_blank') {
+        // Fill in the blank: must have correctAnswerText with at least one answer
+        return q.correctAnswerText && 
+               q.correctAnswerText.trim().length > 0 &&
+               q.correctAnswerText.split(',').some(ans => ans.trim().length > 0);
+      } else {
+        // Multiple choice: all options filled, correctAnswer within range
+        return q.options.every(opt => opt.trim()) &&
+               (q.correctAnswer !== undefined && q.correctAnswer >= 0) && 
+               q.correctAnswer < q.options.length;
+      }
+    });
 
     if (validQuestions.length === 0) {
       await MySwal.fire({
@@ -471,6 +585,18 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         icon: "warning",
       });
       return;
+    }
+
+    // Validate question pool requirements
+    if (useQuestionPool) {
+      if (validQuestions.length < poolSize) {
+        await MySwal.fire({
+          title: "Validation Error",
+          text: `Question pool mode requires at least ${poolSize} questions, but you only have ${validQuestions.length}. Please add more questions or reduce the pool size.`,
+          icon: "warning",
+        });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -630,6 +756,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           passingScore,
           duration: duration.trim() || null,
           category: category.trim() || null,
+          randomizeQuestions: randomizeQuestions,
+          randomizeOptions: randomizeOptions,
+          useQuestionPool: useQuestionPool,
+          poolSize: useQuestionPool ? poolSize : null,
+          questionsToDisplay: useQuestionPool ? questionsToDisplay : null,
           updatedAt: new Date().toISOString()
         });
 
@@ -644,14 +775,25 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         }
 
         for (const question of validQuestions) {
-          await client.models.QuizQuestion.create({
+          const questionData: any = {
             courseId: course.id,
             question: question.question.trim(),
+            questionType: question.questionType || 'multiple_choice',
             options: question.options.map(opt => opt.trim()),
-            correctAnswer: question.correctAnswer,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
-          });
+          };
+
+          // Add fields based on question type
+          if (question.questionType === 'fill_blank') {
+            questionData.correctAnswerText = question.correctAnswerText?.trim() || null;
+            questionData.caseSensitive = question.caseSensitive ?? false;
+            questionData.fuzzyMatching = question.fuzzyMatching ?? false;
+          } else {
+            questionData.correctAnswer = question.correctAnswer;
+          }
+
+          await client.models.QuizQuestion.create(questionData);
         }
 
         await MySwal.fire({
@@ -677,6 +819,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         passingScore,
         duration: duration.trim() || null,
         category: category.trim() || null,
+        randomizeQuestions: randomizeQuestions,
+        randomizeOptions: randomizeOptions,
+        useQuestionPool: useQuestionPool,
+        poolSize: useQuestionPool ? poolSize : null,
+        questionsToDisplay: useQuestionPool ? questionsToDisplay : null,
         createdBy: currentUserId || null, // Track which manager created this course
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -686,14 +833,25 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         // Type assertion: create() returns a single Course object, not an array
         const courseData = courseResult.data as unknown as { id: string };
         for (const question of validQuestions) {
-          await client.models.QuizQuestion.create({
+          const questionData: any = {
             courseId: courseData.id,
             question: question.question.trim(),
+            questionType: question.questionType || 'multiple_choice',
             options: question.options.map(opt => opt.trim()),
-            correctAnswer: question.correctAnswer,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
-          });
+          };
+
+          // Add fields based on question type
+          if (question.questionType === 'fill_blank') {
+            questionData.correctAnswerText = question.correctAnswerText?.trim() || null;
+            questionData.caseSensitive = question.caseSensitive ?? false;
+            questionData.fuzzyMatching = question.fuzzyMatching ?? false;
+          } else {
+            questionData.correctAnswer = question.correctAnswer;
+          }
+
+          await client.models.QuizQuestion.create(questionData);
         }
 
         await MySwal.fire({
@@ -715,7 +873,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
         setPassingScore(80);
         setDuration('');
         setCategory('');
-        setQuiz([{ question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+        setRandomizeQuestions(false);
+        setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
         setUploadProgress(0);
         setImageUploadProgress(0);
         setPdfUploadProgress(0);
@@ -839,8 +998,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           />
         </div>
 
-        {/* Content Type Selector - HIDDEN FOR NOW */}
-        {false && (
+        {/* Content Type Selector */}
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
             Content Type *
@@ -865,10 +1023,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
             Select the type of content this course will contain. You can upload both video and PDF files.
           </p>
         </div>
-        )}
 
         {/* Video Upload */}
-          <div>
+        <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
             Course Video {isEditMode ? '(leave empty to keep current video)' : (contentType === 'both' ? '(optional if PDF is provided)' : '*')}
           </label>
@@ -1049,9 +1206,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           )}
         </div>
 
-        {/* PDF Upload - HIDDEN FOR NOW */}
-        {/* @ts-ignore - Code is hidden with false &&, TypeScript still checks it */}
-        {false && (contentType === 'pdf' || contentType === 'both') && (
+        {/* PDF Upload */}
+        {(contentType === 'pdf' || contentType === 'both') && (
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
               PDF Document {isEditMode ? '(leave empty to keep current PDF)' : '*'}
@@ -1236,6 +1392,137 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           </div>
         </div>
 
+        {/* Quiz Settings */}
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Quiz Settings</h3>
+          
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.75rem', marginBottom: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={randomizeQuestions}
+              onChange={(e) => setRandomizeQuestions(e.target.checked)}
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <div>
+              <span style={{ fontWeight: 'bold', fontSize: '1rem' }}>Randomize Question Order</span>
+              <p style={{ fontSize: '0.875rem', color: '#666', margin: '0.25rem 0 0 0' }}>
+                When enabled, quiz questions will appear in a different random order for each employee and each attempt. 
+                This helps prevent answer sharing and memorization.
+              </p>
+            </div>
+          </label>
+          
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.75rem' }}>
+            <input
+              type="checkbox"
+              checked={randomizeOptions}
+              onChange={(e) => setRandomizeOptions(e.target.checked)}
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <div>
+              <span style={{ fontWeight: 'bold', fontSize: '1rem' }}>Randomize Answer Options</span>
+              <p style={{ fontSize: '0.875rem', color: '#666', margin: '0.25rem 0 0 0' }}>
+                When enabled, answer options for multiple-choice and True/False questions will appear in a different random order for each employee and each attempt. 
+                This prevents employees from memorizing answer patterns like "the answer is always B".
+              </p>
+            </div>
+          </label>
+
+          <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e0e0e0' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.75rem', marginBottom: '1rem' }}>
+              <input
+                type="checkbox"
+                checked={useQuestionPool}
+                onChange={(e) => {
+                  setUseQuestionPool(e.target.checked);
+                  if (!e.target.checked) {
+                    // Reset pool settings when disabled
+                    setPoolSize(10);
+                    setQuestionsToDisplay(5);
+                  }
+                }}
+                style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+              />
+              <div>
+                <span style={{ fontWeight: 'bold', fontSize: '1rem' }}>Question Pool Mode</span>
+                <p style={{ fontSize: '0.875rem', color: '#666', margin: '0.25rem 0 0 0' }}>
+                  Create more questions than will appear on the quiz. Each employee will get a random subset of questions, making each quiz attempt unique.
+                </p>
+              </div>
+            </label>
+
+            {useQuestionPool && (
+              <div style={{ marginLeft: '2rem', padding: '1rem', backgroundColor: '#f0f7ff', borderRadius: '8px', border: '1px solid #b3d9ff' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Total Questions in Pool *
+                  </label>
+                  <input
+                    type="number"
+                    min="2"
+                    max="50"
+                    value={poolSize}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 0;
+                      setPoolSize(value);
+                      // Auto-adjust questionsToDisplay if it exceeds poolSize
+                      if (questionsToDisplay > value) {
+                        setQuestionsToDisplay(value);
+                      }
+                    }}
+                    style={{
+                      width: '150px',
+                      padding: '0.75rem',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '1rem'
+                    }}
+                    required={useQuestionPool}
+                  />
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                    Total number of questions you'll create for this course. Create more questions than will be displayed.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Questions to Display per Quiz *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={poolSize}
+                    value={questionsToDisplay}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 0;
+                      if (value <= poolSize) {
+                        setQuestionsToDisplay(value);
+                      }
+                    }}
+                    style={{
+                      width: '150px',
+                      padding: '0.75rem',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '1rem'
+                    }}
+                    required={useQuestionPool}
+                  />
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                    Number of questions each employee will see. Must be less than or equal to pool size.
+                  </p>
+                </div>
+
+                <div style={{ padding: '0.75rem', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #b3d9ff' }}>
+                  <p style={{ fontSize: '0.875rem', color: '#1976d2', margin: 0, fontWeight: 'bold' }}>
+                    💡 Example: Create 20 questions, display 10 per quiz. Each employee gets a different random set of 10 questions.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Quiz Questions */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1290,13 +1577,40 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
                 )}
               </div>
 
+              {/* Question Type Selector */}
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Question Type:</label>
+                <select
+                  value={question.questionType || 'multiple_choice'}
+                  onChange={(e) => handleQuestionTypeChange(questionIndex, e.target.value as 'multiple_choice' | 'true_false' | 'fill_blank')}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                    backgroundColor: 'white'
+                  }}
+                >
+                  <option value="multiple_choice">Multiple Choice</option>
+                  <option value="true_false">True/False</option>
+                  <option value="fill_blank">Fill in the Blank</option>
+                </select>
+              </div>
+
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.5rem' }}>Question:</label>
                 <input
                   type="text"
                   value={question.question}
                   onChange={(e) => updateQuizQuestion(questionIndex, 'question', e.target.value)}
-                  placeholder="Enter your question"
+                  placeholder={
+                    question.questionType === 'true_false' 
+                      ? 'e.g., Employees must wash hands for at least 20 seconds'
+                      : question.questionType === 'fill_blank'
+                      ? 'e.g., Food must be stored at _____ degrees Fahrenheit or below'
+                      : 'Enter your question'
+                  }
                   style={{
                     width: '100%',
                     padding: '0.75rem',
@@ -1304,8 +1618,109 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
                     borderRadius: '4px'
                   }}
                 />
+                {question.questionType === 'fill_blank' && (
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                    💡 Tip: Use "_____" (underscores) to indicate where the blank should be filled in
+                  </p>
+                )}
               </div>
 
+              {/* Answer Options - Different UI based on question type */}
+              {(question.questionType || 'multiple_choice') === 'fill_blank' ? (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Correct Answer(s) *
+                  </label>
+                  <input
+                    type="text"
+                    value={question.correctAnswerText || ''}
+                    onChange={(e) => updateQuizQuestion(questionIndex, 'correctAnswerText', e.target.value)}
+                    placeholder="Enter accepted answers separated by commas (e.g., 40,forty,40 degrees)"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '1rem'
+                    }}
+                  />
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                    Separate multiple acceptable answers with commas. Employee's answer will be checked against all of these.
+                  </p>
+                  
+                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={question.caseSensitive || false}
+                        onChange={(e) => updateQuizQuestion(questionIndex, 'caseSensitive', e.target.checked)}
+                        style={{ marginRight: '0.5rem', width: '18px', height: '18px' }}
+                      />
+                      <span>Case-sensitive matching</span>
+                    </label>
+                    
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={question.fuzzyMatching || false}
+                        onChange={(e) => updateQuizQuestion(questionIndex, 'fuzzyMatching', e.target.checked)}
+                        style={{ marginRight: '0.5rem', width: '18px', height: '18px' }}
+                      />
+                      <span>Enable fuzzy matching (allows up to 2 character differences)</span>
+                    </label>
+                    {question.fuzzyMatching && (
+                      <p style={{ fontSize: '0.75rem', color: '#666', marginLeft: '1.5rem', fontStyle: 'italic' }}>
+                        This will accept answers that are close to the correct answer (e.g., "forty" matches "forty " or "fourty")
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (question.questionType || 'multiple_choice') === 'true_false' ? (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Correct Answer:</label>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => updateQuizQuestion(questionIndex, 'correctAnswer', 0)}
+                      style={{
+                        flex: 1,
+                        padding: '1rem',
+                        backgroundColor: question.correctAnswer === 0 ? '#4caf50' : '#f5f5f5',
+                        color: question.correctAnswer === 0 ? 'white' : '#333',
+                        border: `2px solid ${question.correctAnswer === 0 ? '#4caf50' : '#ccc'}`,
+                        borderRadius: '8px',
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      ✓ True
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateQuizQuestion(questionIndex, 'correctAnswer', 1)}
+                      style={{
+                        flex: 1,
+                        padding: '1rem',
+                        backgroundColor: question.correctAnswer === 1 ? '#f44336' : '#f5f5f5',
+                        color: question.correctAnswer === 1 ? 'white' : '#333',
+                        border: `2px solid ${question.correctAnswer === 1 ? '#f44336' : '#ccc'}`,
+                        borderRadius: '8px',
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      ✗ False
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                    Selected: {question.correctAnswer === 0 ? 'True' : 'False'}
+                  </p>
+                </div>
+              ) : (
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.5rem' }}>Answer Options:</label>
                 {question.options.map((option, optionIndex) => (
@@ -1332,6 +1747,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
                   </div>
                 ))}
               </div>
+              )}
             </div>
           ))}
         </div>

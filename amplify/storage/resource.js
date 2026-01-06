@@ -13,6 +13,10 @@ export const storage = defineStorage({
         'courses/images/*': [
             allow.groups(['Managers']).to(['read', 'write', 'delete']),
             allow.groups(['Employees']).to(['read'])
+        ],
+        'courses/pdfs/*': [
+            allow.groups(['Managers']).to(['read', 'write', 'delete']),
+            allow.groups(['Employees']).to(['read'])
         ]
     })
 });
