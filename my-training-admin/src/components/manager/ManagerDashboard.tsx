@@ -48,6 +48,10 @@ import EditLearningPath from './EditLearningPath';
 import AssignLearningPath from './AssignLearningPath';
 import LearningPathProgress from './LearningPathProgress';
 import TrainingStatusDashboard from './TrainingStatusDashboard';
+import EmployeesNeedingSupport from './EmployeesNeedingSupport';
+import TrainingReports from './TrainingReports';
+import TrainingLeaderboard from './TrainingLeaderboard';
+import QuizAnalytics from './QuizAnalytics';
 
 const client = generateClient<Schema>();
 
@@ -69,7 +73,12 @@ type ViewMode =
   | 'learning-paths'
   | 'edit-learning-path'
   | 'assign-learning-path'
-  | 'learning-path-progress';
+  | 'learning-path-progress'
+  | 'training-status'
+  | 'employees-needing-support'
+  | 'training-reports'
+  | 'training-leaderboard'
+  | 'quiz-analytics';
 
 type CourseSummary = {
   readonly id: string;
@@ -605,6 +614,76 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
+      case 'training-status':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <TrainingStatusDashboard />
+          </Box>
+        );
+
+      case 'employees-needing-support':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <EmployeesNeedingSupport selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'training-reports':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <TrainingReports selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'training-leaderboard':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <TrainingLeaderboard selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'quiz-analytics':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <QuizAnalytics selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -648,7 +727,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : 'Open'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
                       </Button>
                     </CardActions>
                   </Card>

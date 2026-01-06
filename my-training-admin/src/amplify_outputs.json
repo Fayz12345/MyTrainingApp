@@ -637,6 +637,27 @@
               "isRequired": false,
               "attributes": []
             },
+            "pdfKey": {
+              "name": "pdfKey",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "pdfTitle": {
+              "name": "pdfTitle",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "contentType": {
+              "name": "contentType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "quiz": {
               "name": "quiz",
               "isArray": true,
@@ -717,6 +738,41 @@
               "name": "status",
               "isArray": false,
               "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "randomizeQuestions": {
+              "name": "randomizeQuestions",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "randomizeOptions": {
+              "name": "randomizeOptions",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "useQuestionPool": {
+              "name": "useQuestionPool",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "poolSize": {
+              "name": "poolSize",
+              "isArray": false,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": []
+            },
+            "questionsToDisplay": {
+              "name": "questionsToDisplay",
+              "isArray": false,
+              "type": "Int",
               "isRequired": false,
               "attributes": []
             },
@@ -842,6 +898,13 @@
               "isRequired": true,
               "attributes": []
             },
+            "questionType": {
+              "name": "questionType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "options": {
               "name": "options",
               "isArray": true,
@@ -854,7 +917,35 @@
               "name": "correctAnswer",
               "isArray": false,
               "type": "Int",
-              "isRequired": true,
+              "isRequired": false,
+              "attributes": []
+            },
+            "correctAnswerText": {
+              "name": "correctAnswerText",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "caseSensitive": {
+              "name": "caseSensitive",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "fuzzyMatching": {
+              "name": "fuzzyMatching",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "isActive": {
+              "name": "isActive",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
               "attributes": []
             },
             "createdAt": {
@@ -1364,6 +1455,13 @@
               "name": "trainingCompletedAt",
               "isArray": false,
               "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "hasViewedPdf": {
+              "name": "hasViewedPdf",
+              "isArray": false,
+              "type": "Boolean",
               "isRequired": false,
               "attributes": []
             },
@@ -2046,6 +2144,18 @@
             ]
           },
           "courses/images/*": {
+            "groupsManagers": [
+              "get",
+              "list",
+              "write",
+              "delete"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list"
+            ]
+          },
+          "courses/pdfs/*": {
             "groupsManagers": [
               "get",
               "list",

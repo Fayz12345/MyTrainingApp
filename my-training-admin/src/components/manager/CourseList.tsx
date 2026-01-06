@@ -96,98 +96,233 @@ const CourseList: React.FC<CourseListProps> = ({ onEditCourse, refreshTrigger })
       if (result.data) {
         console.log('Found courses:', result.data.length, result.data);
         console.log('[CourseList] Sample course from list():', result.data[0]);
-        console.log('[CourseList] Has description?', result.data[0]?.description !== undefined);
-        console.log('[CourseList] Has imageKey?', result.data[0]?.imageKey !== undefined);
+        console.log('[CourseList] Sample course keys:', result.data[0] ? Object.keys(result.data[0]) : []);
         
-        // Since list() doesn't return description and imageKey, fetch full details for ALL courses
-        // Use Promise.allSettled to handle individual failures gracefully
-        console.log('[CourseList] Fetching full details for all courses...');
-        const coursesWithFullData = await Promise.allSettled(
-          result.data.map(async (course: any) => {
-            try {
-              console.log(`[CourseList] Fetching full details for course ${course.id}...`);
-              const fullCourse = await client.models.Course.get({ id: course.id });
-              console.log(`[CourseList] Raw get() response for ${course.id}:`, fullCourse);
-              console.log(`[CourseList] Raw get() data:`, fullCourse.data);
-              console.log(`[CourseList] Raw get() errors:`, fullCourse.errors);
-              
-              if (fullCourse.data) {
-                console.log(`[CourseList] Full course data for ${course.id}:`, {
-                  id: fullCourse.data.id,
-                  title: fullCourse.data.title,
-                  description: fullCourse.data.description,
-                  descriptionType: typeof fullCourse.data.description,
-                  descriptionIsUndefined: fullCourse.data.description === undefined,
-                  descriptionIsNull: fullCourse.data.description === null,
-                  imageKey: fullCourse.data.imageKey,
-                  imageKeyType: typeof fullCourse.data.imageKey,
-                  imageKeyIsUndefined: fullCourse.data.imageKey === undefined,
-                  imageKeyIsNull: fullCourse.data.imageKey === null,
-                  videoKey: fullCourse.data.videoKey,
-                  fullDataKeys: Object.keys(fullCourse.data)
-                });
-                console.log(`[CourseList] Full course data (JSON):`, JSON.stringify(fullCourse.data, null, 2));
-                
-                // Map to Course type, ensuring all fields are included
-                const mappedCourse = {
-                  id: fullCourse.data.id || course.id,
-                  title: fullCourse.data.title || course.title,
-                  description: fullCourse.data.description ?? course.description ?? null,
-                  videoKey: fullCourse.data.videoKey ?? course.videoKey ?? null,
-                  imageKey: fullCourse.data.imageKey ?? course.imageKey ?? null,
-                  pdfKey: fullCourse.data.pdfKey ?? course.pdfKey ?? null,
-                  pdfTitle: fullCourse.data.pdfTitle ?? course.pdfTitle ?? null,
-                  contentType: fullCourse.data.contentType ?? course.contentType ?? null,
-                  passingScore: fullCourse.data.passingScore ?? course.passingScore ?? null,
-                  duration: fullCourse.data.duration ?? course.duration ?? null,
-                  category: fullCourse.data.category ?? course.category ?? null,
-                  randomizeQuestions: fullCourse.data.randomizeQuestions ?? course.randomizeQuestions ?? false,
-                  randomizeOptions: fullCourse.data.randomizeOptions ?? course.randomizeOptions ?? false,
-                  useQuestionPool: fullCourse.data.useQuestionPool ?? course.useQuestionPool ?? false,
-                  poolSize: fullCourse.data.poolSize ?? course.poolSize ?? null,
-                  questionsToDisplay: fullCourse.data.questionsToDisplay ?? course.questionsToDisplay ?? null,
-                  createdAt: fullCourse.data.createdAt || course.createdAt,
-                  updatedAt: fullCourse.data.updatedAt || course.updatedAt
-                } as Course;
-                
-                console.log(`[CourseList] Mapped course for ${course.id}:`, {
-                  description: mappedCourse.description,
-                  imageKey: mappedCourse.imageKey,
-                  fullMapped: mappedCourse
-                });
-                
-                return mappedCourse;
-              } else {
-                console.warn(`[CourseList] No data returned for course ${course.id}, using list data`);
-                return course as Course;
-              }
-            } catch (err) {
-              console.error(`[CourseList] Could not fetch full details for course ${course.id}:`, err);
-              // Return original course if fetch fails
-              return course as Course;
-            }
-          })
+        // Check if list() already returns all fields we need
+        // Dev environment may have outdated schema that doesn't return all fields
+        const sampleCourse: any = result.data[0];
+        const requiredFields = [
+          'description',
+          'imageKey',
+          'pdfKey',
+          'pdfTitle',
+          'contentType',
+          'duration',
+          'passingScore',
+          'randomizeQuestions',
+          'randomizeOptions',
+          'useQuestionPool',
+          'poolSize',
+          'questionsToDisplay'
+        ];
+        
+        const hasAllFields = sampleCourse && requiredFields.every(field => 
+          sampleCourse[field] !== undefined
         );
         
-        // Extract successful results from Promise.allSettled
-        const successfulCourses = coursesWithFullData
-          .map((result) => {
-            if (result.status === 'fulfilled') {
-              return result.value;
-            } else {
-              console.error('[CourseList] Failed to process course:', result.reason);
-              return null;
-            }
-          })
-          .filter((course): course is Course => course !== null);
+        const missingFields = sampleCourse ? requiredFields.filter(field => 
+          sampleCourse[field] === undefined
+        ) : [];
         
-        console.log('[CourseList] Final courses with full data:', successfulCourses.length);
-        console.log('[CourseList] Sample final course:', successfulCourses[0]);
-        console.log('[CourseList] Sample final course - has description?', successfulCourses[0]?.description !== undefined && successfulCourses[0]?.description !== null);
-        console.log('[CourseList] Sample final course - has imageKey?', successfulCourses[0]?.imageKey !== undefined && successfulCourses[0]?.imageKey !== null);
-        console.log('[CourseList] Sample final course - description value:', successfulCourses[0]?.description);
-        console.log('[CourseList] Sample final course - imageKey value:', successfulCourses[0]?.imageKey);
-        setCourses(successfulCourses);
+        console.log('[CourseList] list() has all fields?', hasAllFields);
+        if (!hasAllFields && missingFields.length > 0) {
+          console.warn('[CourseList] Missing fields from list():', missingFields);
+          console.log('[CourseList] This usually means the dev schema is outdated. Fetching individual courses...');
+        }
+        
+        if (hasAllFields) {
+          // If list() returns all fields, use them directly
+          console.log('[CourseList] Using data from list() directly');
+          const mappedCourses = result.data.map((course: any) => ({
+            id: course.id,
+            title: course.title,
+            description: course.description ?? null,
+            videoKey: course.videoKey ?? null,
+            imageKey: course.imageKey ?? null,
+            pdfKey: course.pdfKey ?? null,
+            pdfTitle: course.pdfTitle ?? null,
+            contentType: course.contentType ?? null,
+            passingScore: course.passingScore ?? null,
+            duration: course.duration ?? null,
+            category: course.category ?? null,
+            randomizeQuestions: course.randomizeQuestions ?? false,
+            randomizeOptions: course.randomizeOptions ?? false,
+            useQuestionPool: course.useQuestionPool ?? false,
+            poolSize: course.poolSize ?? null,
+            questionsToDisplay: course.questionsToDisplay ?? null,
+            createdAt: course.createdAt,
+            updatedAt: course.updatedAt
+          } as Course));
+          setCourses(mappedCourses);
+        } else {
+          // Since list() doesn't return all fields, fetch full details for ALL courses
+          // Use Promise.allSettled to handle individual failures gracefully
+          console.log('[CourseList] Fetching full details for all courses...');
+          const coursesWithFullData = await Promise.allSettled(
+            result.data.map(async (course: any) => {
+              try {
+                console.log(`[CourseList] Fetching full details for course ${course.id}...`);
+                const fullCourse = await client.models.Course.get({ id: course.id });
+                console.log(`[CourseList] Raw get() response for ${course.id}:`, fullCourse);
+                console.log(`[CourseList] Raw get() data:`, fullCourse.data);
+                console.log(`[CourseList] Raw get() errors:`, fullCourse.errors);
+                
+                if (fullCourse.errors && fullCourse.errors.length > 0) {
+                  console.error(`[CourseList] Errors fetching course ${course.id}:`, fullCourse.errors);
+                  // If get() fails but list() has some data, use list() data as fallback
+                  console.warn(`[CourseList] Using list() data as fallback for course ${course.id}`);
+                }
+                
+                if (fullCourse.data) {
+                  console.log(`[CourseList] Full course data for ${course.id}:`, {
+                    id: fullCourse.data.id,
+                    title: fullCourse.data.title,
+                    description: fullCourse.data.description,
+                    descriptionType: typeof fullCourse.data.description,
+                    descriptionIsUndefined: fullCourse.data.description === undefined,
+                    descriptionIsNull: fullCourse.data.description === null,
+                    imageKey: fullCourse.data.imageKey,
+                    imageKeyType: typeof fullCourse.data.imageKey,
+                    imageKeyIsUndefined: fullCourse.data.imageKey === undefined,
+                    imageKeyIsNull: fullCourse.data.imageKey === null,
+                    videoKey: fullCourse.data.videoKey,
+                    duration: fullCourse.data.duration,
+                    passingScore: fullCourse.data.passingScore,
+                    randomizeQuestions: fullCourse.data.randomizeQuestions,
+                    randomizeOptions: fullCourse.data.randomizeOptions,
+                    useQuestionPool: fullCourse.data.useQuestionPool,
+                    poolSize: fullCourse.data.poolSize,
+                    questionsToDisplay: fullCourse.data.questionsToDisplay,
+                    fullDataKeys: Object.keys(fullCourse.data)
+                  });
+                  
+                  // Map to Course type, ensuring all fields are included
+                  const mappedCourse = {
+                    id: fullCourse.data.id || course.id,
+                    title: fullCourse.data.title || course.title,
+                    description: fullCourse.data.description ?? course.description ?? null,
+                    videoKey: fullCourse.data.videoKey ?? course.videoKey ?? null,
+                    imageKey: fullCourse.data.imageKey ?? course.imageKey ?? null,
+                    pdfKey: fullCourse.data.pdfKey ?? course.pdfKey ?? null,
+                    pdfTitle: fullCourse.data.pdfTitle ?? course.pdfTitle ?? null,
+                    contentType: fullCourse.data.contentType ?? course.contentType ?? null,
+                    passingScore: fullCourse.data.passingScore ?? course.passingScore ?? null,
+                    duration: fullCourse.data.duration ?? course.duration ?? null,
+                    category: fullCourse.data.category ?? course.category ?? null,
+                    randomizeQuestions: fullCourse.data.randomizeQuestions ?? course.randomizeQuestions ?? false,
+                    randomizeOptions: fullCourse.data.randomizeOptions ?? course.randomizeOptions ?? false,
+                    useQuestionPool: fullCourse.data.useQuestionPool ?? course.useQuestionPool ?? false,
+                    poolSize: fullCourse.data.poolSize ?? course.poolSize ?? null,
+                    questionsToDisplay: fullCourse.data.questionsToDisplay ?? course.questionsToDisplay ?? null,
+                    createdAt: fullCourse.data.createdAt || course.createdAt,
+                    updatedAt: fullCourse.data.updatedAt || course.updatedAt
+                  } as Course;
+                  
+                  console.log(`[CourseList] Mapped course for ${course.id}:`, {
+                    description: mappedCourse.description,
+                    imageKey: mappedCourse.imageKey,
+                    duration: mappedCourse.duration,
+                    passingScore: mappedCourse.passingScore,
+                    randomizeQuestions: mappedCourse.randomizeQuestions,
+                    randomizeOptions: mappedCourse.randomizeOptions,
+                    useQuestionPool: mappedCourse.useQuestionPool,
+                    poolSize: mappedCourse.poolSize,
+                    questionsToDisplay: mappedCourse.questionsToDisplay
+                  });
+                  
+                  return mappedCourse;
+                } else {
+                  console.warn(`[CourseList] No data returned for course ${course.id}, using list data`);
+                  // Map list() data to Course type with defaults
+                  return {
+                    id: course.id,
+                    title: course.title,
+                    description: course.description ?? null,
+                    videoKey: course.videoKey ?? null,
+                    imageKey: course.imageKey ?? null,
+                    pdfKey: course.pdfKey ?? null,
+                    pdfTitle: course.pdfTitle ?? null,
+                    contentType: course.contentType ?? null,
+                    passingScore: course.passingScore ?? null,
+                    duration: course.duration ?? null,
+                    category: course.category ?? null,
+                    randomizeQuestions: course.randomizeQuestions ?? false,
+                    randomizeOptions: course.randomizeOptions ?? false,
+                    useQuestionPool: course.useQuestionPool ?? false,
+                    poolSize: course.poolSize ?? null,
+                    questionsToDisplay: course.questionsToDisplay ?? null,
+                    createdAt: course.createdAt,
+                    updatedAt: course.updatedAt
+                  } as Course;
+                }
+              } catch (err) {
+                console.error(`[CourseList] Could not fetch full details for course ${course.id}:`, err);
+                // Return original course mapped to Course type with defaults
+                return {
+                  id: course.id,
+                  title: course.title,
+                  description: course.description ?? null,
+                  videoKey: course.videoKey ?? null,
+                  imageKey: course.imageKey ?? null,
+                  pdfKey: course.pdfKey ?? null,
+                  pdfTitle: course.pdfTitle ?? null,
+                  contentType: course.contentType ?? null,
+                  passingScore: course.passingScore ?? null,
+                  duration: course.duration ?? null,
+                  category: course.category ?? null,
+                  randomizeQuestions: course.randomizeQuestions ?? false,
+                  randomizeOptions: course.randomizeOptions ?? false,
+                  useQuestionPool: course.useQuestionPool ?? false,
+                  poolSize: course.poolSize ?? null,
+                  questionsToDisplay: course.questionsToDisplay ?? null,
+                  createdAt: course.createdAt,
+                  updatedAt: course.updatedAt
+                } as Course;
+              }
+            })
+          );
+          
+          // Extract successful results from Promise.allSettled
+          const successfulCourses = coursesWithFullData
+            .map((result) => {
+              if (result.status === 'fulfilled') {
+                return result.value;
+              } else {
+                console.error('[CourseList] Failed to process course:', result.reason);
+                return null;
+              }
+            })
+            .filter((course): course is Course => course !== null);
+          
+          console.log('[CourseList] Final courses with full data:', successfulCourses.length);
+          if (successfulCourses.length > 0) {
+            console.log('[CourseList] Sample final course:', successfulCourses[0]);
+            console.log('[CourseList] Sample final course - has description?', successfulCourses[0]?.description !== undefined && successfulCourses[0]?.description !== null);
+            console.log('[CourseList] Sample final course - has imageKey?', successfulCourses[0]?.imageKey !== undefined && successfulCourses[0]?.imageKey !== null);
+            console.log('[CourseList] Sample final course - description value:', successfulCourses[0]?.description);
+            console.log('[CourseList] Sample final course - imageKey value:', successfulCourses[0]?.imageKey);
+            console.log('[CourseList] Sample final course - duration:', successfulCourses[0]?.duration);
+            console.log('[CourseList] Sample final course - passingScore:', successfulCourses[0]?.passingScore);
+            console.log('[CourseList] Sample final course - randomizeQuestions:', successfulCourses[0]?.randomizeQuestions);
+            console.log('[CourseList] Sample final course - randomizeOptions:', successfulCourses[0]?.randomizeOptions);
+            console.log('[CourseList] Sample final course - useQuestionPool:', successfulCourses[0]?.useQuestionPool);
+            console.log('[CourseList] Sample final course - poolSize:', successfulCourses[0]?.poolSize);
+            console.log('[CourseList] Sample final course - questionsToDisplay:', successfulCourses[0]?.questionsToDisplay);
+            
+            // Check if get() also didn't return all fields (schema issue)
+            const sampleFinal: any = successfulCourses[0];
+            const stillMissingFields = requiredFields.filter(field => 
+              sampleFinal && sampleFinal[field] === undefined
+            );
+            if (stillMissingFields.length > 0) {
+              console.error('[CourseList] ⚠️ WARNING: Even get() is missing fields:', stillMissingFields);
+              console.error('[CourseList] This indicates the dev GraphQL schema is outdated.');
+              console.error('[CourseList] Solution: Deploy the latest schema to dev environment.');
+              console.error('[CourseList] Missing fields:', stillMissingFields);
+            }
+          }
+          setCourses(successfulCourses);
+        }
       } else {
         console.log('No course data in result');
         setCourses([]);
