@@ -48,6 +48,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import Loader from '../common/Loader';
+import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
 
 const MySwal = withReactContent(Swal);
 const client = generateClient<Schema>();
@@ -721,6 +722,34 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
         icon: 'success',
         timer: 5000,
       });
+
+      // Log activity for each employee assignment
+      try {
+        const userInfo = await getCurrentUserInfo();
+        for (const employee of selectedEmployees) {
+          await activityLogger.logActivity(
+            'LEARNING_PATH_ASSIGNED',
+            userInfo.userId,
+            userInfo.userName,
+            userInfo.userEmail,
+            `Assigned learning path "${selectedPath.title}" to employee "${employee.name}"`,
+            {
+              learningPathId: selectedPathId,
+              learningPathTitle: selectedPath.title,
+              employeeId: employee.id,
+              employeeName: employee.name,
+              employeeEmail: employee.email,
+              coursesCount: sortedCourses.length,
+              isSequential,
+              dueDate: dueDateISO || null,
+              storeId: selectedStoreId || undefined,
+            },
+            selectedStoreId || undefined
+          );
+        }
+      } catch (logError) {
+        console.error('[AssignLearningPath] Error logging activity:', logError);
+      }
 
       // Reset form
       setSelectedPathId('');

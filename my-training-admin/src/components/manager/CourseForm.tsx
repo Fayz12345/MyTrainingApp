@@ -5,6 +5,7 @@ import { uploadData, remove, getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
+import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
 const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
@@ -803,6 +804,34 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           timer: 1500,
           showConfirmButton: false,
         });
+
+        // Log activity
+        try {
+          const userInfo = await getCurrentUserInfo();
+          await activityLogger.logActivity(
+            'COURSE_UPDATED',
+            userInfo.userId,
+            userInfo.userName,
+            userInfo.userEmail,
+            `Updated course: ${title}`,
+            {
+              courseId: course.id,
+              courseTitle: title,
+              description: description || null,
+              contentType: finalContentType,
+              passingScore,
+              duration: duration || null,
+              category: category || null,
+              hasVideo: !!resolvedVideoKey,
+              hasImage: !!resolvedImageKey,
+              hasPdf: !!resolvedPdfKey,
+              quizQuestionsCount: validQuestions.length,
+            }
+          );
+        } catch (logError) {
+          console.error('[CourseForm] Error logging activity:', logError);
+        }
+
         onSuccess?.();
         return;
       }
@@ -861,6 +890,34 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
           timer: 1500,
           showConfirmButton: false,
         });
+
+        // Log activity
+        try {
+          const userInfo = await getCurrentUserInfo();
+          const courseData = courseResult.data as any;
+          await activityLogger.logActivity(
+            'COURSE_CREATED',
+            userInfo.userId,
+            userInfo.userName,
+            userInfo.userEmail,
+            `Created course: ${title}`,
+            {
+              courseId: courseData.id,
+              courseTitle: title,
+              description: description || null,
+              contentType: finalContentType,
+              passingScore,
+              duration: duration || null,
+              category: category || null,
+              hasVideo: !!resolvedVideoKey,
+              hasImage: !!resolvedImageKey,
+              hasPdf: !!resolvedPdfKey,
+              quizQuestionsCount: validQuestions.length,
+            }
+          );
+        } catch (logError) {
+          console.error('[CourseForm] Error logging activity:', logError);
+        }
 
         // Reset form
         setTitle('');

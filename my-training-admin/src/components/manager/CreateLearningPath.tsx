@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
+import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
 import {
   Box,
   Card,
@@ -245,6 +246,34 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
         timer: 2000,
         showConfirmButton: false,
       });
+
+      // Log activity
+      try {
+        const userInfo = await getCurrentUserInfo();
+        await activityLogger.logActivity(
+          'LEARNING_PATH_CREATED',
+          userInfo.userId,
+          userInfo.userName,
+          userInfo.userEmail,
+          `Created learning path: ${title} (${publish ? 'published' : 'draft'})`,
+          {
+            learningPathId,
+            learningPathTitle: title,
+            description: description || null,
+            isSequential,
+            status: publish ? 'published' : 'draft',
+            coursesCount: selectedCourses.length,
+            courses: selectedCourses.map(sc => ({
+              courseId: sc.courseId,
+              courseTitle: sc.course.title,
+              order: sc.order,
+              isRequired: sc.isRequired,
+            })),
+          }
+        );
+      } catch (logError) {
+        console.error('[CreateLearningPath] Error logging activity:', logError);
+      }
 
       if (onSuccess) {
         onSuccess();

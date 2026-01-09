@@ -4,6 +4,7 @@ import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
 import Loader from '../common/Loader';
+import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
 const MySwal = withReactContent(Swal);
 
 const client = generateClient<Schema>();
@@ -196,6 +197,31 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
         timer: 2000,
         showConfirmButton: false,
       });
+
+      // Log activity for each course assignment
+      try {
+        const userInfo = await getCurrentUserInfo();
+        for (const course of selectedCourses) {
+          await activityLogger.logActivity(
+            'COURSE_ASSIGNED',
+            userInfo.userId,
+            userInfo.userName,
+            userInfo.userEmail,
+            `Assigned course "${course.title}" to employee "${selectedEmployee?.name}"`,
+            {
+              employeeId: selectedEmployeeId,
+              employeeName: selectedEmployee?.name || 'Unknown',
+              employeeEmail: selectedEmployee?.email || 'Unknown',
+              courseId: course.id,
+              courseTitle: course.title,
+              storeId: selectedStoreId || undefined,
+            },
+            selectedStoreId || undefined
+          );
+        }
+      } catch (logError) {
+        console.error('[AssignmentForm] Error logging activity:', logError);
+      }
       
       // Reset form
       setSelectedEmployeeId('');

@@ -17,6 +17,9 @@ export const storage = defineStorage({
         'courses/pdfs/*': [
             allow.groups(['Managers']).to(['read', 'write', 'delete']),
             allow.groups(['Employees']).to(['read'])
+        ],
+        'log/*': [
+            allow.groups(['Managers']).to(['read', 'write', 'delete'])
         ]
     })
 });
