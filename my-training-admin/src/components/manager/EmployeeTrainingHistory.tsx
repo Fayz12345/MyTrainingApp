@@ -80,6 +80,7 @@ interface Result {
   assignmentId: string;
   score: number;
   passed: boolean;
+  answers?: number[] | null; // Array of answer indices (0-based) for each question
   createdAt: string;
 }
 
@@ -131,7 +132,9 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [allAssignments, setAllAssignments] = useState<Assignment[]>([]); // Store all assignments including learning path ones
   const [pathAssignments, setPathAssignments] = useState<LearningPathAssignment[]>([]);
+  const [learningPathCourses, setLearningPathCourses] = useState<Map<string, { courseId: string; order: number; course?: { id: string; title: string } }[]>>(new Map());
   const [results, setResults] = useState<Result[]>([]);
   const [quizDetails, setQuizDetails] = useState<Map<string, QuizQuestion[]>>(new Map());
   const [selectedQuiz, setSelectedQuiz] = useState<{ assignmentId: string; result: Result } | null>(null);
@@ -140,6 +143,7 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
   const [showNoteDialog, setShowNoteDialog] = useState(false);
   const [selectedAssignmentForNote, setSelectedAssignmentForNote] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list');
+  const [expandedPathId, setExpandedPathId] = useState<string | null>(null);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -153,8 +157,42 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
       setLoading(true);
       setError(null);
 
-      // Fetch employee
-      const employeeResponse = await client.models.Employee.get({ id: employeeId });
+      // Helper function to fetch all pages
+      const fetchAllPages = async <T,>(
+        fetchFn: (nextToken?: string) => Promise<any>,
+        mapFn: (item: any) => T
+      ): Promise<T[]> => {
+        const allData: T[] = [];
+        let nextToken: string | undefined = undefined;
+        do {
+          const response: { data?: any[]; nextToken?: string } = await fetchFn(nextToken);
+          const items = (response.data || []).map(mapFn).filter((item: T) => item !== null && item !== undefined);
+          allData.push(...items);
+          nextToken = response.nextToken;
+        } while (nextToken);
+        return allData;
+      };
+
+      // Fetch all independent data in parallel
+      const [employeeResponse, assignmentsResponse, pathAssignmentsResponse] = await Promise.all([
+        client.models.Employee.get({ id: employeeId }),
+        fetchAllPages(
+          (nextToken) => client.models.Assignment.list({
+            filter: { employeeId: { eq: employeeId } },
+            nextToken,
+          }),
+          (a: any) => a
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.LearningPathAssignment.list({
+            filter: { employeeId: { eq: employeeId } },
+            nextToken,
+          }),
+          (p: any) => p
+        ),
+      ]);
+
+      // Set employee data
       if (!employeeResponse.data || !employeeResponse.data.id) {
         throw new Error('Employee not found');
       }
@@ -166,16 +204,16 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
         createdAt: employeeResponse.data.createdAt,
       });
 
-      // Fetch assignments
-      const assignmentsResponse = await client.models.Assignment.list({
-        filter: { employeeId: { eq: employeeId } },
-      });
+      // Process assignments - fetch courses in parallel
+      const assignmentsList = assignmentsResponse.filter((a: any) => a.id);
+      const coursePromises = assignmentsList.map((a: any) => 
+        a.course ? a.course() : Promise.resolve(null)
+      );
+      const courseResults = await Promise.all(coursePromises);
 
-      const assignmentsData: Assignment[] = [];
-      for (const a of assignmentsResponse.data || []) {
-        if (!a.id) continue;
-        const course = a.course ? await a.course() : null;
-        assignmentsData.push({
+      const assignmentsData: Assignment[] = assignmentsList.map((a: any, index: number) => {
+        const course = courseResults[index];
+        return {
           id: a.id,
           employeeId: a.employeeId,
           courseId: a.courseId,
@@ -193,38 +231,20 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                 passingScore: course.data.passingScore,
               }
             : null,
-        });
-
-        // Fetch quiz questions for this course
-        if (course?.data?.id) {
-          const questionsResponse = await client.models.QuizQuestion.list({
-            filter: { courseId: { eq: course.data.id } },
-          });
-          const questions: QuizQuestion[] = (questionsResponse.data || [])
-            .filter((q: any) => q.id !== null)
-            .map((q: any) => ({
-              id: q.id!,
-              question: q.question,
-              questionType: q.questionType || 'multiple_choice',
-              options: (q.options || []).filter((opt: any): opt is string => opt !== null && opt !== undefined),
-              correctAnswer: q.correctAnswer,
-              correctAnswerText: q.correctAnswerText,
-            }));
-          setQuizDetails((prev) => new Map(prev).set(a.id!, questions));
-        }
-      }
+        };
+      });
       setAssignments(assignmentsData);
 
-      // Fetch learning path assignments
-      const pathAssignmentsResponse = await client.models.LearningPathAssignment.list({
-        filter: { employeeId: { eq: employeeId } },
-      });
+      // Process learning path assignments - fetch learning paths in parallel
+      const pathAssignmentsList = pathAssignmentsResponse.filter((p: any) => p.id);
+      const learningPathPromises = pathAssignmentsList.map((p: any) =>
+        p.learningPath ? p.learningPath() : Promise.resolve(null)
+      );
+      const learningPathResults = await Promise.all(learningPathPromises);
 
-      const pathAssignmentsData: LearningPathAssignment[] = [];
-      for (const p of pathAssignmentsResponse.data || []) {
-        if (!p.id) continue;
-        const learningPath = p.learningPath ? await p.learningPath() : null;
-        pathAssignmentsData.push({
+      const pathAssignmentsData: LearningPathAssignment[] = pathAssignmentsList.map((p: any, index: number) => {
+        const learningPath = learningPathResults[index];
+        return {
           id: p.id,
           employeeId: p.employeeId,
           learningPathId: p.learningPathId,
@@ -237,35 +257,99 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
           learningPath: learningPath?.data
             ? { id: learningPath.data.id || '', title: learningPath.data.title || '' }
             : null,
-        });
-      }
+        };
+      });
       setPathAssignments(pathAssignmentsData);
 
-      // Fetch all results
-      const allResults: Result[] = [];
-      for (const assignment of assignmentsData) {
-        const resultsResponse = await client.models.Result.list({
-          filter: { assignmentId: { eq: assignment.id } },
-        });
-        for (const r of resultsResponse.data || []) {
-          if (r.id) {
-            allResults.push({
-              id: r.id,
-              assignmentId: r.assignmentId,
-              score: r.score,
-              passed: r.passed,
-              createdAt: r.createdAt,
-            });
-          }
+      // Fetch all LearningPathCourse records for the assigned learning paths to identify which courses belong to learning paths
+      const learningPathIds = pathAssignmentsData.map((p) => p.learningPathId).filter((id): id is string => !!id);
+      const learningPathCoursePromises = learningPathIds.map((learningPathId) =>
+        fetchAllPages(
+          (nextToken) => client.models.LearningPathCourse.list({
+            filter: { learningPathId: { eq: learningPathId } },
+            nextToken,
+          }),
+          (lpc: any) => lpc.id ? {
+            learningPathId: lpc.learningPathId,
+            courseId: lpc.courseId,
+            order: lpc.order || 0,
+          } : null
+        )
+      );
+      const learningPathCourseArrays = await Promise.all(learningPathCoursePromises);
+      const allLearningPathCourseRecords = learningPathCourseArrays.flat().filter((lpc): lpc is { learningPathId: string; courseId: string; order: number } => lpc !== null);
+      
+      // Create a set of courseIds that belong to learning paths
+      const learningPathCourseIds = new Set<string>(allLearningPathCourseRecords.map((lpc) => lpc.courseId));
+
+      // Store all assignments (we'll need them to show courses in learning paths)
+      setAllAssignments(assignmentsData);
+
+      // Filter out assignments that belong to learning paths from the standalone assignments
+      const standaloneAssignments = assignmentsData.filter((assignment) => 
+        !learningPathCourseIds.has(assignment.courseId)
+      );
+      setAssignments(standaloneAssignments);
+
+      // Organize learning path courses by learningPathId with order
+      const finalPathCoursesMap = new Map<string, { courseId: string; order: number; course?: { id: string; title: string } }[]>();
+      for (const lpcRecord of allLearningPathCourseRecords) {
+        if (!lpcRecord) continue;
+        if (!finalPathCoursesMap.has(lpcRecord.learningPathId)) {
+          finalPathCoursesMap.set(lpcRecord.learningPathId, []);
         }
+        const course = assignmentsData.find((a) => a.courseId === lpcRecord.courseId)?.course;
+        finalPathCoursesMap.get(lpcRecord.learningPathId)!.push({
+          courseId: lpcRecord.courseId,
+          order: lpcRecord.order,
+          course: course ? { id: course.id, title: course.title } : undefined,
+        });
       }
+
+      // Sort courses by order within each learning path
+      finalPathCoursesMap.forEach((courses) => {
+        courses.sort((a: { courseId: string; order: number; course?: { id: string; title: string } }, b: { courseId: string; order: number; course?: { id: string; title: string } }) => a.order - b.order);
+      });
+      setLearningPathCourses(finalPathCoursesMap);
+
+      // Fetch all results in parallel for all assignments with pagination (use allAssignments, not filtered ones)
+      const assignmentIds = assignmentsData.map((a) => a.id);
+      const resultPromises = assignmentIds.map((assignmentId) =>
+        fetchAllPages(
+          (nextToken) => client.models.Result.list({
+            filter: { assignmentId: { eq: assignmentId } },
+            nextToken,
+          }),
+          (r: any): Result | null => r.id ? {
+            id: r.id,
+            assignmentId: assignmentId,
+            score: r.score,
+            passed: r.passed,
+            answers: r.answers || null,
+            createdAt: r.createdAt,
+          } : null
+        )
+      );
+      const resultArrays = await Promise.all(resultPromises);
+      const allResults: Result[] = resultArrays.flat().filter((r): r is Result => r !== null);
       setResults(allResults);
 
       // Load notes from localStorage (simple implementation)
       const savedNotes = localStorage.getItem(`employee_notes_${employeeId}`);
       if (savedNotes) {
-        setNotes(JSON.parse(savedNotes));
+        try {
+          const parsedNotes = JSON.parse(savedNotes);
+          setNotes(Array.isArray(parsedNotes) ? parsedNotes : []);
+        } catch (err) {
+          console.error('Error parsing notes from localStorage:', err);
+          setNotes([]);
+        }
+      } else {
+        setNotes([]);
       }
+
+      // Note: Quiz questions are now loaded lazily when viewing quiz details
+      // This significantly improves initial load time
     } catch (err) {
       console.error('Error fetching employee training history:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch training history');
@@ -331,13 +415,41 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
     return { label: 'Not Started', color: 'default' as const };
   };
 
-  const handleViewQuiz = (assignmentId: string) => {
+  const handleViewQuiz = async (assignmentId: string) => {
     const assignmentResults = getAssignmentResults(assignmentId);
     if (assignmentResults.length > 0) {
       // Get the most recent result
       const mostRecent = assignmentResults.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )[0];
+      
+      // Load quiz questions lazily if not already loaded
+      if (!quizDetails.has(assignmentId)) {
+        // Check both assignments and allAssignments (for learning path courses)
+        const assignment = assignments.find((a) => a.id === assignmentId) || 
+                          allAssignments.find((a) => a.id === assignmentId);
+        if (assignment?.course?.id) {
+          try {
+            const questionsResponse = await client.models.QuizQuestion.list({
+              filter: { courseId: { eq: assignment.course.id } },
+            });
+            const questions: QuizQuestion[] = (questionsResponse.data || [])
+              .filter((q: any) => q.id !== null)
+              .map((q: any) => ({
+                id: q.id!,
+                question: q.question,
+                questionType: q.questionType || 'multiple_choice',
+                options: (q.options || []).filter((opt: any): opt is string => opt !== null && opt !== undefined),
+                correctAnswer: q.correctAnswer,
+                correctAnswerText: q.correctAnswerText,
+              }));
+            setQuizDetails((prev) => new Map(prev).set(assignmentId, questions));
+          } catch (err) {
+            console.error('Error loading quiz questions:', err);
+          }
+        }
+      }
+      
       setSelectedQuiz({ assignmentId, result: mostRecent });
     }
   };
@@ -646,7 +758,12 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                             <TableCell>{assignment.course?.title || 'Unknown Course'}</TableCell>
                             <TableCell>{formatDate(assignment.createdAt)}</TableCell>
                             <TableCell>{formatDate(startedDate)}</TableCell>
-                            <TableCell>{formatDate(assignment.trainingCompletedAt)}</TableCell>
+                            <TableCell>
+                              {formatDate(
+                                assignment.trainingCompletedAt || 
+                                (latestResult && assignment.isTrainingComplete ? latestResult.createdAt : null)
+                              )}
+                            </TableCell>
                             <TableCell>
                               <Chip label={status.label} color={status.color} size="small" />
                             </TableCell>
@@ -711,6 +828,7 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                   <Table>
                     <TableHead>
                       <TableRow>
+                        <TableCell width="50px"></TableCell>
                         <TableCell>Learning Path</TableCell>
                         <TableCell>Assigned Date</TableCell>
                         <TableCell>Due Date</TableCell>
@@ -719,41 +837,169 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {pathAssignments.map((pathAssignment) => (
-                        <TableRow key={pathAssignment.id}>
-                          <TableCell>
-                            {pathAssignment.learningPath?.title || 'Unknown Path'}
-                          </TableCell>
-                          <TableCell>{formatDate(pathAssignment.assignedDate)}</TableCell>
-                          <TableCell>
-                            <Typography
-                              color={
-                                pathAssignment.dueDate &&
-                                new Date(pathAssignment.dueDate) < new Date() &&
-                                pathAssignment.status !== 'completed'
-                                  ? 'error'
-                                  : 'text.primary'
-                              }
-                            >
-                              {formatDate(pathAssignment.dueDate)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>{formatDate(pathAssignment.completedDate)}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={pathAssignment.status || 'Not Started'}
-                              color={
-                                pathAssignment.status === 'completed'
-                                  ? 'success'
-                                  : pathAssignment.status === 'in_progress'
-                                  ? 'warning'
-                                  : 'default'
-                              }
-                              size="small"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {pathAssignments.map((pathAssignment) => {
+                        const pathCourses = learningPathCourses.get(pathAssignment.learningPathId) || [];
+                        const isExpanded = expandedPathId === pathAssignment.id;
+                        const pathCourseAssignments = pathCourses.map((pc) => {
+                          const assignment = allAssignments.find((a) => a.courseId === pc.courseId);
+                          return { ...pc, assignment };
+                        }).filter((pca) => pca.assignment);
+
+                        return (
+                          <React.Fragment key={pathAssignment.id}>
+                            <TableRow>
+                              <TableCell>
+                                {pathCourseAssignments.length > 0 && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => setExpandedPathId(isExpanded ? null : pathAssignment.id)}
+                                  >
+                                    <ExpandMoreIcon
+                                      sx={{
+                                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                        transition: 'transform 0.3s',
+                                      }}
+                                    />
+                                  </IconButton>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {pathAssignment.learningPath?.title || 'Unknown Path'}
+                                {pathCourseAssignments.length > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                                    ({pathCourseAssignments.length} courses)
+                                  </Typography>
+                                )}
+                              </TableCell>
+                              <TableCell>{formatDate(pathAssignment.assignedDate)}</TableCell>
+                              <TableCell>
+                                <Typography
+                                  color={
+                                    pathAssignment.dueDate &&
+                                    new Date(pathAssignment.dueDate) < new Date() &&
+                                    pathAssignment.status !== 'completed'
+                                      ? 'error'
+                                      : 'text.primary'
+                                  }
+                                >
+                                  {formatDate(pathAssignment.dueDate)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>{formatDate(pathAssignment.completedDate)}</TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={pathAssignment.status || 'Not Started'}
+                                  color={
+                                    pathAssignment.status === 'completed'
+                                      ? 'success'
+                                      : pathAssignment.status === 'in_progress'
+                                      ? 'warning'
+                                      : 'default'
+                                  }
+                                  size="small"
+                                />
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && pathCourseAssignments.length > 0 && (
+                              <TableRow>
+                                <TableCell colSpan={6} sx={{ py: 2, backgroundColor: 'grey.50' }}>
+                                  <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>
+                                    Courses in this Learning Path:
+                                  </Typography>
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell>Course Name</TableCell>
+                                        <TableCell>Assigned Date</TableCell>
+                                        <TableCell>Started Date</TableCell>
+                                        <TableCell>Completed Date</TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell>Quiz Score</TableCell>
+                                        <TableCell>Attempts</TableCell>
+                                        <TableCell>Actions</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {pathCourseAssignments.map((pca) => {
+                                        const assignment = pca.assignment!;
+                                        const assignmentResults = getAssignmentResults(assignment.id);
+                                        const latestResult = assignmentResults.length > 0
+                                          ? assignmentResults.sort(
+                                              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                                            )[0]
+                                          : null;
+                                        const status = getAssignmentStatus(assignment);
+                                        const startedDate = assignmentResults.length > 0
+                                          ? assignmentResults.sort(
+                                              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                                            )[0].createdAt
+                                          : null;
+
+                                        return (
+                                          <TableRow key={assignment.id}>
+                                            <TableCell>{assignment.course?.title || 'Unknown Course'}</TableCell>
+                                            <TableCell>{formatDate(assignment.createdAt)}</TableCell>
+                                            <TableCell>{formatDate(startedDate)}</TableCell>
+                                            <TableCell>
+                                              {formatDate(
+                                                assignment.trainingCompletedAt || 
+                                                (latestResult && assignment.isTrainingComplete ? latestResult.createdAt : null)
+                                              )}
+                                            </TableCell>
+                                            <TableCell>
+                                              <Chip label={status.label} color={status.color} size="small" />
+                                            </TableCell>
+                                            <TableCell>
+                                              {latestResult ? (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                  <Typography variant="body2">
+                                                    {latestResult.score}%
+                                                  </Typography>
+                                                  {latestResult.passed ? (
+                                                    <CheckCircleIcon color="success" fontSize="small" />
+                                                  ) : (
+                                                    <CancelIcon color="error" fontSize="small" />
+                                                  )}
+                                                </Box>
+                                              ) : (
+                                                'N/A'
+                                              )}
+                                            </TableCell>
+                                            <TableCell>{assignmentResults.length}</TableCell>
+                                            <TableCell>
+                                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                                {assignmentResults.length > 0 && (
+                                                  <IconButton
+                                                    size="small"
+                                                    onClick={() => handleViewQuiz(assignment.id)}
+                                                    title="View Quiz Details"
+                                                  >
+                                                    <VisibilityIcon fontSize="small" />
+                                                  </IconButton>
+                                                )}
+                                                <IconButton
+                                                  size="small"
+                                                  onClick={() => {
+                                                    setSelectedAssignmentForNote(assignment.id);
+                                                    setShowNoteDialog(true);
+                                                  }}
+                                                  title="Add Note"
+                                                >
+                                                  <NoteAddIcon fontSize="small" />
+                                                </IconButton>
+                                              </Box>
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -762,22 +1008,35 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
           )}
 
           {/* Notes */}
-          {notes.filter((n) => assignments.some((a) => a.id === n.assignmentId)).length > 0 && (
+          {notes.filter((n) => {
+            // Check both standalone assignments and all assignments (including learning path courses)
+            return assignments.some((a) => a.id === n.assignmentId) || 
+                   allAssignments.some((a) => a.id === n.assignmentId);
+          }).length > 0 && (
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
                   Training Notes
                 </Typography>
                 {notes
-                  .filter((n) => assignments.some((a) => a.id === n.assignmentId))
+                  .filter((n) => {
+                    // Check both standalone assignments and all assignments (including learning path courses)
+                    return assignments.some((a) => a.id === n.assignmentId) || 
+                           allAssignments.some((a) => a.id === n.assignmentId);
+                  })
                   .map((note) => {
-                    const assignment = assignments.find((a) => a.id === note.assignmentId);
+                    // Try to find assignment in both arrays
+                    const assignment = assignments.find((a) => a.id === note.assignmentId) || 
+                                      allAssignments.find((a) => a.id === note.assignmentId);
                     return (
                       <Box key={note.id} sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
                         <Typography variant="subtitle2" gutterBottom>
                           {assignment?.course?.title || 'Unknown Course'} - {formatDate(note.createdAt)}
                         </Typography>
                         <Typography variant="body2">{note.note}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                          Added by: {note.createdBy}
+                        </Typography>
                       </Box>
                     );
                   })}
@@ -859,19 +1118,23 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
         {selectedQuiz && (
           <>
             <DialogTitle>
-              Quiz Details - {assignments.find((a) => a.id === selectedQuiz.assignmentId)?.course?.title || 'Unknown Course'}
+              Quiz Details - {(assignments.find((a) => a.id === selectedQuiz.assignmentId) || 
+                              allAssignments.find((a) => a.id === selectedQuiz.assignmentId))?.course?.title || 'Unknown Course'}
             </DialogTitle>
             <DialogContent>
               <Box sx={{ mb: 2 }}>
                 <Typography variant="subtitle1">Quiz Result</Typography>
-                <Typography variant="body2">
-                  Score: {selectedQuiz.result.score}% |{' '}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                  <Typography variant="body2" component="span">
+                    Score: {selectedQuiz.result.score}%
+                  </Typography>
+                  <Typography variant="body2" component="span">|</Typography>
                   {selectedQuiz.result.passed ? (
                     <Chip label="Passed" color="success" size="small" />
                   ) : (
                     <Chip label="Failed" color="error" size="small" />
                   )}
-                </Typography>
+                </Box>
                 <Typography variant="body2" color="text.secondary">
                   Attempted: {formatDate(selectedQuiz.result.createdAt)}
                 </Typography>
@@ -880,45 +1143,107 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
               <Typography variant="subtitle1" gutterBottom>
                 Questions
               </Typography>
-              {quizDetails.get(selectedQuiz.assignmentId)?.map((question, qIndex) => (
-                <Accordion key={question.id} sx={{ mt: 1 }}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Typography>
-                      {qIndex + 1}. {question.question}
-                    </Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    {question.questionType === 'multiple_choice' || question.questionType === 'true_false' ? (
-                      <>
-                        <Typography variant="body2" gutterBottom>
-                          Options:
+              {quizDetails.get(selectedQuiz.assignmentId)?.map((question, qIndex) => {
+                const employeeAnswer = selectedQuiz.result.answers && selectedQuiz.result.answers.length > qIndex 
+                  ? selectedQuiz.result.answers[qIndex] 
+                  : null;
+                const isCorrect = employeeAnswer !== null && employeeAnswer === question.correctAnswer;
+                
+                return (
+                  <Accordion key={question.id} sx={{ mt: 1 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                        <Typography>
+                          {qIndex + 1}. {question.question}
                         </Typography>
-                        {question.options.map((option, oIndex) => (
-                          <Typography
-                            key={oIndex}
-                            variant="body2"
-                            sx={{
-                              pl: 2,
-                              color: oIndex === question.correctAnswer ? 'success.main' : 'text.primary',
-                              fontWeight: oIndex === question.correctAnswer ? 'bold' : 'normal',
-                            }}
-                          >
-                            {String.fromCharCode(65 + oIndex)}. {option}
-                            {oIndex === question.correctAnswer && ' ✓'}
+                        {employeeAnswer !== null && (
+                          <Chip
+                            label={isCorrect ? 'Correct' : 'Incorrect'}
+                            color={isCorrect ? 'success' : 'error'}
+                            size="small"
+                            sx={{ ml: 'auto' }}
+                          />
+                        )}
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      {question.questionType === 'multiple_choice' || question.questionType === 'true_false' ? (
+                        <>
+                          <Typography variant="body2" gutterBottom>
+                            Options:
                           </Typography>
-                        ))}
-                      </>
-                    ) : (
-                      <Typography variant="body2">
-                        Correct Answer: {question.correctAnswerText || 'N/A'}
-                      </Typography>
-                    )}
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
-                      Note: Individual employee answers are not currently stored. This shows the quiz questions and correct answers.
-                    </Typography>
-                  </AccordionDetails>
-                </Accordion>
-              ))}
+                          {question.options.map((option, oIndex) => {
+                            const isEmployeeAnswer = employeeAnswer === oIndex;
+                            const isCorrectAnswer = oIndex === question.correctAnswer;
+                            
+                            return (
+                              <Box
+                                key={oIndex}
+                                sx={{
+                                  pl: 2,
+                                  py: 0.5,
+                                  mb: 0.5,
+                                  borderRadius: 1,
+                                  backgroundColor: isEmployeeAnswer 
+                                    ? (isCorrectAnswer ? 'success.light' : 'error.light')
+                                    : isCorrectAnswer 
+                                    ? 'success.light'
+                                    : 'transparent',
+                                }}
+                              >
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: isCorrectAnswer ? 'success.main' : 'text.primary',
+                                    fontWeight: (isCorrectAnswer || isEmployeeAnswer) ? 'bold' : 'normal',
+                                  }}
+                                >
+                                  {String.fromCharCode(65 + oIndex)}. {option}
+                                  {isCorrectAnswer && ' ✓ (Correct Answer)'}
+                                  {isEmployeeAnswer && !isCorrectAnswer && ' ✗ (Your Answer)'}
+                                  {isEmployeeAnswer && isCorrectAnswer && ' ✓ (Your Answer)'}
+                                </Typography>
+                              </Box>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <Typography variant="body2" gutterBottom>
+                            Correct Answer:
+                          </Typography>
+                          <Typography variant="body2" sx={{ pl: 2, color: 'success.main', fontWeight: 'bold' }}>
+                            {question.correctAnswerText || 'N/A'}
+                          </Typography>
+                          {employeeAnswer !== null && (
+                            <>
+                              <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+                                Employee Answer:
+                              </Typography>
+                              <Typography 
+                                variant="body2" 
+                                sx={{ 
+                                  pl: 2, 
+                                  color: isCorrect ? 'success.main' : 'error.main',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                {question.options[employeeAnswer] || 'N/A'}
+                                {isCorrect ? ' ✓' : ' ✗'}
+                              </Typography>
+                            </>
+                          )}
+                        </>
+                      )}
+                      {employeeAnswer === null && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+                          No answer recorded for this question.
+                        </Typography>
+                      )}
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedQuiz(null)}>Close</Button>

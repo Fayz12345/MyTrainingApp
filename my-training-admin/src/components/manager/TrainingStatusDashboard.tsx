@@ -101,7 +101,11 @@ interface SummaryStats {
   employeesOverdue: number;
 }
 
-const TrainingStatusDashboard: React.FC = () => {
+interface TrainingStatusDashboardProps {
+  selectedStoreId?: string | null;
+}
+
+const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selectedStoreId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmployeeTrainingStatus[]>([]);
@@ -163,6 +167,7 @@ const TrainingStatusDashboard: React.FC = () => {
             email: e.email,
             department: e.department,
             isActive: e.isActive ?? true,
+            storeId: e.storeId,
           })
         ),
         // Fetch courses with pagination
@@ -265,11 +270,17 @@ const TrainingStatusDashboard: React.FC = () => {
         });
       });
 
+      // Filter employees by store if selectedStoreId is provided
+      let filteredEmployeesData = employeesData;
+      if (selectedStoreId) {
+        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
       // Process each employee
       const employeeStatuses: EmployeeTrainingStatus[] = [];
       const now = new Date();
 
-      for (const employee of employeesData) {
+      for (const employee of filteredEmployeesData) {
         const assignments = assignmentsByEmployee.get(employee.id) || [];
         const pathAssignments = pathAssignmentsByEmployee.get(employee.id) || [];
 
@@ -369,7 +380,7 @@ const TrainingStatusDashboard: React.FC = () => {
 
       // Calculate summary statistics
       const stats: SummaryStats = {
-        totalEmployees: employeesData.length,
+        totalEmployees: filteredEmployeesData.length,
         employeesWithAssignments: employeeStatuses.filter((e) => e.assignedCount > 0).length,
         employeesStarted: employeeStatuses.filter(
           (e) => e.inProgressCount > 0 || e.completedCount > 0
@@ -388,7 +399,7 @@ const TrainingStatusDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedStoreId]);
 
   useEffect(() => {
     fetchData();

@@ -184,6 +184,7 @@ const schema = a.schema({
       assignmentId: a.id().required(),
       score: a.integer().required(),
       passed: a.boolean().required(),
+      answers: a.integer().array(), // Array of answer indices (0-based) for each question in order
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

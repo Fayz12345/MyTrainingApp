@@ -125,7 +125,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStoreId]);
 
   const fetchData = async () => {
     try {
@@ -164,6 +164,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
             name: e.name,
             email: e.email,
             department: e.department,
+            storeId: e.storeId,
           })
         ),
         // Fetch courses with pagination
@@ -212,12 +213,21 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         ),
       ]);
 
-      // Create lookup maps for O(1) access
-      const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
+      // Filter employees by store if selectedStoreId is provided
+      let filteredEmployeesData = employeesData;
+      if (selectedStoreId) {
+        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
+      // Create lookup maps for O(1) access (using filtered employees)
+      const employeeMap = new Map(filteredEmployeesData.map((e: any) => [e.id, e]));
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
 
-      // Process assignments with lookup maps
-      const assignmentsData: Assignment[] = allAssignmentsData.map((a: any) => ({
+      // Process assignments with lookup maps (only for filtered employees)
+      const filteredEmployeeIds = new Set(filteredEmployeesData.map((e: any) => e.id));
+      const assignmentsData: Assignment[] = allAssignmentsData
+        .filter((a: any) => filteredEmployeeIds.has(a.employeeId))
+        .map((a: any) => ({
         id: a.id,
         employeeId: a.employeeId,
         courseId: a.courseId,
@@ -228,7 +238,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         updatedAt: a.updatedAt,
         employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
         course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
-      }));
+        }));
 
       setAssignments(assignmentsData);
       setResults(resultsData);

@@ -112,7 +112,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
     fetchData();
     loadSettings();
     loadBadges();
-  }, []);
+  }, [selectedStoreId]);
 
   const fetchData = async () => {
     try {
@@ -151,6 +151,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
             name: e.name,
             email: e.email,
             department: e.department,
+            storeId: e.storeId,
           })
         ),
         // Fetch courses with pagination
@@ -198,12 +199,21 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
         ),
       ]);
 
-      // Create lookup maps for O(1) access
-      const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
+      // Filter employees by store if selectedStoreId is provided
+      let filteredEmployeesData = employeesData;
+      if (selectedStoreId) {
+        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
+      // Create lookup maps for O(1) access (using filtered employees)
+      const employeeMap = new Map(filteredEmployeesData.map((e: any) => [e.id, e]));
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
 
-      // Process assignments with lookup maps
-      const assignmentsData: any[] = allAssignmentsData.map((a: any) => ({
+      // Process assignments with lookup maps (only for filtered employees)
+      const filteredEmployeeIds = new Set(filteredEmployeesData.map((e: any) => e.id));
+      const assignmentsData: any[] = allAssignmentsData
+        .filter((a: any) => filteredEmployeeIds.has(a.employeeId)) // Filter assignments by employee IDs from the selected store
+        .map((a: any) => ({
         id: a.id,
         employeeId: a.employeeId,
         courseId: a.courseId,
@@ -216,9 +226,15 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
         course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
       }));
 
+      // Filter results to only include those for filtered employees
+      const filteredResultsData = resultsData.filter((r: any) => {
+        const assignment = assignmentsData.find((a: any) => a.id === r.assignmentId);
+        return assignment !== undefined;
+      });
+
       setAssignments(assignmentsData);
-      setResults(resultsData);
-      setEmployees(employeesData);
+      setResults(filteredResultsData);
+      setEmployees(filteredEmployeesData);
       setCourses(coursesData);
 
       // Generate badges after data is loaded

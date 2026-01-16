@@ -45,6 +45,37 @@ interface QuizAnalyticsProps {
   selectedStoreId?: string | null;
 }
 
+// Helper function to truncate course names
+const truncateCourseName = (name: string, maxLength: number = 20): string => {
+  if (name.length <= maxLength) return name;
+  return name.substring(0, maxLength) + '...';
+};
+
+// Custom Tooltip component to show full course name on hover
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    // Find the full course title from the payload data
+    const fullCourseTitle = payload[0]?.payload?.courseTitle || label;
+    return (
+      <div style={{
+        backgroundColor: 'white',
+        border: '1px solid #ccc',
+        borderRadius: '4px',
+        padding: '10px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+      }}>
+        <p style={{ margin: 0, fontWeight: 'bold', marginBottom: '5px' }}>{fullCourseTitle}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={index} style={{ margin: 0, color: entry.color }}>
+            {`${entry.name}: ${entry.value}${entry.name.includes('%') || entry.name.includes('Rate') ? '%' : ''}`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 interface Result {
   id: string;
   assignmentId: string;
@@ -125,7 +156,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStoreId]);
 
   const fetchData = async () => {
     try {
@@ -192,6 +223,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
             id: e.id!,
             name: e.name,
             department: e.department,
+            storeId: e.storeId,
           })
         ),
         // Fetch quiz questions with pagination
@@ -212,16 +244,23 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
         ),
       ]);
 
-      setResults(resultsData);
+      // Filter employees by store if selectedStoreId is provided
+      let filteredEmployeesData = employeesData;
+      if (selectedStoreId) {
+        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
       setCourses(coursesData);
-      setEmployees(employeesData);
+      setEmployees(filteredEmployeesData);
       setQuestions(questionsData);
 
-      // Create lookup maps for faster access
-      const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
+      // Create lookup maps for faster access (using filtered employees)
+      const employeeMap = new Map(filteredEmployeesData.map((e: any) => [e.id, e]));
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
 
       // Fetch assignments with pagination and use lookup maps
+      // Only process assignments for filtered employees
+      const filteredEmployeeIds = new Set(filteredEmployeesData.map((e: any) => e.id));
       const assignmentsData: Assignment[] = [];
       let assignmentsNextToken: string | undefined = undefined;
       do {
@@ -231,7 +270,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
         });
 
         for (const a of assignmentsResponse.data || []) {
-          if (!a.id) continue;
+          if (!a.id || !filteredEmployeeIds.has(a.employeeId)) continue;
           const employee = employeeMap.get(a.employeeId);
           const course = courseMap.get(a.courseId);
           assignmentsData.push({
@@ -258,7 +297,13 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
         }
         assignmentsNextToken = assignmentsResponse.nextToken || undefined;
       } while (assignmentsNextToken);
+      
+      // Filter results to only include those for filtered employees
+      const filteredAssignmentIds = new Set(assignmentsData.map((a: any) => a.id));
+      const filteredResultsData = resultsData.filter((r: any) => filteredAssignmentIds.has(r.assignmentId));
+      
       setAssignments(assignmentsData);
+      setResults(filteredResultsData);
     } catch (err) {
       console.error('Error fetching quiz analytics:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch analytics data');
@@ -907,9 +952,15 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="courseTitle" angle={-45} textAnchor="end" height={100} />
+                    <XAxis 
+                      dataKey="courseTitle" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      tickFormatter={(value) => truncateCourseName(value, 15)}
+                    />
                     <YAxis domain={[0, 100]} />
-                    <Tooltip />
+                    <Tooltip content={<CustomTooltip />} />
                     <Legend />
                     <Bar dataKey="averageScore" fill={theme.palette.primary.main} name="Average Score (%)" />
                   </BarChart>
@@ -954,9 +1005,15 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="courseTitle" angle={-45} textAnchor="end" height={100} />
+                    <XAxis 
+                      dataKey="courseTitle" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      tickFormatter={(value) => truncateCourseName(value, 15)}
+                    />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip content={<CustomTooltip />} />
                     <Legend />
                     <Bar dataKey="totalAttempts" fill={theme.palette.info.main} name="Total Attempts" />
                   </BarChart>
@@ -977,9 +1034,15 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="courseTitle" angle={-45} textAnchor="end" height={100} />
+                    <XAxis 
+                      dataKey="courseTitle" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      tickFormatter={(value) => truncateCourseName(value, 15)}
+                    />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip content={<CustomTooltip />} />
                     <Legend />
                     <Bar dataKey="averageAttemptsPerEmployee" fill={theme.palette.secondary.main} name="Avg Attempts/Employee" />
                   </BarChart>
@@ -1149,9 +1212,15 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={courseAnalytics}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="courseTitle" angle={-45} textAnchor="end" height={100} />
+                <XAxis 
+                  dataKey="courseTitle" 
+                  angle={-45} 
+                  textAnchor="end" 
+                  height={100}
+                  tickFormatter={(value) => truncateCourseName(value, 15)}
+                />
                 <YAxis />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 <Bar dataKey="passRate" fill={theme.palette.success.main} name="Pass Rate (%)" />
               </BarChart>

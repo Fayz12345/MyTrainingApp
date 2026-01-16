@@ -75,9 +75,6 @@ type ViewMode =
   | 'assign-learning-path'
   | 'learning-path-progress'
   | 'training-status'
-  | 'employees-needing-support'
-  | 'training-reports'
-  | 'training-leaderboard'
   | 'quiz-analytics';
 
 type CourseSummary = {
@@ -224,7 +221,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
     { key: 'courses', label: 'Courses', icon: '📚' },
     { key: 'employees', label: 'Employees', icon: '👥' },
     { key: 'assignments', label: 'Assignments', icon: '📋' },
-    { key: 'analytics', label: 'Analytics', icon: '📈' }
+    { key: 'analytics', label: 'Analytics', icon: '📈' },
+    { key: 'training-status', label: 'Training Status Overview', icon: '📊' },
+    { key: 'quiz-analytics', label: 'Quiz Performance Analytics', icon: '📊' }
   ];
 
   const learningPathSubmenuItems = [
@@ -624,49 +623,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             >
               Back to Dashboard
             </Button>
-            <TrainingStatusDashboard />
-          </Box>
-        );
-
-      case 'employees-needing-support':
-        return (
-          <Box>
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => setCurrentView('dashboard')}
-              sx={{ mb: 2 }}
-            >
-              Back to Dashboard
-            </Button>
-            <EmployeesNeedingSupport selectedStoreId={selectedStoreId} />
-          </Box>
-        );
-
-      case 'training-reports':
-        return (
-          <Box>
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => setCurrentView('dashboard')}
-              sx={{ mb: 2 }}
-            >
-              Back to Dashboard
-            </Button>
-            <TrainingReports selectedStoreId={selectedStoreId} />
-          </Box>
-        );
-
-      case 'training-leaderboard':
-        return (
-          <Box>
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => setCurrentView('dashboard')}
-              sx={{ mb: 2 }}
-            >
-              Back to Dashboard
-            </Button>
-            <TrainingLeaderboard selectedStoreId={selectedStoreId} />
+            <TrainingStatusDashboard selectedStoreId={selectedStoreId} />
           </Box>
         );
 
@@ -706,7 +663,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'learning-paths', title: 'Learning Paths', description: 'Create and manage structured learning paths with multiple courses.', icon: '🛤️' },
                 { key: 'assign-learning-path', title: 'Assign Learning Path', description: 'Assign learning paths to employees for structured training.', icon: '🎯' },
                 { key: 'learning-path-progress', title: 'Track Learning Path Completion', description: 'Monitor and track employee progress on assigned learning paths.', icon: '📊' },
-                { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' }
+                { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' },
+                { key: 'training-status', title: 'Training Status Overview', description: 'View overall training status and completion rates.', icon: '📊' },
+                { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
@@ -1036,7 +995,17 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
       >
         {/* Show selected store info at top */}
         {selectedStoreName && (
-          <Box sx={{ p: 2, bgcolor: 'primary.light', color: 'white', display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          <Box sx={{ 
+            width: '100%', 
+            p: 2, 
+            bgcolor: 'primary.light', 
+            color: 'white', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1, 
+            flexShrink: 0,
+            boxSizing: 'border-box'
+          }}>
             <StoreIcon />
             <Typography variant="h6">Store: {selectedStoreName}</Typography>
             <Button

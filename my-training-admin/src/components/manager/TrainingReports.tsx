@@ -153,7 +153,7 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
   useEffect(() => {
     fetchData();
     loadReportHistory();
-  }, []);
+  }, [selectedStoreId]);
 
   const fetchData = async () => {
     try {
@@ -204,6 +204,7 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
             name: e.name,
             email: e.email,
             department: e.department,
+            storeId: e.storeId,
           })
         ),
         // Fetch courses
@@ -245,17 +246,25 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
         ),
       ]);
 
-      setEmployees(employeesData);
+      // Filter employees by store if selectedStoreId is provided
+      let filteredEmployeesData = employeesData;
+      if (selectedStoreId) {
+        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
+      setEmployees(filteredEmployeesData);
       setCourses(coursesData);
       setLearningPaths(learningPathsData);
       setResults(resultsData);
 
-      // Create lookup maps for faster access
-      const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
+      // Create lookup maps for faster access (using filtered employees)
+      const employeeMap = new Map(filteredEmployeesData.map((e: any) => [e.id, e]));
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
       const learningPathMap = new Map(learningPathsData.map((lp: any) => [lp.id, lp]));
 
       // Fetch assignments - handle pagination and use lookup maps
+      // Only process assignments for filtered employees
+      const filteredEmployeeIds = new Set(filteredEmployeesData.map((e: any) => e.id));
       const assignmentsData: Assignment[] = [];
       let assignmentsNextToken: string | undefined = undefined;
       do {
@@ -265,7 +274,7 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
         });
 
         for (const a of assignmentsResponse.data || []) {
-          if (!a.id) continue;
+          if (!a.id || !filteredEmployeeIds.has(a.employeeId)) continue;
           const employee = employeeMap.get(a.employeeId);
           const course = courseMap.get(a.courseId);
           assignmentsData.push({
@@ -298,6 +307,7 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
       setAssignments(assignmentsData);
 
       // Fetch learning path assignments - handle pagination and use lookup maps
+      // Only process path assignments for filtered employees
       const pathAssignmentsData: LearningPathAssignment[] = [];
       let pathAssignmentsNextToken: string | undefined = undefined;
       do {
@@ -306,7 +316,7 @@ const TrainingReports: React.FC<TrainingReportsProps> = ({ selectedStoreId }) =>
           nextToken: pathAssignmentsNextToken,
         });
         for (const p of pathAssignmentsResponse.data || []) {
-          if (!p.id) continue;
+          if (!p.id || !filteredEmployeeIds.has(p.employeeId)) continue;
           const employee = employeeMap.get(p.employeeId);
           const learningPath = learningPathMap.get(p.learningPathId);
           pathAssignmentsData.push({
