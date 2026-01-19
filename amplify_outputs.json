@@ -1465,6 +1465,20 @@
               "isRequired": false,
               "attributes": []
             },
+            "assignmentSource": {
+              "name": "assignmentSource",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "learningPathId": {
+              "name": "learningPathId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,

@@ -392,13 +392,24 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
             courseId: pathCourse.courseId,
             status: shouldBeAccessible ? 'assigned' : 'assigned',
             assignmentSource: 'learning_path',
-            learningPathId: selectedPathId,
+            learningPathId: selectedPath.id,
             createdAt: now,
             updatedAt: now,
           });
         });
 
-        await Promise.all(courseAssignmentPromises);
+        const courseAssignments = await Promise.all(courseAssignmentPromises);
+
+        // Check for errors in course assignments
+        const courseErrors = courseAssignments.filter(
+          (result) => result.errors && result.errors.length > 0
+        );
+        if (courseErrors.length > 0) {
+          throw new Error(
+            `Failed to create some course assignments: ${courseErrors.map((e) => e.errors?.map((err: any) => err.message).join(', ')).join('; ')}`
+          );
+        }
+
         return pathAssignmentResult.data;
       });
 
