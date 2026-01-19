@@ -96,6 +96,7 @@ const AssignmentForm: React.FC = () => {
           employeeId: selectedEmployeeId,
           courseId: courseId,
           status: 'assigned',
+          assignmentSource: 'individual',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         })

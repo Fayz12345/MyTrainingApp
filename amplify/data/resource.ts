@@ -170,6 +170,8 @@ const schema = a.schema({
       isTrainingComplete: a.boolean().default(false),
       trainingCompletedAt: a.datetime(), // Date when training was completed (for recertification tracking)
       hasViewedPdf: a.boolean().default(false), // Track if employee has viewed the PDF document
+      assignmentSource: a.string(), // 'individual' or 'learning_path' - indicates if assignment comes from individual course assignment or learning path
+      learningPathId: a.id(), // ID of the learning path if assignmentSource is 'learning_path' (optional)
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

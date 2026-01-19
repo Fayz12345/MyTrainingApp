@@ -391,6 +391,8 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
             employeeId: employeeId,
             courseId: pathCourse.courseId,
             status: shouldBeAccessible ? 'assigned' : 'assigned',
+            assignmentSource: 'learning_path',
+            learningPathId: selectedPathId,
             createdAt: now,
             updatedAt: now,
           });
@@ -487,9 +489,32 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
     setSubmitting(true);
 
     try {
-      // Note: We do NOT create individual Assignment records for learning path courses,
-      // so there's nothing to delete here. Only delete the LearningPathAssignment.
-      
+      // First, delete the course assignments for this employee related to this learning path
+      const pathCourses = group.learningPath.courses?.items || [];
+      const courseIds = pathCourses.map(pc => pc.courseId);
+
+      // Find and delete course assignments
+      for (const courseId of courseIds) {
+        try {
+          // Find assignments for this employee and course
+          const courseAssignments = await client.models.Assignment.list({
+            filter: {
+              employeeId: { eq: assignment.employeeId },
+              courseId: { eq: courseId }
+            }
+          });
+
+          // Delete each matching assignment
+          for (const courseAssignment of courseAssignments.data || []) {
+            if (courseAssignment.id) {
+              await client.models.Assignment.delete({ id: courseAssignment.id });
+            }
+          }
+        } catch (err) {
+          console.error(`Error deleting course assignment for course ${courseId}:`, err);
+        }
+      }
+
       // Delete the learning path assignment
       await client.models.LearningPathAssignment.delete({ id: assignment.id });
 
@@ -623,9 +648,36 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
           throw new Error(`Failed to create path assignment: ${pathAssignmentResult.errors.map((e: any) => e.message).join(', ')}`);
         }
 
-        // Note: We do NOT create individual Assignment records for learning path courses
-        // Courses are accessed through LearningPathAssignment -> LearningPath -> LearningPathCourse
-        return { pathAssignment: pathAssignmentResult.data };
+        // Create individual course assignments
+        const courseAssignmentPromises = sortedCourses.map(async (pathCourse, index) => {
+          // For sequential paths, only the first course should be accessible initially
+          // For non-sequential paths, all courses are accessible
+          const shouldBeAccessible = !isSequential || index === 0;
+
+          return client.models.Assignment.create({
+            employeeId: employeeId,
+            courseId: pathCourse.courseId,
+            status: shouldBeAccessible ? 'assigned' : 'assigned', // All are assigned, but access is controlled by sequential logic
+            assignmentSource: 'learning_path',
+            learningPathId: selectedPathId,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
+
+        const courseAssignments = await Promise.all(courseAssignmentPromises);
+
+        // Check for errors in course assignments
+        const courseErrors = courseAssignments.filter(
+          (result) => result.errors && result.errors.length > 0
+        );
+        if (courseErrors.length > 0) {
+          throw new Error(
+            `Failed to create some course assignments: ${courseErrors.map((e) => e.errors?.map((err: any) => err.message).join(', ')).join('; ')}`
+          );
+        }
+
+        return { pathAssignment: pathAssignmentResult.data, courseAssignments };
       });
 
       const results = await Promise.all(assignmentPromises);

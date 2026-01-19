@@ -174,6 +174,7 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
           employeeId: selectedEmployeeId,
           courseId: courseId,
           status: 'assigned',
+          assignmentSource: 'individual',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         })
