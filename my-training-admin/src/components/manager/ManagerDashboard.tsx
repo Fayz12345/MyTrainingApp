@@ -48,9 +48,6 @@ import EditLearningPath from './EditLearningPath';
 import AssignLearningPath from './AssignLearningPath';
 import LearningPathProgress from './LearningPathProgress';
 import TrainingStatusDashboard from './TrainingStatusDashboard';
-import EmployeesNeedingSupport from './EmployeesNeedingSupport';
-import TrainingReports from './TrainingReports';
-import TrainingLeaderboard from './TrainingLeaderboard';
 import QuizAnalytics from './QuizAnalytics';
 
 const client = generateClient<Schema>();

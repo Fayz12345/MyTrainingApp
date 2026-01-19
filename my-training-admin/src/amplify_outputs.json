@@ -1573,6 +1573,14 @@
               "isRequired": true,
               "attributes": []
             },
+            "answers": {
+              "name": "answers",
+              "isArray": true,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -2165,6 +2173,14 @@
             "groupsEmployees": [
               "get",
               "list"
+            ]
+          },
+          "log/*": {
+            "groupsManagers": [
+              "get",
+              "list",
+              "write",
+              "delete"
             ]
           }
         }

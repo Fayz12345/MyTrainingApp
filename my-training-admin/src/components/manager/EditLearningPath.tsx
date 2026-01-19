@@ -458,51 +458,9 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           }
         }
 
-        // If new courses were added, create assignments for employees with active path assignments
-        if (newCourseIds.length > 0 && activeAssignments > 0) {
-          // Get all active path assignments for this learning path
-          const pathAssignmentsResult = await client.models.LearningPathAssignment.list({
-            filter: { 
-              learningPathId: { eq: learningPath.id },
-              status: { ne: 'completed' } // Only for in-progress assignments
-            }
-          });
-
-          const pathAssignments = pathAssignmentsResult.data || [];
-          
-          // Create course assignments for each employee with an active path assignment
-          for (const pathAssignment of pathAssignments) {
-            const employeeId = (pathAssignment as any).employeeId;
-            if (!employeeId) continue;
-
-            // Create assignments for each new course
-            for (const courseId of newCourseIds) {
-              try {
-                // Check if assignment already exists
-                const existingAssignments = await client.models.Assignment.list({
-                  filter: {
-                    employeeId: { eq: employeeId },
-                    courseId: { eq: courseId }
-                  }
-                });
-
-                // Only create if it doesn't exist
-                if (!existingAssignments.data || existingAssignments.data.length === 0) {
-                  await client.models.Assignment.create({
-                    employeeId: employeeId,
-                    courseId: courseId,
-                    status: 'assigned',
-                    createdAt: now,
-                    updatedAt: now,
-                  });
-                }
-              } catch (err) {
-                console.error(`Error creating assignment for employee ${employeeId}, course ${courseId}:`, err);
-                // Continue with other assignments even if one fails
-              }
-            }
-          }
-        }
+        // Note: We do NOT create individual Assignment records when courses are added to a learning path
+        // Courses are accessed through LearningPathAssignment -> LearningPath -> LearningPathCourse
+        // Employees with active path assignments will automatically see new courses through the learning path relationship
 
         const statusMessage = saveStatus === 'published' && learningPath.status !== 'published' 
           ? 'Learning path published successfully.' 
