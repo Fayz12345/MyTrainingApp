@@ -32,6 +32,8 @@ import {
   IconButton,
   Tooltip,
   Divider,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PersonIcon from '@mui/icons-material/Person';
@@ -126,6 +128,8 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
   const [supportNotes, setSupportNotes] = useState<string>('');
   const [showHistoryView, setShowHistoryView] = useState(false);
   const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<{ id: string; name: string } | null>(null);
+  const [currentTab, setCurrentTab] = useState(0); // 0 = Needing Support, 1 = Support History
+  const [supportRecords, setSupportRecords] = useState<any[]>([]);
   const theme = useTheme();
 
   useEffect(() => {
@@ -328,8 +332,80 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
       const assignmentIds = new Set(assignmentsData.map((a: any) => a.id));
       const filteredResultsData = resultsData.filter((r: any) => assignmentIds.has(r.assignmentId));
 
-      // Filter support data to only include support for employees we care about
+      // Filter support data to only include support for employees we care about (for struggling employees analysis)
       const filteredSupportData = supportData.filter((s: any) => filteredEmployeeIds.has(s.employeeId));
+
+      // For Support History view: enrich ALL support records with employee and course information
+      // We need to fetch all employees (not just filtered ones) to enrich support records
+      const allEmployeesMap = new Map(employeesDataRaw.map((e: any) => [e.id, e]));
+      
+      console.log('[EmployeesNeedingSupport] Total support records fetched:', supportData.length);
+      console.log('[EmployeesNeedingSupport] Total employees available for enrichment:', allEmployeesMap.size);
+      console.log('[EmployeesNeedingSupport] Current userId:', userId);
+      
+      // Fetch missing employees for support records that aren't in the map
+      const missingEmployeeIds = supportData
+        .map((s: any) => s.employeeId)
+        .filter((id: string) => id && !allEmployeesMap.has(id));
+      
+      if (missingEmployeeIds.length > 0) {
+        console.log('[EmployeesNeedingSupport] Fetching', missingEmployeeIds.length, 'missing employees for support records');
+        const missingEmployeesPromises = missingEmployeeIds.map(async (id: string) => {
+          try {
+            const result = await client.models.Employee.get({ id });
+            if (result.data) {
+              return result.data;
+            }
+          } catch (err) {
+            console.warn('[EmployeesNeedingSupport] Failed to fetch employee', id, err);
+          }
+          return null;
+        });
+        const missingEmployees = await Promise.all(missingEmployeesPromises);
+        missingEmployees.forEach((emp: any) => {
+          if (emp) {
+            allEmployeesMap.set(emp.id, {
+              id: emp.id,
+              name: emp.name,
+              email: emp.email,
+              department: emp.department,
+              storeId: emp.storeId,
+              createdBy: emp.createdBy,
+            });
+          }
+        });
+      }
+      
+      const enrichedSupportRecords = supportData.map((s: any) => {
+        const employee = allEmployeesMap.get(s.employeeId);
+        const course = courseMap.get(s.courseId);
+        if (!employee) {
+          console.warn('[EmployeesNeedingSupport] Support record has employeeId that not found in employees:', s.employeeId, 'Record:', s);
+        }
+        if (!course) {
+          console.warn('[EmployeesNeedingSupport] Support record has courseId that not found in courses:', s.courseId, 'Record:', s);
+        }
+        return {
+          ...s,
+          employee: employee || null,
+          course: course || null,
+        };
+      });
+
+      // Filter support records:
+      // 1. By store if selectedStoreId is set (optional - only if store is selected)
+      // Note: We show all support records, not just ones provided by current manager
+      // This allows managers to see support history from other managers if needed
+      let filteredSupportRecords = enrichedSupportRecords;
+      if (selectedStoreId) {
+        // Optionally filter by store if a store is selected
+        filteredSupportRecords = filteredSupportRecords.filter((s: any) => s.employee?.storeId === selectedStoreId);
+        console.log('[EmployeesNeedingSupport] Support records after store filter:', filteredSupportRecords.length);
+      }
+
+      console.log('[EmployeesNeedingSupport] Final support records to display:', filteredSupportRecords.length);
+      console.log('[EmployeesNeedingSupport] Sample support record:', filteredSupportRecords[0]);
+      setSupportRecords(filteredSupportRecords);
 
       // Process learning path assignments - only include assignments for employees in the filtered set
       const processedLearningPathAssignments = learningPathAssignmentsData
@@ -687,15 +763,36 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
 
       const now = new Date().toISOString();
       
-      // For learning paths, we still need a courseId - use the first course or a placeholder
+      // For learning paths, we need to get the first course from the learning path
       // Note: The schema requires courseId, so we need to provide it even for learning paths
       let courseIdForSupport = employee.course?.id;
       if (!courseIdForSupport && employee.type === 'learning_path' && employee.learningPath) {
-        // For learning paths without a specific course, we'll need to handle this
-        // For now, we'll skip creating the record if there's no courseId
-        // TODO: Update schema to make courseId optional or add learningPathId field
-        console.warn('[EmployeesNeedingSupport] Cannot create support record for learning path without courseId');
-        throw new Error('Cannot create support record for learning path without a specific course. Please select a course within the learning path.');
+        // Fetch the first course from the learning path
+        try {
+          const learningPathCoursesResult = await client.models.LearningPathCourse.list({
+            filter: { learningPathId: { eq: employee.learningPath.id } },
+          });
+          
+          if (learningPathCoursesResult.data && learningPathCoursesResult.data.length > 0) {
+            // Sort by order and get the first course
+            const sortedCourses = [...learningPathCoursesResult.data].sort((a: any, b: any) => 
+              (a.order || 0) - (b.order || 0)
+            );
+            const firstCourse = sortedCourses[0];
+            courseIdForSupport = firstCourse.courseId;
+            
+            if (!courseIdForSupport) {
+              throw new Error('Learning path has no courses assigned');
+            }
+            
+            console.log('[EmployeesNeedingSupport] Using first course from learning path:', courseIdForSupport);
+          } else {
+            throw new Error('Learning path has no courses assigned');
+          }
+        } catch (err) {
+          console.error('[EmployeesNeedingSupport] Error fetching learning path courses:', err);
+          throw new Error('Failed to get course from learning path. Please ensure the learning path has at least one course.');
+        }
       }
       
       if (!courseIdForSupport) {
@@ -893,7 +990,8 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
     }
   };
 
-  const getFlagColor = (flagType: string) => {
+  const getFlagColor = (flagType: string | null | undefined) => {
+    if (!flagType) return 'default';
     switch (flagType) {
       case 'failed_quizzes':
         return 'error';
@@ -1075,14 +1173,133 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         </IconButton>
       </Box>
 
+      {/* Tabs to switch between views */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
+          <Tab label="Needing Support" />
+          <Tab label="Support History" />
+        </Tabs>
+      </Box>
+
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      {/* Summary Cards */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      {/* Support History View */}
+      {currentTab === 1 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Support History
+            </Typography>
+            {supportRecords.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <CheckCircleIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary">
+                  No support records found
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Support records will appear here once you mark support as provided for employees
+                </Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Employee</TableCell>
+                      <TableCell>Course</TableCell>
+                      <TableCell>Flag Type</TableCell>
+                      <TableCell>Support Action</TableCell>
+                      <TableCell>Notes</TableCell>
+                      <TableCell>Provided By</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {supportRecords
+                      .sort((a, b) => new Date(b.providedAt).getTime() - new Date(a.providedAt).getTime())
+                      .map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell>
+                            {new Date(record.providedAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            })}
+                            <br />
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(record.providedAt).toLocaleTimeString('en-GB', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Avatar>
+                                <PersonIcon />
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {record.employee?.name || 'Unknown'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {record.employee?.email || ''}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {record.course?.title || 'Unknown Course'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={record.flagType || 'N/A'}
+                              color={getFlagColor(record.flagType)}
+                              size="small"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {record.supportAction === '1on1' && '1-on-1 Training Session'}
+                              {record.supportAction === 'message' && 'Encouragement Message Sent'}
+                              {record.supportAction === 'resources' && 'Supplemental Resources Assigned'}
+                              {record.supportAction === 'coaching' && 'Coaching Session Scheduled'}
+                              {record.supportAction === 'reset' && 'Quiz Attempts Reset'}
+                              {record.supportAction === 'other' && 'Other'}
+                              {!['1on1', 'message', 'resources', 'coaching', 'reset', 'other'].includes(record.supportAction) && record.supportAction}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {record.notes || '—'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {record.providedBy || '—'}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Needing Support View */}
+      {currentTab === 0 && (
+        <>
+          {/* Summary Cards */}
+          <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
@@ -1403,6 +1620,8 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
           )}
         </CardContent>
       </Card>
+        </>
+      )}
 
       {/* Support Provided Dialog */}
       <Dialog open={showSupportDialog} onClose={() => setShowSupportDialog(false)} maxWidth="sm" fullWidth>

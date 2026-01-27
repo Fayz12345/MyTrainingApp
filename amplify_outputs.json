@@ -706,6 +706,22 @@
                 ]
               }
             },
+            "supportRecords": {
+              "name": "supportRecords",
+              "isArray": true,
+              "type": {
+                "model": "EmployeeSupport"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "courseId"
+                ]
+              }
+            },
             "passingScore": {
               "name": "passingScore",
               "isArray": false,
@@ -1134,6 +1150,22 @@
               "isArray": true,
               "type": {
                 "model": "LearningPathAssignment"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "employeeId"
+                ]
+              }
+            },
+            "supportRecords": {
+              "name": "supportRecords",
+              "isArray": true,
+              "type": {
+                "model": "EmployeeSupport"
               },
               "isRequired": false,
               "attributes": [],
@@ -2104,6 +2136,171 @@
                     "operations": [
                       "read",
                       "update"
+                    ],
+                    "groups": [
+                      "Employees"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
+        },
+        "EmployeeSupport": {
+          "name": "EmployeeSupport",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "employeeId": {
+              "name": "employeeId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "courseId": {
+              "name": "courseId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "assignmentId": {
+              "name": "assignmentId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "employee": {
+              "name": "employee",
+              "isArray": false,
+              "type": {
+                "model": "Employee"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "employeeId"
+                ]
+              }
+            },
+            "course": {
+              "name": "course",
+              "isArray": false,
+              "type": {
+                "model": "Course"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "courseId"
+                ]
+              }
+            },
+            "flagType": {
+              "name": "flagType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "supportAction": {
+              "name": "supportAction",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "notes": {
+              "name": "notes",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providedBy": {
+              "name": "providedBy",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providedAt": {
+              "name": "providedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            }
+          },
+          "syncable": true,
+          "pluralName": "EmployeeSupports",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "key",
+              "properties": {
+                "fields": [
+                  "id"
+                ]
+              }
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ],
+                    "groups": [
+                      "Managers"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "read"
                     ],
                     "groups": [
                       "Employees"

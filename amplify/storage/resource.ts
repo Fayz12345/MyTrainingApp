@@ -20,7 +20,8 @@ export const storage = defineStorage({
       allow.groups(['Employees']).to(['read'])
     ],
     'log/*': [
-      allow.groups(['Managers']).to(['read', 'write', 'delete'])
+      allow.groups(['Managers']).to(['read', 'write', 'delete']),
+      allow.groups(['Employees']).to(['read', 'write'])
     ]
   })
 });

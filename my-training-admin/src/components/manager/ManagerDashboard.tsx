@@ -51,7 +51,6 @@ import TrainingStatusDashboard from './TrainingStatusDashboard';
 import QuizAnalytics from './QuizAnalytics';
 import EmployeesNeedingSupport from './EmployeesNeedingSupport';
 import TrainingReports from './TrainingReports';
-import TrainingLeaderboard from './TrainingLeaderboard';
 
 const client = generateClient<Schema>();
 
@@ -77,8 +76,7 @@ type ViewMode =
   | 'training-status'
   | 'quiz-analytics'
   | 'employees-needing-support'
-  | 'training-reports'
-  | 'training-leaderboard';
+  | 'training-reports';
 
 type CourseSummary = {
   readonly id: string;
@@ -228,8 +226,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
     { key: 'training-status', label: 'Training Status Overview', icon: '📊' },
     { key: 'quiz-analytics', label: 'Quiz Performance Analytics', icon: '📊' },
     { key: 'employees-needing-support', label: 'Employees Needing Support', icon: '🆘' },
-    { key: 'training-reports', label: 'Training Reports', icon: '📄' },
-    { key: 'training-leaderboard', label: 'Training Leaderboard', icon: '🏆' }
+    { key: 'training-reports', label: 'Training Reports', icon: '📄' }
   ];
 
   const learningPathSubmenuItems = [
@@ -675,20 +672,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
-      case 'training-leaderboard':
-        return (
-          <Box>
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => setCurrentView('dashboard')}
-              sx={{ mb: 2 }}
-            >
-              Back to Dashboard
-            </Button>
-            <TrainingLeaderboard selectedStoreId={selectedStoreId} />
-          </Box>
-        );
-
       default:
         return (
           <Box>
@@ -715,8 +698,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'training-status', title: 'Training Status Overview', description: 'View overall training status and completion rates.', icon: '📊' },
                 { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' },
                 { key: 'employees-needing-support', title: 'Employees Needing Support', description: 'Identify and support employees who need additional training assistance.', icon: '🆘' },
-                { key: 'training-reports', title: 'Training Reports', description: 'Generate comprehensive training reports and analytics.', icon: '📄' },
-                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' }
+                { key: 'training-reports', title: 'Training Reports', description: 'Generate comprehensive training reports and analytics.', icon: '📄' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
@@ -737,7 +719,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
                       </Button>
                     </CardActions>
                   </Card>
