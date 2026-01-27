@@ -80,6 +80,7 @@ const schema = a.schema({
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
       assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
       learningPathCourses: a.hasMany('LearningPathCourse', 'courseId'), // Links to LearningPathCourse via courseId
+      supportRecords: a.hasMany('EmployeeSupport', 'courseId'), // Links to EmployeeSupport via courseId
       passingScore: a.integer(),
       duration: a.string(), // Course duration (e.g., "45 min", "1 hr 30 min", "2 hr")
       category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
@@ -134,6 +135,7 @@ const schema = a.schema({
       isActive: a.boolean().default(true),
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
       learningPathAssignments: a.hasMany('LearningPathAssignment', 'employeeId'), // Links to LearningPathAssignment via employeeId
+      supportRecords: a.hasMany('EmployeeSupport', 'employeeId'), // Links to EmployeeSupport via employeeId
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
