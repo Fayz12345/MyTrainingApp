@@ -49,6 +49,9 @@ import AssignLearningPath from './AssignLearningPath';
 import LearningPathProgress from './LearningPathProgress';
 import TrainingStatusDashboard from './TrainingStatusDashboard';
 import QuizAnalytics from './QuizAnalytics';
+import EmployeesNeedingSupport from './EmployeesNeedingSupport';
+import TrainingReports from './TrainingReports';
+import TrainingLeaderboard from './TrainingLeaderboard';
 
 const client = generateClient<Schema>();
 
@@ -72,7 +75,10 @@ type ViewMode =
   | 'assign-learning-path'
   | 'learning-path-progress'
   | 'training-status'
-  | 'quiz-analytics';
+  | 'quiz-analytics'
+  | 'employees-needing-support'
+  | 'training-reports'
+  | 'training-leaderboard';
 
 type CourseSummary = {
   readonly id: string;
@@ -220,11 +226,14 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
     { key: 'assignments', label: 'Assignments', icon: '📋' },
     { key: 'analytics', label: 'Analytics', icon: '📈' },
     { key: 'training-status', label: 'Training Status Overview', icon: '📊' },
-    { key: 'quiz-analytics', label: 'Quiz Performance Analytics', icon: '📊' }
+    { key: 'quiz-analytics', label: 'Quiz Performance Analytics', icon: '📊' },
+    { key: 'employees-needing-support', label: 'Employees Needing Support', icon: '🆘' },
+    { key: 'training-reports', label: 'Training Reports', icon: '📄' },
+    { key: 'training-leaderboard', label: 'Training Leaderboard', icon: '🏆' }
   ];
 
   const learningPathSubmenuItems = [
-    { key: 'learning-paths', label: 'Learning Paths', icon: '🛤️' },
+    { key: 'learning-paths', label: 'Create Learning Path', icon: '🛤️' },
     { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
     { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
   ];
@@ -638,6 +647,48 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
+      case 'employees-needing-support':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <EmployeesNeedingSupport selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'training-reports':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <TrainingReports selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
+      case 'training-leaderboard':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <TrainingLeaderboard selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -662,7 +713,10 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'learning-path-progress', title: 'Track Learning Path Completion', description: 'Monitor and track employee progress on assigned learning paths.', icon: '📊' },
                 { key: 'assignments', title: 'Course Assignments', description: 'Assign courses to employees for training.', icon: '📋' },
                 { key: 'training-status', title: 'Training Status Overview', description: 'View overall training status and completion rates.', icon: '📊' },
-                { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' }
+                { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' },
+                { key: 'employees-needing-support', title: 'Employees Needing Support', description: 'Identify and support employees who need additional training assistance.', icon: '🆘' },
+                { key: 'training-reports', title: 'Training Reports', description: 'Generate comprehensive training reports and analytics.', icon: '📄' },
+                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>

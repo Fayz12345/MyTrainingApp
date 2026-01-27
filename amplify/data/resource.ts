@@ -247,6 +247,26 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read', 'update'])
+    ]),
+  EmployeeSupport: a
+    .model({
+      id: a.id(),
+      employeeId: a.id().required(),
+      courseId: a.id().required(),
+      assignmentId: a.id(), // Optional: link to the assignment
+      employee: a.belongsTo('Employee', 'employeeId'),
+      course: a.belongsTo('Course', 'courseId'),
+      flagType: a.string(), // 'failed_quizzes', 'low_score', 'no_progress', 'video_no_quiz', 'excessive_time'
+      supportAction: a.string().required(), // The action taken to provide support
+      notes: a.string(), // Additional notes about the support provided
+      providedBy: a.string(), // userId of the manager who provided support
+      providedAt: a.datetime().required(), // When support was provided
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
     ])
 });
 

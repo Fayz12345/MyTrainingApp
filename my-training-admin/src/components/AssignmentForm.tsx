@@ -91,16 +91,35 @@ const AssignmentForm: React.FC = () => {
 
     try {
       // Create assignments for each selected course
-      const assignmentPromises = selectedCourseIds.map(courseId =>
-        client.models.Assignment.create({
+      const assignmentPromises = selectedCourseIds.map(async (courseId) => {
+        // Check if an individual assignment already exists for this employee and course
+        // Note: We only check for individual assignments, NOT learning path assignments
+        // This allows both types to coexist for the same employee and course
+        const existingAssignments = await client.models.Assignment.list({
+          filter: {
+            employeeId: { eq: selectedEmployeeId },
+            courseId: { eq: courseId },
+            assignmentSource: { eq: 'individual' }
+          }
+        });
+
+        // If an individual assignment already exists, skip creating a duplicate
+        // Learning path assignments are not affected and will remain in the database
+        if (existingAssignments.data && existingAssignments.data.length > 0) {
+          console.log(`[AssignmentForm] Individual assignment already exists for employee ${selectedEmployeeId}, course ${courseId}, skipping creation`);
+          return { data: existingAssignments.data[0], errors: null };
+        }
+
+        // Create new individual assignment
+        return client.models.Assignment.create({
           employeeId: selectedEmployeeId,
           courseId: courseId,
           status: 'assigned',
           assignmentSource: 'individual',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        })
-      );
+        });
+      });
 
       const results = await Promise.all(assignmentPromises);
 

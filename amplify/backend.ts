@@ -10,6 +10,7 @@ import { subscribeManagerToSNS } from './functions/subscribeManagerToSNS/resourc
 import { sendManagerNotification } from './functions/sendManagerNotification/resource';
 import { sendWelcomeEmail } from './functions/sendWelcomeEmail/resource';
 import { sendLearningPathAssignmentNotification } from './functions/sendLearningPathAssignmentNotification/resource';
+import { sendEmployeeSupportMessage } from './functions/sendEmployeeSupportMessage/resource';
 import { schedulingTest } from './functions/schedulingTest/resource';
 
 /**
@@ -27,6 +28,7 @@ defineBackend({
   sendManagerNotification,
   sendWelcomeEmail,
   sendLearningPathAssignmentNotification,
+  sendEmployeeSupportMessage,
   schedulingTest
 });
 

@@ -429,8 +429,10 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
   }, [filteredResults, assignments]);
 
   // Calculate question-level analytics
+  // Note: assignments and filteredResults are already filtered by store (through employee filtering)
   const questionAnalytics = useMemo(() => {
     // Create lookup maps for O(1) access
+    // assignments here are already filtered by store (only for employees in selectedStoreId)
     const assignmentMap = new Map<string, Assignment>();
     const assignmentIdsByCourse = new Map<string, Set<string>>();
     assignments.forEach((a) => {
@@ -445,10 +447,15 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
       }
     });
 
+    // Only include courses that have assignments for the filtered employees (store-based)
+    // This ensures questions are only shown for the selected store
+    const coursesWithAssignments = new Set(assignmentIdsByCourse.keys());
+
     const courseMap = new Map(courses.map((c) => [c.id, c]));
     const courseAnalyticsMap = new Map(courseAnalytics.map((ca) => [ca.courseId, ca]));
 
     // Create result lookup by assignment ID
+    // filteredResults are already filtered by store (only results for assignments of employees in selectedStoreId)
     const resultsByAssignment = new Map<string, Result[]>();
     filteredResults.forEach((result) => {
       if (!resultsByAssignment.has(result.assignmentId)) {
@@ -459,50 +466,71 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
 
     const questionMap = new Map<string, QuestionAnalytics>();
 
-    questions.forEach((question) => {
-      // Get assignment IDs for this course
-      const courseAssignmentIds = assignmentIdsByCourse.get(question.courseId) || new Set();
-      
-      // Get results for assignments in this course
-      const courseResults: Result[] = [];
-      courseAssignmentIds.forEach((assignmentId) => {
-        const results = resultsByAssignment.get(assignmentId) || [];
-        courseResults.push(...results);
+    // Only process questions from courses that have assignments for the selected store
+    // Exclude fill-in-the-blank questions as they are not shown to employees in the quiz
+    questions
+      .filter((question) => {
+        const questionType = (question.questionType || 'multiple_choice').toLowerCase();
+        return (
+          coursesWithAssignments.has(question.courseId) && 
+          questionType !== 'fill_blank' && 
+          questionType !== 'fill_in_blank' &&
+          questionType !== 'fill-in-blank' &&
+          questionType !== 'fillinblank'
+        );
+      })
+      .forEach((question) => {
+        // Get assignment IDs for this course
+        const courseAssignmentIds = assignmentIdsByCourse.get(question.courseId) || new Set();
+        
+        // Get results for assignments in this course
+        const courseResults: Result[] = [];
+        courseAssignmentIds.forEach((assignmentId) => {
+          const results = resultsByAssignment.get(assignmentId) || [];
+          courseResults.push(...results);
+        });
+
+        // Only include questions that have been attempted (have results)
+        if (courseResults.length === 0) {
+          return; // Skip questions with no attempts
+        }
+
+        // For now, we'll estimate success rate based on overall quiz scores
+        // In a real implementation, we'd need to store individual question answers
+        const courseAnalytic = courseAnalyticsMap.get(question.courseId);
+        const estimatedSuccessRate = courseAnalytic
+          ? Math.max(0, Math.min(100, courseAnalytic.averageScore))
+          : 0;
+
+        // Count attempts (one per result)
+        const totalAttempts = courseResults.length;
+        const correctCount = Math.round((estimatedSuccessRate / 100) * totalAttempts);
+        const incorrectCount = totalAttempts - correctCount;
+
+        const successRate = totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : 0;
+
+        const course = courseMap.get(question.courseId);
+
+        questionMap.set(question.id, {
+          questionId: question.id,
+          questionText: question.question,
+          courseTitle: course?.title || 'Unknown Course',
+          successRate,
+          totalAttempts,
+          correctCount,
+          incorrectCount,
+          mostCommonIncorrectAnswer: question.options.length > 0 && question.correctAnswer !== null
+            ? question.options[question.correctAnswer === 0 ? 1 : 0] || 'N/A'
+            : 'N/A',
+          isFlagged: successRate < 50 || successRate === 100,
+          flagReason: successRate < 50 ? 'difficult' : successRate === 100 ? 'easy' : null,
+        });
       });
 
-      // For now, we'll estimate success rate based on overall quiz scores
-      // In a real implementation, we'd need to store individual question answers
-      const courseAnalytic = courseAnalyticsMap.get(question.courseId);
-      const estimatedSuccessRate = courseAnalytic
-        ? Math.max(0, Math.min(100, courseAnalytic.averageScore))
-        : 0;
-
-      // Count attempts (one per result)
-      const totalAttempts = courseResults.length;
-      const correctCount = Math.round((estimatedSuccessRate / 100) * totalAttempts);
-      const incorrectCount = totalAttempts - correctCount;
-
-      const successRate = totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : 0;
-
-      const course = courseMap.get(question.courseId);
-
-      questionMap.set(question.id, {
-        questionId: question.id,
-        questionText: question.question,
-        courseTitle: course?.title || 'Unknown Course',
-        successRate,
-        totalAttempts,
-        correctCount,
-        incorrectCount,
-        mostCommonIncorrectAnswer: question.options.length > 0 && question.correctAnswer !== null
-          ? question.options[question.correctAnswer === 0 ? 1 : 0] || 'N/A'
-          : 'N/A',
-        isFlagged: successRate < 50 || successRate === 100,
-        flagReason: successRate < 50 ? 'difficult' : successRate === 100 ? 'easy' : null,
-      });
-    });
-
-    return Array.from(questionMap.values()).sort((a, b) => a.successRate - b.successRate);
+    // Filter to only return questions with attempts (totalAttempts > 0)
+    return Array.from(questionMap.values())
+      .filter((qa) => qa.totalAttempts > 0)
+      .sort((a, b) => a.successRate - b.successRate);
   }, [questions, filteredResults, assignments, courseAnalytics, courses]);
 
   const filteredQuestionAnalytics = useMemo(() => {

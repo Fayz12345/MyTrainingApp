@@ -88,7 +88,12 @@ interface Result {
 
 interface StrugglingEmployee {
   employee: Employee;
-  course: {
+  type: 'course' | 'learning_path';
+  course?: {
+    id: string;
+    title: string;
+  };
+  learningPath?: {
     id: string;
     title: string;
   };
@@ -132,6 +137,10 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
       setLoading(true);
       setError(null);
 
+      // Get current user ID to filter employees by createdBy
+      const session = await fetchAuthSession();
+      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
       // Helper function to fetch all pages with pagination
       const fetchAllPages = async <T,>(
         fetchFn: (nextToken?: string) => Promise<{ data: T[] | null; nextToken?: string | null }>,
@@ -151,8 +160,36 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
       };
 
       // Fetch all independent data in parallel for maximum performance
-      const [employeesData, coursesData, allAssignmentsData, resultsData] = await Promise.all([
-        // Fetch employees with pagination
+      // Note: EmployeeSupport model might not be available until schema is deployed
+      const fetchSupportData = async () => {
+        try {
+          if (client.models && client.models.EmployeeSupport) {
+            return await fetchAllPages(
+              (nextToken) => client.models.EmployeeSupport!.list({
+                authMode: 'userPool',
+                nextToken,
+              }),
+              (s: any) => ({
+                id: s.id!,
+                employeeId: s.employeeId,
+                courseId: s.courseId,
+                assignmentId: s.assignmentId,
+                flagType: s.flagType,
+                supportAction: s.supportAction,
+                notes: s.notes,
+                providedBy: s.providedBy,
+                providedAt: s.providedAt,
+              })
+            );
+          }
+        } catch (err) {
+          console.warn('[EmployeesNeedingSupport] EmployeeSupport model not available:', err);
+        }
+        return [];
+      };
+
+      const [employeesDataRaw, coursesData, allAssignmentsData, resultsData, supportData, learningPathsData, learningPathAssignmentsData] = await Promise.all([
+        // Fetch employees with pagination - we'll filter by createdBy and storeId after fetching
         fetchAllPages(
           (nextToken) => client.models.Employee.list({
             authMode: 'userPool',
@@ -165,6 +202,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
             email: e.email,
             department: e.department,
             storeId: e.storeId,
+            createdBy: e.createdBy,
           })
         ),
         // Fetch courses with pagination
@@ -211,23 +249,68 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
             createdAt: r.createdAt,
           })
         ),
+        // Fetch employee support records (if model is available)
+        fetchSupportData(),
+        // Fetch learning paths
+        fetchAllPages(
+          (nextToken) => client.models.LearningPath.list({
+            authMode: 'userPool',
+            nextToken,
+          }),
+          (lp: any) => ({
+            id: lp.id!,
+            title: lp.title,
+          })
+        ),
+        // Fetch learning path assignments
+        fetchAllPages(
+          (nextToken) => client.models.LearningPathAssignment.list({
+            authMode: 'userPool',
+            nextToken,
+          }),
+          (lpa: any) => ({
+            id: lpa.id!,
+            employeeId: lpa.employeeId,
+            learningPathId: lpa.learningPathId,
+            status: lpa.status,
+            assignedDate: lpa.assignedDate,
+            dueDate: lpa.dueDate,
+            completedDate: lpa.completedDate,
+            createdAt: lpa.createdAt,
+            updatedAt: lpa.updatedAt,
+          })
+        ),
       ]);
 
-      // Filter employees by store if selectedStoreId is provided
-      let filteredEmployeesData = employeesData;
-      if (selectedStoreId) {
-        filteredEmployeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      // Filter employees by createdBy - managers should only see employees they created
+      let employeesData = employeesDataRaw;
+      if (userId) {
+        console.log('[EmployeesNeedingSupport] Filtering employees by createdBy:', userId);
+        employeesData = employeesData.filter((emp: any) => emp.createdBy === userId);
+        console.log('[EmployeesNeedingSupport] Employees after createdBy filter:', employeesData.length);
       }
 
-      // Create lookup maps for O(1) access (using filtered employees)
-      const employeeMap = new Map(filteredEmployeesData.map((e: any) => [e.id, e]));
-      const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
+      // Filter employees by selected store (if store is selected)
+      if (selectedStoreId) {
+        console.log('[EmployeesNeedingSupport] Filtering employees by storeId:', selectedStoreId);
+        const beforeStoreFilter = employeesData.length;
+        employeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+        console.log(`[EmployeesNeedingSupport] Filtered employees by store: ${beforeStoreFilter} -> ${employeesData.length}`);
+      }
 
-      // Process assignments with lookup maps (only for filtered employees)
-      const filteredEmployeeIds = new Set(filteredEmployeesData.map((e: any) => e.id));
+      // Create lookup maps for O(1) access
+      const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
+      const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
+      const learningPathMap = new Map(learningPathsData.map((lp: any) => [lp.id, lp]));
+
+      // Process assignments - only include assignments for employees in the filtered set
+      const filteredEmployeeIds = new Set(employeesData.map((e: any) => e.id));
       const assignmentsData: Assignment[] = allAssignmentsData
         .filter((a: any) => filteredEmployeeIds.has(a.employeeId))
-        .map((a: any) => ({
+        .map((a: any) => {
+          const employee = a.employeeId ? (employeeMap.get(a.employeeId) as Employee | undefined) : null;
+          const course = a.courseId ? (courseMap.get(a.courseId) || null) : null;
+          return {
         id: a.id,
         employeeId: a.employeeId,
         courseId: a.courseId,
@@ -236,15 +319,47 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         trainingCompletedAt: a.trainingCompletedAt,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
-        employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
-        course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
-        }));
+            employee: employee || null,
+            course: course,
+          };
+        });
+
+      // Filter results to only include results for assignments we care about
+      const assignmentIds = new Set(assignmentsData.map((a: any) => a.id));
+      const filteredResultsData = resultsData.filter((r: any) => assignmentIds.has(r.assignmentId));
+
+      // Filter support data to only include support for employees we care about
+      const filteredSupportData = supportData.filter((s: any) => filteredEmployeeIds.has(s.employeeId));
+
+      // Process learning path assignments - only include assignments for employees in the filtered set
+      const processedLearningPathAssignments = learningPathAssignmentsData
+        .filter((lpa: any) => filteredEmployeeIds.has(lpa.employeeId))
+        .map((lpa: any) => {
+          const employee = lpa.employeeId ? (employeeMap.get(lpa.employeeId) as Employee | undefined) : null;
+          const learningPath = lpa.learningPathId ? (learningPathMap.get(lpa.learningPathId) || null) : null;
+          return {
+            ...lpa,
+            employee: employee || null,
+            learningPath: learningPath,
+          };
+        });
 
       setAssignments(assignmentsData);
-      setResults(resultsData);
+      setResults(filteredResultsData);
 
-      // Analyze and identify struggling employees
-      const struggling = identifyStrugglingEmployees(assignmentsData, resultsData);
+      // Analyze and identify struggling employees for courses
+      const strugglingCourses = identifyStrugglingEmployees(assignmentsData, filteredResultsData, filteredSupportData);
+      
+      // Analyze and identify struggling employees for learning paths
+      const strugglingLearningPaths = identifyStrugglingLearningPaths(
+        processedLearningPathAssignments,
+        assignmentsData,
+        filteredResultsData,
+        filteredSupportData
+      );
+
+      // Combine both course and learning path struggling employees
+      const struggling = [...strugglingCourses, ...strugglingLearningPaths];
       setStrugglingEmployees(struggling);
     } catch (err) {
       console.error('Error fetching struggling employees:', err);
@@ -256,10 +371,21 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
 
   const identifyStrugglingEmployees = (
     assignments: Assignment[],
-    results: Result[]
+    results: Result[],
+    supportData: any[] = []
   ): StrugglingEmployee[] => {
     const struggling: StrugglingEmployee[] = [];
     const now = new Date();
+
+    // Create a map of support records by employee-course key
+    const supportMap = new Map<string, any>();
+    supportData.forEach((support) => {
+      const key = `${support.employeeId}_${support.courseId}`;
+      // Keep the most recent support record if multiple exist
+      if (!supportMap.has(key) || new Date(support.providedAt) > new Date(supportMap.get(key).providedAt)) {
+        supportMap.set(key, support);
+      }
+    });
 
     // Group assignments by employee and course
     const employeeCourseMap = new Map<string, Map<string, {
@@ -306,6 +432,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         if (failedAttempts >= 2) {
           struggling.push({
             employee: assignment.employee,
+            type: 'course',
             course: {
               id: assignment.course.id,
               title: assignment.course.title,
@@ -327,6 +454,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         if (firstAttempt && firstAttempt.score < 60) {
           struggling.push({
             employee: assignment.employee,
+            type: 'course',
             course: {
               id: assignment.course.id,
               title: assignment.course.title,
@@ -348,6 +476,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         if (daysSinceProgress >= 7 && courseResults.length === 0) {
           struggling.push({
             employee: assignment.employee,
+            type: 'course',
             course: {
               id: assignment.course.id,
               title: assignment.course.title,
@@ -371,6 +500,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
         if (assignmentAge >= 3 && courseResults.length === 0 && assignment.status === 'assigned') {
           struggling.push({
             employee: assignment.employee,
+            type: 'course',
             course: {
               id: assignment.course.id,
               title: assignment.course.title,
@@ -391,10 +521,109 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
       });
     });
 
-    // Remove duplicates (same employee-course combination)
+    // Remove duplicates (same employee-course or employee-learningPath combination)
     const unique = new Map<string, StrugglingEmployee>();
     struggling.forEach((s) => {
-      const key = `${s.employee.id}_${s.course.id}`;
+      // Create unique key based on type
+      const itemId = s.type === 'course' ? s.course?.id : s.learningPath?.id;
+      const key = `${s.employee.id}_${s.type}_${itemId || ''}`;
+      // Check if support was provided for this employee-item combination
+      // For courses, check support map; for learning paths, we'll need to extend support model later
+      if (s.type === 'course' && s.course?.id) {
+        const supportKey = `${s.employee.id}_${s.course.id}`;
+        const supportRecord = supportMap.get(supportKey);
+        if (supportRecord) {
+          s.supportProvided = true;
+          s.supportProvidedAt = supportRecord.providedAt;
+        }
+      }
+      if (!unique.has(key)) {
+        unique.set(key, s);
+      }
+    });
+
+    return Array.from(unique.values());
+  };
+
+  const identifyStrugglingLearningPaths = (
+    learningPathAssignments: any[],
+    courseAssignments: Assignment[],
+    results: Result[],
+    supportData: any[] = []
+  ): StrugglingEmployee[] => {
+    const struggling: StrugglingEmployee[] = [];
+    const now = new Date();
+
+    // Create a map of support records by employee-learningPath key
+    const supportMap = new Map<string, any>();
+    supportData.forEach((support) => {
+      // Support data might be for courses, so we'll check learning path assignments separately
+      // For now, we'll create a separate key structure for learning paths
+    });
+
+    learningPathAssignments.forEach((pathAssignment) => {
+      if (!pathAssignment.employee || !pathAssignment.learningPath) return;
+      if (pathAssignment.status === 'completed') return;
+
+      // Get all course assignments for this learning path and employee
+      const pathCourseAssignments = courseAssignments.filter(
+        (a) => a.employeeId === pathAssignment.employeeId && 
+        (a as any).learningPathId === pathAssignment.learningPathId
+      );
+
+      // Check if assigned but no progress
+      const assignedDate = pathAssignment.assignedDate ? new Date(pathAssignment.assignedDate) : new Date(pathAssignment.createdAt);
+      const daysSinceAssigned = Math.floor((now.getTime() - assignedDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Check if any courses have been started
+      const hasStarted = pathCourseAssignments.some((a) => {
+        const assignmentResults = results.filter((r) => r.assignmentId === a.id);
+        return assignmentResults.length > 0 || a.status === 'completed';
+      });
+
+      // Flag: No progress in 7+ days after assignment
+      if (daysSinceAssigned >= 7 && !hasStarted) {
+        struggling.push({
+          employee: pathAssignment.employee,
+          type: 'learning_path',
+          learningPath: {
+            id: pathAssignment.learningPathId,
+            title: pathAssignment.learningPath.title,
+          },
+          reason: `No progress in ${daysSinceAssigned} days`,
+          flagType: 'no_progress',
+          suggestedAction: 'Send encouragement message and check for barriers',
+          details: { daysSinceProgress: daysSinceAssigned },
+          assignmentId: pathAssignment.id,
+          supportProvided: false,
+        });
+        return;
+      }
+
+      // Flag: Assigned for 3+ days but no course started
+      if (daysSinceAssigned >= 3 && !hasStarted) {
+        struggling.push({
+          employee: pathAssignment.employee,
+          type: 'learning_path',
+          learningPath: {
+            id: pathAssignment.learningPathId,
+            title: pathAssignment.learningPath.title,
+          },
+          reason: 'Assigned for 3+ days but no course started',
+          flagType: 'video_no_quiz',
+          suggestedAction: 'Check if employee needs help understanding the material',
+          details: { videoViews: 0 },
+          assignmentId: pathAssignment.id,
+          supportProvided: false,
+        });
+        return;
+      }
+    });
+
+    // Remove duplicates (same employee-learningPath combination)
+    const unique = new Map<string, StrugglingEmployee>();
+    struggling.forEach((s) => {
+      const key = `${s.employee.id}_${s.learningPath?.id || ''}`;
       if (!unique.has(key)) {
         unique.set(key, s);
       }
@@ -405,44 +634,169 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
 
   const handleMarkSupportProvided = async (employee: StrugglingEmployee) => {
     try {
-      const updated = strugglingEmployees.map((s) =>
-        s.employee.id === employee.employee.id && s.course.id === employee.course.id
+      // Get current user ID
+      const session = await fetchAuthSession();
+      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Save to database
+      // Check if EmployeeSupport model is available
+      // In Amplify Gen 2, models are dynamically available after schema deployment
+      if (!client.models || !client.models.EmployeeSupport) {
+        // Log diagnostic information
+        const availableModels = client.models ? Object.keys(client.models) : [];
+        console.error('[EmployeesNeedingSupport] EmployeeSupport model not available');
+        console.error('[EmployeesNeedingSupport] Available models:', availableModels);
+        console.error('[EmployeesNeedingSupport] Client models object:', client.models);
+        
+        // Show user-friendly error with instructions
+        await MySwal.fire({
+          icon: 'error',
+          title: 'Model Not Available',
+          html: `
+            <p>The EmployeeSupport model is not available in the client.</p>
+            <p><strong>Available models:</strong> ${availableModels.length > 0 ? availableModels.join(', ') : 'None'}</p>
+            <hr>
+            <p><strong>To fix this:</strong></p>
+            <ol style="text-align: left; margin: 10px 0;">
+              <li>Ensure the Amplify sandbox is running: <code>npx ampx sandbox</code></li>
+              <li>Wait for the schema to deploy (check the sandbox output)</li>
+              <li>Refresh the browser page to reload the client</li>
+              <li>If the issue persists, restart the development server</li>
+            </ol>
+            <p><strong>Note:</strong> The support action will still be marked locally, but won't be saved to the database until the model is available.</p>
+          `,
+          confirmButtonText: 'OK'
+        });
+        
+        // Still update local state even if DB save fails
+        const updated = strugglingEmployees.map((s) => {
+          const matches = s.employee.id === employee.employee.id && 
+            ((employee.type === 'course' && s.course?.id === employee.course?.id) ||
+             (employee.type === 'learning_path' && s.learningPath?.id === employee.learningPath?.id));
+          return matches
+            ? { ...s, supportProvided: true, supportProvidedAt: new Date().toISOString() }
+            : s;
+        });
+        setStrugglingEmployees(updated);
+        return; // Exit early - don't try to save to DB
+      }
+
+      const now = new Date().toISOString();
+      
+      // For learning paths, we still need a courseId - use the first course or a placeholder
+      // Note: The schema requires courseId, so we need to provide it even for learning paths
+      let courseIdForSupport = employee.course?.id;
+      if (!courseIdForSupport && employee.type === 'learning_path' && employee.learningPath) {
+        // For learning paths without a specific course, we'll need to handle this
+        // For now, we'll skip creating the record if there's no courseId
+        // TODO: Update schema to make courseId optional or add learningPathId field
+        console.warn('[EmployeesNeedingSupport] Cannot create support record for learning path without courseId');
+        throw new Error('Cannot create support record for learning path without a specific course. Please select a course within the learning path.');
+      }
+      
+      if (!courseIdForSupport) {
+        throw new Error('Course ID is required to create support record');
+      }
+      
+      const supportRecord = await client.models.EmployeeSupport.create({
+        employeeId: employee.employee.id,
+        courseId: courseIdForSupport,
+        assignmentId: employee.assignmentId,
+        flagType: employee.flagType,
+        supportAction: supportAction,
+        notes: supportNotes || null,
+        providedBy: userId,
+        providedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } as any);
+
+      if (supportRecord.errors && supportRecord.errors.length > 0) {
+        throw new Error('Failed to save support record: ' + supportRecord.errors.map((e: any) => e.message).join(', '));
+      }
+
+      // Update local state
+      const updated = strugglingEmployees.map((s) => {
+        const matches = s.employee.id === employee.employee.id && 
+          ((employee.type === 'course' && s.course?.id === employee.course?.id) ||
+           (employee.type === 'learning_path' && s.learningPath?.id === employee.learningPath?.id));
+        return matches
           ? { ...s, supportProvided: true, supportProvidedAt: new Date().toISOString() }
-          : s
-      );
+          : s;
+      });
       setStrugglingEmployees(updated);
 
-      // Save to localStorage for tracking
-      const supportHistory = JSON.parse(localStorage.getItem('employee_support_history') || '[]');
-      supportHistory.push({
-        employeeId: employee.employee.id,
-        courseId: employee.course.id,
-        flagType: employee.flagType,
-        providedAt: new Date().toISOString(),
-        action: supportAction,
-        notes: supportNotes,
-      });
-      localStorage.setItem('employee_support_history', JSON.stringify(supportHistory));
+      // Close the dialog first
+      setShowSupportDialog(false);
+      setSupportAction('');
+      setSupportNotes('');
 
+      // Wait a bit for the dialog to close, then show success popup
+      setTimeout(async () => {
       await MySwal.fire({
         title: 'Support Marked as Provided',
         text: `Support has been recorded for ${employee.employee.name}`,
         icon: 'success',
       });
-
-      setShowSupportDialog(false);
-      setSupportAction('');
-      setSupportNotes('');
+        // Refresh data to show updated support status
+        fetchData();
+      }, 300);
     } catch (err) {
+      console.error('Error marking support as provided:', err);
       await MySwal.fire({
         title: 'Error',
-        text: 'Failed to mark support as provided',
+        text: err instanceof Error ? err.message : 'Failed to mark support as provided',
         icon: 'error',
       });
     }
   };
 
+  const sendEmployeeSupportMessage = async (messageData: {
+    employeeEmail: string;
+    employeeName: string;
+    managerName?: string;
+    courseTitle?: string;
+    message: string;
+    supportReason?: string;
+  }) => {
+    // Lambda Function URL - Configure after deployment
+    // Get this from AWS Lambda Console → Function → Configuration → Function URL
+    const LAMBDA_FUNCTION_URL = process.env.REACT_APP_EMPLOYEE_SUPPORT_MESSAGE_LAMBDA_URL || '';
+    
+    if (!LAMBDA_FUNCTION_URL) {
+      console.log('[EmployeesNeedingSupport] Lambda Function URL not configured. Skipping notification.');
+      return { success: false, error: 'Lambda Function URL not configured' };
+    }
+
+    try {
+      console.log('[EmployeesNeedingSupport] Sending support message...');
+      const response = await fetch(LAMBDA_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messageData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lambda returned status ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[EmployeesNeedingSupport] Message sent:', result);
+      return result;
+    } catch (err) {
+      console.error('[EmployeesNeedingSupport] Message sending error:', err);
+      throw err;
+    }
+  };
+
   const handleSendMessage = async (employee: StrugglingEmployee) => {
+    try {
     const { value: message } = await MySwal.fire({
       title: `Send Message to ${employee.employee.name}`,
       input: 'textarea',
@@ -461,11 +815,59 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
     });
 
     if (message) {
-      // In a real implementation, this would send an email/notification
+        // Get current user info for manager name
+        const session = await fetchAuthSession();
+        const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
+        let managerName: string | undefined;
+        
+        try {
+          // Try to get manager name from Manager model
+          // Check if Manager model is available
+          if (client.models && client.models.Manager) {
+            const managers = await client.models.Manager.list({
+              filter: { userId: { eq: userId } },
+              authMode: 'userPool'
+            });
+            if (managers.data && managers.data.length > 0) {
+              managerName = (managers.data[0] as any).name;
+            }
+          }
+        } catch (err) {
+          console.warn('[EmployeesNeedingSupport] Could not fetch manager name:', err);
+          // Continue without manager name - it's optional
+        }
+
+        // Get flag type display name
+        const flagTypeNames: { [key: string]: string } = {
+          failed_quizzes: 'Failed Quizzes',
+          low_score: 'Low Score',
+          no_progress: 'No Progress',
+          video_no_quiz: 'No Quiz Attempt',
+          excessive_time: 'Excessive Time',
+        };
+
+        // Send message via Lambda function
+        await sendEmployeeSupportMessage({
+          employeeEmail: employee.employee.email,
+          employeeName: employee.employee.name,
+          managerName: managerName,
+          courseTitle: employee.type === 'course' ? employee.course?.title : employee.learningPath?.title,
+          message: message,
+          supportReason: flagTypeNames[employee.flagType] || employee.reason,
+        });
+
       await MySwal.fire({
         title: 'Message Sent',
-        text: `Message sent to ${employee.employee.name}`,
+          text: `Message sent to ${employee.employee.name} via email`,
         icon: 'success',
+        });
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+      await MySwal.fire({
+        title: 'Error',
+        text: err instanceof Error ? err.message : 'Failed to send message',
+        icon: 'error',
       });
     }
   };
@@ -473,7 +875,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
   const handleResetQuizAttempts = async (employee: StrugglingEmployee) => {
     const result = await MySwal.fire({
       title: 'Reset Quiz Attempts?',
-      text: `This will allow ${employee.employee.name} to retake the quiz for ${employee.course.title}`,
+      text: `This will allow ${employee.employee.name} to retake the quiz for ${employee.type === 'course' ? employee.course?.title : employee.learningPath?.title}`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Yes, reset',
@@ -509,6 +911,38 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
   const filteredStruggling = useMemo(() => {
     return strugglingEmployees.filter((s) => !s.supportProvided);
   }, [strugglingEmployees]);
+
+  // Calculate unique employee counts (not course-based)
+  const uniqueEmployeeCounts = useMemo(() => {
+    // Get unique employee IDs
+    const uniqueEmployeeIds = new Set(filteredStruggling.map((s) => s.employee.id));
+    
+    // Get unique employee IDs by flag type
+    const failedQuizzesEmployees = new Set(
+      filteredStruggling
+        .filter((s) => s.flagType === 'failed_quizzes')
+        .map((s) => s.employee.id)
+    );
+    
+    const lowScoreEmployees = new Set(
+      filteredStruggling
+        .filter((s) => s.flagType === 'low_score')
+        .map((s) => s.employee.id)
+    );
+    
+    const noProgressEmployees = new Set(
+      filteredStruggling
+        .filter((s) => s.flagType === 'no_progress')
+        .map((s) => s.employee.id)
+    );
+    
+    return {
+      total: uniqueEmployeeIds.size,
+      failedQuizzes: failedQuizzesEmployees.size,
+      lowScore: lowScoreEmployees.size,
+      noProgress: noProgressEmployees.size,
+    };
+  }, [filteredStruggling]);
 
   // Chart data calculations
   const flagTypeDistributionData = useMemo(() => {
@@ -563,8 +997,10 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
     const courseMap = new Map<string, number>();
     
     filteredStruggling.forEach((employee) => {
-      const course = employee.course.title;
-      courseMap.set(course, (courseMap.get(course) || 0) + 1);
+      const title = employee.type === 'course' ? employee.course?.title : employee.learningPath?.title;
+      if (title) {
+        courseMap.set(title, (courseMap.get(title) || 0) + 1);
+      }
     });
 
     return Array.from(courseMap.entries())
@@ -654,7 +1090,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 Employees Needing Support
               </Typography>
               <Typography variant="h4" color="error">
-                {filteredStruggling.length}
+                {uniqueEmployeeCounts.total}
               </Typography>
             </CardContent>
           </Card>
@@ -666,7 +1102,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 Failed Quizzes
               </Typography>
               <Typography variant="h4">
-                {filteredStruggling.filter((s) => s.flagType === 'failed_quizzes').length}
+                {uniqueEmployeeCounts.failedQuizzes}
               </Typography>
             </CardContent>
           </Card>
@@ -678,7 +1114,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 Low Scores
               </Typography>
               <Typography variant="h4" color="warning.main">
-                {filteredStruggling.filter((s) => s.flagType === 'low_score').length}
+                {uniqueEmployeeCounts.lowScore}
               </Typography>
             </CardContent>
           </Card>
@@ -690,7 +1126,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 No Progress
               </Typography>
               <Typography variant="h4" color="info.main">
-                {filteredStruggling.filter((s) => s.flagType === 'no_progress').length}
+                {uniqueEmployeeCounts.noProgress}
               </Typography>
             </CardContent>
           </Card>
@@ -863,7 +1299,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 <TableHead>
                   <TableRow>
                     <TableCell>Employee</TableCell>
-                    <TableCell>Course</TableCell>
+                    <TableCell>Course / Learning Path</TableCell>
                     <TableCell>Reason</TableCell>
                     <TableCell>Suggested Action</TableCell>
                     <TableCell>Actions</TableCell>
@@ -872,7 +1308,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 <TableBody>
                   {filteredStruggling.map((employee, index) => (
                     <TableRow
-                      key={`${employee.employee.id}_${employee.course.id}_${index}`}
+                      key={`${employee.employee.id}_${employee.type}_${employee.course?.id || employee.learningPath?.id}_${index}`}
                       sx={{
                         bgcolor: employee.supportProvided ? 'grey.50' : 'inherit',
                       }}
@@ -898,7 +1334,17 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{employee.course.title}</Typography>
+                        <Box>
+                          <Chip 
+                            label={employee.type === 'course' ? 'Course' : 'Learning Path'} 
+                            size="small" 
+                            color={employee.type === 'course' ? 'primary' : 'secondary'}
+                            sx={{ mb: 0.5 }}
+                          />
+                          <Typography variant="body2">
+                            {employee.type === 'course' ? employee.course?.title : employee.learningPath?.title}
+                          </Typography>
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -968,7 +1414,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 Employee: {selectedEmployee.employee.name}
               </Typography>
               <Typography variant="body2" color="text.secondary" gutterBottom>
-                Course: {selectedEmployee.course.title}
+                {selectedEmployee.type === 'course' ? 'Course' : 'Learning Path'}: {selectedEmployee.type === 'course' ? selectedEmployee.course?.title : selectedEmployee.learningPath?.title}
               </Typography>
               <Divider sx={{ my: 2 }} />
               <FormControl fullWidth sx={{ mb: 2 }}>

@@ -65,6 +65,8 @@ interface Assignment {
   isTrainingComplete: boolean;
   trainingCompletedAt?: string | null;
   hasViewedPdf: boolean;
+  assignmentSource?: string | null; // 'individual' or 'learning_path'
+  learningPathId?: string | null;
   createdAt: string;
   updatedAt: string;
   course?: {
@@ -174,11 +176,14 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
       };
 
       // Fetch all independent data in parallel
-      const [employeeResponse, assignmentsResponse, pathAssignmentsResponse] = await Promise.all([
+      // Fetch ALL assignments for the employee (regardless of assignmentSource or status)
+      const [employeeResponse, allAssignmentsResponse, pathAssignmentsResponse] = await Promise.all([
         client.models.Employee.get({ id: employeeId }),
         fetchAllPages(
           (nextToken) => client.models.Assignment.list({
-            filter: { employeeId: { eq: employeeId } },
+            filter: { 
+              employeeId: { eq: employeeId }
+            },
             nextToken,
           }),
           (a: any) => a
@@ -205,7 +210,8 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
       });
 
       // Process assignments - fetch courses in parallel
-      const assignmentsList = assignmentsResponse.filter((a: any) => a.id);
+      // Use all assignments (including those without assignmentSource set)
+      const assignmentsList = allAssignmentsResponse.filter((a: any) => a.id);
       const coursePromises = assignmentsList.map((a: any) => 
         a.course ? a.course() : Promise.resolve(null)
       );
@@ -221,6 +227,8 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
           isTrainingComplete: a.isTrainingComplete ?? false,
           trainingCompletedAt: a.trainingCompletedAt,
           hasViewedPdf: a.hasViewedPdf ?? false,
+          assignmentSource: a.assignmentSource || null,
+          learningPathId: a.learningPathId || null,
           createdAt: a.createdAt,
           updatedAt: a.updatedAt,
           course: course?.data
@@ -285,11 +293,14 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
       // Store all assignments (we'll need them to show courses in learning paths)
       setAllAssignments(assignmentsData);
 
-      // Filter out assignments that belong to learning paths from the standalone assignments
-      const standaloneAssignments = assignmentsData.filter((assignment) => 
-        !learningPathCourseIds.has(assignment.courseId)
-      );
-      setAssignments(standaloneAssignments);
+      // Filter to show only individual assignments in the Course Assignments section
+      // Exclude assignments from learning paths (they'll be shown in the Learning Path Assignments section)
+      const individualAssignments = assignmentsData.filter((assignment) => {
+        const isFromLearningPath = assignment.assignmentSource === 'learning_path' || 
+                                   (assignment.learningPathId !== null && assignment.learningPathId !== undefined);
+        return !isFromLearningPath;
+      });
+      setAssignments(individualAssignments);
 
       // Organize learning path courses by learningPathId with order
       const finalPathCoursesMap = new Map<string, { courseId: string; order: number; course?: { id: string; title: string } }[]>();
@@ -841,9 +852,68 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                         const pathCourses = learningPathCourses.get(pathAssignment.learningPathId) || [];
                         const isExpanded = expandedPathId === pathAssignment.id;
                         const pathCourseAssignments = pathCourses.map((pc) => {
-                          const assignment = allAssignments.find((a) => a.courseId === pc.courseId);
-                          return { ...pc, assignment };
+                          // Find the assignment that specifically belongs to this learning path
+                          // Prioritize learning path assignments over individual ones
+                          const assignment = allAssignments.find((a) => 
+                            a.courseId === pc.courseId && 
+                            a.learningPathId === pathAssignment.learningPathId &&
+                            a.assignmentSource === 'learning_path'
+                          ) || allAssignments.find((a) => a.courseId === pc.courseId);
+                          return { ...pc, assignment, pathAssignment };
                         }).filter((pca) => pca.assignment);
+
+                        // Calculate learning path status based on course completions
+                        const completedCourses = pathCourseAssignments.filter((pca) => {
+                          const assignment = pca.assignment!;
+                          const hasCompletedDate = !!assignment.trainingCompletedAt;
+                          const isMarkedComplete = assignment.isTrainingComplete || assignment.status === 'completed';
+                          return isMarkedComplete || hasCompletedDate;
+                        }).length;
+
+                        const totalCourses = pathCourseAssignments.length;
+                        const allCoursesCompleted = totalCourses > 0 && completedCourses === totalCourses;
+                        const someCoursesCompleted = completedCourses > 0;
+
+                        // Calculate the latest completion date from all courses
+                        // Check both trainingCompletedAt and the latest result date for completed assignments
+                        const completionDates: string[] = [];
+                        pathCourseAssignments.forEach((pca) => {
+                          const assignment = pca.assignment!;
+                          const assignmentResults = getAssignmentResults(assignment.id);
+                          const latestResult = assignmentResults.length > 0
+                            ? assignmentResults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+                            : null;
+                          
+                          // Get completion date using the same logic as the course display
+                          // Priority: trainingCompletedAt > latestResult.createdAt (if marked complete)
+                          const courseCompletedDate = assignment.trainingCompletedAt || 
+                            (latestResult && assignment.isTrainingComplete ? latestResult.createdAt : null) ||
+                            (latestResult && assignment.status === 'completed' ? latestResult.createdAt : null);
+                          
+                          if (courseCompletedDate) {
+                            completionDates.push(courseCompletedDate);
+                          }
+                        });
+                        
+                        // Only show completed date if ALL courses are completed
+                        const latestCompletionDate = allCoursesCompleted && completionDates.length > 0
+                          ? completionDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+                          : null;
+
+                        // Determine calculated status
+                        let calculatedStatus: string;
+                        if (allCoursesCompleted) {
+                          calculatedStatus = 'completed';
+                        } else if (someCoursesCompleted) {
+                          calculatedStatus = 'in_progress';
+                        } else {
+                          calculatedStatus = 'not_started';
+                        }
+
+                        // Use calculated status and date if available, otherwise fall back to database values
+                        const displayStatus = calculatedStatus === 'completed' ? calculatedStatus : (pathAssignment.status || calculatedStatus);
+                        // Only show completed date when all courses are completed
+                        const displayCompletedDate = allCoursesCompleted ? (latestCompletionDate || pathAssignment.completedDate) : null;
 
                         return (
                           <React.Fragment key={pathAssignment.id}>
@@ -885,14 +955,14 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                                   {formatDate(pathAssignment.dueDate)}
                                 </Typography>
                               </TableCell>
-                              <TableCell>{formatDate(pathAssignment.completedDate)}</TableCell>
+                              <TableCell>{formatDate(displayCompletedDate)}</TableCell>
                               <TableCell>
                                 <Chip
-                                  label={pathAssignment.status || 'Not Started'}
+                                  label={displayStatus === 'completed' ? 'Completed' : displayStatus === 'in_progress' ? 'In Progress' : 'Not Started'}
                                   color={
-                                    pathAssignment.status === 'completed'
+                                    displayStatus === 'completed'
                                       ? 'success'
-                                      : pathAssignment.status === 'in_progress'
+                                      : displayStatus === 'in_progress'
                                       ? 'warning'
                                       : 'default'
                                   }
@@ -922,13 +992,33 @@ const EmployeeTrainingHistory: React.FC<EmployeeTrainingHistoryProps> = ({
                                     <TableBody>
                                       {pathCourseAssignments.map((pca) => {
                                         const assignment = pca.assignment!;
+                                        const pathAssignment = pca.pathAssignment;
                                         const assignmentResults = getAssignmentResults(assignment.id);
                                         const latestResult = assignmentResults.length > 0
                                           ? assignmentResults.sort(
                                               (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
                                             )[0]
                                           : null;
-                                        const status = getAssignmentStatus(assignment);
+                                        
+                                        // Determine status based on actual assignment data
+                                        // Priority: Completed > In Progress > Not Started
+                                        // Check multiple indicators of completion
+                                        let status;
+                                        const hasCompletedDate = !!assignment.trainingCompletedAt;
+                                        const isMarkedComplete = assignment.isTrainingComplete || assignment.status === 'completed';
+                                        const hasResults = assignmentResults.length > 0 || !!latestResult;
+                                        
+                                        if (isMarkedComplete || hasCompletedDate) {
+                                          // Course is completed if marked complete OR has a completion date
+                                          status = { label: 'Completed', color: 'success' as const };
+                                        } else if (hasResults) {
+                                          // Course is in progress if there are quiz results
+                                          status = { label: 'In Progress', color: 'warning' as const };
+                                        } else {
+                                          // Course hasn't been started
+                                          status = { label: 'Not Started', color: 'default' as const };
+                                        }
+                                        
                                         const startedDate = assignmentResults.length > 0
                                           ? assignmentResults.sort(
                                               (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()

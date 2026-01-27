@@ -30,10 +30,16 @@ import {
   Button,
   useTheme,
   useMediaQuery,
+  Collapse,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import SearchIcon from '@mui/icons-material/Search';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
 import EmployeeTrainingHistory from './EmployeeTrainingHistory';
 // @ts-ignore - recharts types
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -55,6 +61,8 @@ interface Assignment {
   status: 'assigned' | 'completed' | null;
   isTrainingComplete: boolean;
   trainingCompletedAt?: string | null;
+  assignmentSource?: string | null; // 'individual' or 'learning_path'
+  learningPathId?: string | null;
   createdAt: string;
   updatedAt: string;
   course?: {
@@ -79,10 +87,21 @@ interface LearningPathAssignment {
   } | null;
 }
 
+interface Result {
+  id: string;
+  assignmentId: string;
+  score: number;
+  passed: boolean;
+  createdAt: string;
+}
+
 interface EmployeeTrainingStatus {
   employee: Employee;
   assignments: Assignment[];
   learningPathAssignments: LearningPathAssignment[];
+  allAssignments: Assignment[]; // All assignments including learning path ones
+  results: Result[]; // Results for all assignments
+  learningPathCourses: Map<string, { courseId: string; order: number; course?: { id: string; title: string } }[]>; // learningPathId -> courses
   assignedCount: number;
   completedCount: number;
   inProgressCount: number;
@@ -90,6 +109,15 @@ interface EmployeeTrainingStatus {
   overallProgress: number;
   status: 'on_track' | 'in_progress' | 'overdue' | 'not_started';
   lastActivityDate?: string | null;
+  // Separate counts for courses and learning paths
+  courseAssignedCount: number;
+  courseCompletedCount: number;
+  courseInProgressCount: number;
+  courseNotStartedCount: number;
+  learningPathAssignedCount: number;
+  learningPathCompletedCount: number;
+  learningPathInProgressCount: number;
+  learningPathNotStartedCount: number;
 }
 
 interface SummaryStats {
@@ -126,6 +154,7 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [showHistoryView, setShowHistoryView] = useState(false);
   const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<{ id: string; name: string } | null>(null);
+  const [expandedPathId, setExpandedPathId] = useState<string | null>(null);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -154,7 +183,7 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
       };
 
       // Fetch all independent data in parallel for maximum performance
-      const [employeesData, coursesData, learningPathsData, allAssignmentsData, allPathAssignmentsData] = await Promise.all([
+      const [employeesData, coursesData, learningPathsData, allAssignmentsData, allPathAssignmentsData, resultsData, learningPathCoursesData] = await Promise.all([
         // Fetch employees with pagination
         fetchAllPages(
           (nextToken) => client.models.Employee.list({
@@ -190,7 +219,7 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
             title: lp.title,
           })
         ),
-        // Fetch all assignments with pagination
+        // Fetch all course assignments with pagination (both individual and learning_path)
         fetchAllPages(
           (nextToken) => client.models.Assignment.list({
             nextToken,
@@ -202,6 +231,8 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
             status: a.status,
             isTrainingComplete: a.isTrainingComplete ?? false,
             trainingCompletedAt: a.trainingCompletedAt,
+            assignmentSource: a.assignmentSource || null, // Don't default to 'individual', keep null if not set
+            learningPathId: a.learningPathId || null,
             createdAt: a.createdAt,
             updatedAt: a.updatedAt,
           })
@@ -223,26 +254,73 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
             updatedAt: p.updatedAt,
           })
         ),
+        // Fetch results for quiz scores and attempts
+        fetchAllPages(
+          (nextToken) => client.models.Result.list({
+            nextToken,
+          }),
+          (r: any) => ({
+            id: r.id!,
+            assignmentId: r.assignmentId,
+            score: r.score,
+            passed: r.passed,
+            createdAt: r.createdAt,
+          })
+        ),
+        // Fetch learning path courses to know which courses belong to which learning path
+        fetchAllPages(
+          (nextToken) => client.models.LearningPathCourse.list({
+            nextToken,
+          }),
+          (lpc: any) => ({
+            id: lpc.id!,
+            learningPathId: lpc.learningPathId,
+            courseId: lpc.courseId,
+            order: lpc.order || 0,
+          })
+        ),
       ]);
 
       // Create lookup maps for O(1) access
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
       const learningPathMap = new Map(learningPathsData.map((lp: any) => [lp.id, lp]));
+      
+      // Process learning path courses into a map: learningPathId -> courses[]
+      const learningPathCoursesMap = new Map<string, { courseId: string; order: number; course?: { id: string; title: string } }[]>();
+      learningPathCoursesData.forEach((lpc: any) => {
+        if (!learningPathCoursesMap.has(lpc.learningPathId)) {
+          learningPathCoursesMap.set(lpc.learningPathId, []);
+        }
+        const course = courseMap.get(lpc.courseId);
+        learningPathCoursesMap.get(lpc.learningPathId)!.push({
+          courseId: lpc.courseId,
+          order: lpc.order,
+          course: course ? { id: course.id, title: course.title } : undefined,
+        });
+      });
+      
+      // Sort courses by order within each learning path
+      learningPathCoursesMap.forEach((courses, pathId) => {
+        courses.sort((a, b) => a.order - b.order);
+      });
 
-      // Group assignments by employee ID
+      // Group assignments by employee ID - include ALL assignments regardless of status or source
       const assignmentsByEmployee = new Map<string, Assignment[]>();
       allAssignmentsData.forEach((a: any) => {
-        if (!a.employeeId) return;
+        if (!a.employeeId || !a.id) return;
         if (!assignmentsByEmployee.has(a.employeeId)) {
           assignmentsByEmployee.set(a.employeeId, []);
         }
+        // Include all assignments - don't filter by status or source
         assignmentsByEmployee.get(a.employeeId)!.push({
           id: a.id,
           employeeId: a.employeeId,
           courseId: a.courseId,
           status: a.status,
-          isTrainingComplete: a.isTrainingComplete,
+          isTrainingComplete: a.isTrainingComplete ?? false,
           trainingCompletedAt: a.trainingCompletedAt,
+          assignmentSource: a.assignmentSource || null, // Keep null if not set, don't default to 'individual'
+          learningPathId: a.learningPathId || null,
           createdAt: a.createdAt,
           updatedAt: a.updatedAt,
           course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
@@ -281,30 +359,80 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
       const now = new Date();
 
       for (const employee of filteredEmployeesData) {
-        const assignments = assignmentsByEmployee.get(employee.id) || [];
+        const allEmployeeAssignments = assignmentsByEmployee.get(employee.id) || [];
+        // Separate individual assignments from learning path assignments
+        const assignments = allEmployeeAssignments.filter(a => a.assignmentSource === 'individual' || !a.assignmentSource);
         const pathAssignments = pathAssignmentsByEmployee.get(employee.id) || [];
+        
+        // Get results for this employee's assignments
+        const assignmentIds = new Set(allEmployeeAssignments.map(a => a.id));
+        const employeeResults = resultsData.filter((r: any) => assignmentIds.has(r.assignmentId));
 
-        // Calculate statistics
+        // Calculate statistics - separate for courses and learning paths
         const totalAssignments = assignments.length;
         const totalPathAssignments = pathAssignments.length;
         const totalAssigned = totalAssignments + totalPathAssignments;
 
+        // Course assignment statistics
         const completedAssignments = assignments.filter(
           (a) => a.status === 'completed' || a.isTrainingComplete
         ).length;
-        const completedPaths = pathAssignments.filter(
-          (p) => p.status === 'completed'
-        ).length;
-        const completedCount = completedAssignments + completedPaths;
-
         const inProgressAssignments = assignments.filter(
           (a) => a.status === 'assigned' && !a.isTrainingComplete
         ).length;
-        const inProgressPaths = pathAssignments.filter(
-          (p) => p.status === 'in_progress'
-        ).length;
-        const inProgressCount = inProgressAssignments + inProgressPaths;
+        const courseNotStartedCount = totalAssignments - completedAssignments - inProgressAssignments;
 
+        // Learning path assignment statistics - calculate based on actual course completions
+        let completedPaths = 0;
+        let inProgressPaths = 0;
+        
+        pathAssignments.forEach((pathAssignment) => {
+          // Get all courses for this learning path
+          const pathCourses = learningPathCoursesMap.get(pathAssignment.learningPathId) || [];
+          
+          if (pathCourses.length === 0) {
+            // If no courses in path, use database status
+            if (pathAssignment.status === 'completed') {
+              completedPaths++;
+            } else if (pathAssignment.status === 'in_progress') {
+              inProgressPaths++;
+            }
+            return;
+          }
+          
+          // Check if all courses in this learning path are completed
+          const completedCourses = pathCourses.filter((pc) => {
+            // Find the assignment for this course that belongs to this learning path
+            const courseAssignment = allEmployeeAssignments.find((a) => 
+              a.courseId === pc.courseId && 
+              a.learningPathId === pathAssignment.learningPathId &&
+              a.assignmentSource === 'learning_path'
+            ) || allEmployeeAssignments.find((a) => a.courseId === pc.courseId);
+            
+            if (!courseAssignment) return false;
+            
+            // Check if course is completed - same logic as EmployeeTrainingHistory
+            const hasCompletedDate = !!courseAssignment.trainingCompletedAt;
+            const isMarkedComplete = courseAssignment.isTrainingComplete || courseAssignment.status === 'completed';
+            
+            return isMarkedComplete || hasCompletedDate;
+          }).length;
+          
+          const allCoursesCompleted = completedCourses === pathCourses.length;
+          const someCoursesCompleted = completedCourses > 0;
+          
+          if (allCoursesCompleted) {
+            completedPaths++;
+          } else if (someCoursesCompleted || pathAssignment.status === 'in_progress') {
+            inProgressPaths++;
+          }
+        });
+        
+        const learningPathNotStartedCount = totalPathAssignments - completedPaths - inProgressPaths;
+
+        // Combined counts (for overall progress calculation)
+        const completedCount = completedAssignments + completedPaths;
+        const inProgressCount = inProgressAssignments + inProgressPaths;
         const notStartedCount = totalAssigned - completedCount - inProgressCount;
 
         // Calculate overall progress percentage
@@ -364,8 +492,11 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
             department: employee.department,
             isActive: employee.isActive,
           },
-          assignments,
+          assignments, // Only individual assignments
           learningPathAssignments: pathAssignments,
+          allAssignments: allEmployeeAssignments, // All assignments including learning path ones
+          results: employeeResults,
+          learningPathCourses: learningPathCoursesMap,
           assignedCount: totalAssigned,
           completedCount,
           inProgressCount,
@@ -373,6 +504,16 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
           overallProgress,
           status,
           lastActivityDate,
+          // Separate counts for courses
+          courseAssignedCount: totalAssignments,
+          courseCompletedCount: completedAssignments,
+          courseInProgressCount: inProgressAssignments,
+          courseNotStartedCount: courseNotStartedCount,
+          // Separate counts for learning paths
+          learningPathAssignedCount: totalPathAssignments,
+          learningPathCompletedCount: completedPaths,
+          learningPathInProgressCount: inProgressPaths,
+          learningPathNotStartedCount: learningPathNotStartedCount,
         });
       }
 
@@ -459,6 +600,71 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
       default:
         return null;
     }
+  };
+
+  // Calculate status based on course assignments only
+  const getCourseStatus = (employeeStatus: EmployeeTrainingStatus): 'on_track' | 'in_progress' | 'overdue' | 'not_started' => {
+    const now = new Date();
+    const { courseAssignedCount, courseCompletedCount, courseInProgressCount, assignments } = employeeStatus;
+    
+    if (courseAssignedCount === 0) {
+      return 'not_started';
+    }
+    
+    if (courseCompletedCount === courseAssignedCount) {
+      return 'on_track';
+    }
+    
+    // Check for overdue course assignments
+    const hasOverdue = assignments.some(
+      (a) =>
+        a.status === 'assigned' &&
+        !a.isTrainingComplete &&
+        a.createdAt &&
+        new Date(a.createdAt).getTime() < now.getTime() - 30 * 24 * 60 * 60 * 1000 // 30 days old
+    );
+    
+    if (hasOverdue) {
+      return 'overdue';
+    }
+    
+    if (courseInProgressCount > 0 || courseCompletedCount > 0) {
+      return 'in_progress';
+    }
+    
+    return 'not_started';
+  };
+
+  // Calculate status based on learning path assignments only
+  const getLearningPathStatus = (employeeStatus: EmployeeTrainingStatus): 'on_track' | 'in_progress' | 'overdue' | 'not_started' => {
+    const now = new Date();
+    const { learningPathAssignedCount, learningPathCompletedCount, learningPathInProgressCount, learningPathAssignments } = employeeStatus;
+    
+    if (learningPathAssignedCount === 0) {
+      return 'not_started';
+    }
+    
+    if (learningPathCompletedCount === learningPathAssignedCount) {
+      return 'on_track';
+    }
+    
+    // Check for overdue learning path assignments
+    const hasOverdue = learningPathAssignments.some(
+      (p) =>
+        p.dueDate &&
+        new Date(p.dueDate) < now &&
+        p.status !== 'completed'
+    );
+    
+    if (hasOverdue) {
+      return 'overdue';
+    }
+    
+    if (learningPathInProgressCount > 0 || learningPathCompletedCount > 0) {
+      return 'in_progress';
+    }
+    
+    return 'not_started';
   };
 
   const handleRowClick = (employee: EmployeeTrainingStatus) => {
@@ -838,81 +1044,203 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
         </CardContent>
       </Card>
 
-      {/* Employee Table */}
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Employee Name</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell align="right">Assigned</TableCell>
-              <TableCell align="right">Completed</TableCell>
-              <TableCell align="right">In Progress</TableCell>
-              <TableCell align="right">Not Started</TableCell>
-              <TableCell align="right">Progress %</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Last Activity</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredEmployees.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} align="center">
-                  <Typography color="textSecondary" sx={{ py: 3 }}>
-                    No employees found matching the filters.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredEmployees.map((employeeStatus) => (
-                <TableRow
-                  key={employeeStatus.employee.id}
-                  hover
-                  onClick={() => handleRowClick(employeeStatus)}
-                  sx={{ cursor: 'pointer' }}
-                >
-                  <TableCell>
-                    <Box>
-                      <Typography variant="body2" fontWeight="medium">
-                        {employeeStatus.employee.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {employeeStatus.employee.email}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell>{employeeStatus.employee.department || 'N/A'}</TableCell>
-                  <TableCell align="right">{employeeStatus.assignedCount}</TableCell>
-                  <TableCell align="right">{employeeStatus.completedCount}</TableCell>
-                  <TableCell align="right">{employeeStatus.inProgressCount}</TableCell>
-                  <TableCell align="right">{employeeStatus.notStartedCount}</TableCell>
-                  <TableCell align="right">
-                    <Typography
-                      variant="body2"
-                      color={
-                        employeeStatus.overallProgress === 100
-                          ? 'success.main'
-                          : employeeStatus.overallProgress > 50
-                          ? 'warning.main'
-                          : 'text.secondary'
-                      }
-                    >
-                      {employeeStatus.overallProgress}%
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{getStatusIndicator(employeeStatus.status)}</TableCell>
-                  <TableCell>{formatDate(employeeStatus.lastActivityDate)}</TableCell>
+      {/* Course Assignments Table */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+            Course Assignments Status
+          </Typography>
+          <TableContainer component={Paper} variant="outlined">
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Employee Name</TableCell>
+                  <TableCell>Department</TableCell>
+                  <TableCell align="right">Assigned</TableCell>
+                  <TableCell align="right">Completed</TableCell>
+                  <TableCell align="right">In Progress</TableCell>
+                  <TableCell align="right">Not Started</TableCell>
+                  <TableCell align="right">Progress %</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Last Activity</TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              </TableHead>
+              <TableBody>
+                {filteredEmployees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center">
+                      <Typography color="textSecondary" sx={{ py: 3 }}>
+                        No employees found matching the filters.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredEmployees
+                    .filter(emp => emp.courseAssignedCount > 0) // Only show employees with course assignments
+                    .map((employeeStatus) => {
+                      const courseProgress = employeeStatus.courseAssignedCount > 0
+                        ? Math.round((employeeStatus.courseCompletedCount / employeeStatus.courseAssignedCount) * 100)
+                        : 0;
+                      
+                      return (
+                        <TableRow
+                          key={`course-${employeeStatus.employee.id}`}
+                          hover
+                          onClick={() => handleRowClick(employeeStatus)}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <TableCell>
+                            <Box>
+                              <Typography variant="body2" fontWeight="medium">
+                                {employeeStatus.employee.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {employeeStatus.employee.email}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>{employeeStatus.employee.department || 'N/A'}</TableCell>
+                          <TableCell align="right">{employeeStatus.courseAssignedCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.courseCompletedCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.courseInProgressCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.courseNotStartedCount}</TableCell>
+                          <TableCell align="right">
+                            <Typography
+                              variant="body2"
+                              color={
+                                courseProgress === 100
+                                  ? 'success.main'
+                                  : courseProgress > 50
+                                  ? 'warning.main'
+                                  : 'text.secondary'
+                              }
+                            >
+                              {courseProgress}%
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{getStatusIndicator(getCourseStatus(employeeStatus))}</TableCell>
+                          <TableCell>{formatDate(employeeStatus.lastActivityDate)}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                )}
+                {filteredEmployees.filter(emp => emp.courseAssignedCount > 0).length === 0 && filteredEmployees.length > 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center">
+                      <Typography color="textSecondary" sx={{ py: 3 }}>
+                        No employees with course assignments found.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
+      {/* Learning Path Assignments Table */}
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+            Learning Path Assignments Status
+          </Typography>
+          <TableContainer component={Paper} variant="outlined">
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Employee Name</TableCell>
+                  <TableCell>Department</TableCell>
+                  <TableCell align="right">Assigned</TableCell>
+                  <TableCell align="right">Completed</TableCell>
+                  <TableCell align="right">In Progress</TableCell>
+                  <TableCell align="right">Not Started</TableCell>
+                  <TableCell align="right">Progress %</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Last Activity</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredEmployees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center">
+                      <Typography color="textSecondary" sx={{ py: 3 }}>
+                        No employees found matching the filters.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredEmployees
+                    .filter(emp => emp.learningPathAssignedCount > 0) // Only show employees with learning path assignments
+                    .map((employeeStatus) => {
+                      const learningPathProgress = employeeStatus.learningPathAssignedCount > 0
+                        ? Math.round((employeeStatus.learningPathCompletedCount / employeeStatus.learningPathAssignedCount) * 100)
+                        : 0;
+                      
+                      return (
+                        <TableRow
+                          key={`learningpath-${employeeStatus.employee.id}`}
+                          hover
+                          onClick={() => handleRowClick(employeeStatus)}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <TableCell>
+                            <Box>
+                              <Typography variant="body2" fontWeight="medium">
+                                {employeeStatus.employee.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {employeeStatus.employee.email}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>{employeeStatus.employee.department || 'N/A'}</TableCell>
+                          <TableCell align="right">{employeeStatus.learningPathAssignedCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.learningPathCompletedCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.learningPathInProgressCount}</TableCell>
+                          <TableCell align="right">{employeeStatus.learningPathNotStartedCount}</TableCell>
+                          <TableCell align="right">
+                            <Typography
+                              variant="body2"
+                              color={
+                                learningPathProgress === 100
+                                  ? 'success.main'
+                                  : learningPathProgress > 50
+                                  ? 'warning.main'
+                                  : 'text.secondary'
+                              }
+                            >
+                              {learningPathProgress}%
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{getStatusIndicator(getLearningPathStatus(employeeStatus))}</TableCell>
+                          <TableCell>{formatDate(employeeStatus.lastActivityDate)}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                )}
+                {filteredEmployees.filter(emp => emp.learningPathAssignedCount > 0).length === 0 && filteredEmployees.length > 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center">
+                      <Typography color="textSecondary" sx={{ py: 3 }}>
+                        No employees with learning path assignments found.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
 
       {/* Employee Detail Dialog */}
       <Dialog
         open={detailDialogOpen}
-        onClose={() => setDetailDialogOpen(false)}
+        onClose={() => {
+          setDetailDialogOpen(false);
+          setExpandedPathId(null);
+        }}
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
@@ -934,9 +1262,9 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
               </Typography>
 
               <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
-                Course Assignments ({selectedEmployee.assignments.length})
+                Course Assignments ({selectedEmployee.allAssignments.filter(a => a.courseId).length})
               </Typography>
-              {selectedEmployee.assignments.length === 0 ? (
+              {selectedEmployee.allAssignments.filter(a => a.courseId).length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   No course assignments
                 </Typography>
@@ -945,29 +1273,94 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell>Course</TableCell>
+                        <TableCell>Source</TableCell>
+                        <TableCell>Course Name</TableCell>
+                        <TableCell>Assigned Date</TableCell>
+                        <TableCell>Started Date</TableCell>
+                        <TableCell>Completed Date</TableCell>
                         <TableCell>Status</TableCell>
-                        <TableCell>Completed</TableCell>
-                        <TableCell>Last Updated</TableCell>
+                        <TableCell>Quiz Score</TableCell>
+                        <TableCell>Attempts</TableCell>
+                        <TableCell>Actions</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {selectedEmployee.assignments.map((assignment) => (
-                        <TableRow key={assignment.id}>
-                          <TableCell>
-                            {assignment.course?.title || 'Unknown Course'}
-                          </TableCell>
-                          <TableCell>
-                            {assignment.status === 'completed' || assignment.isTrainingComplete
-                              ? 'Completed'
-                              : 'Assigned'}
-                          </TableCell>
-                          <TableCell>
-                            {assignment.isTrainingComplete ? 'Yes' : 'No'}
-                          </TableCell>
-                          <TableCell>{formatDate(assignment.updatedAt)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {selectedEmployee.allAssignments
+                        .filter((assignment) => assignment.courseId) // Only show assignments with a valid courseId
+                        .map((assignment) => {
+                          const isFromLearningPath = assignment.assignmentSource === 'learning_path' || (assignment.learningPathId !== null && assignment.learningPathId !== undefined);
+                        const learningPath = isFromLearningPath && assignment.learningPathId
+                          ? selectedEmployee.learningPathAssignments.find(lp => lp.learningPathId === assignment.learningPathId)?.learningPath
+                          : null;
+                        const assignmentResults = selectedEmployee.results.filter(r => r.assignmentId === assignment.id);
+                        const latestResult = assignmentResults.length > 0
+                          ? assignmentResults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+                          : null;
+                        const startedDate = assignmentResults.length > 0
+                          ? assignmentResults.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0].createdAt
+                          : null;
+                        const status = assignment.isTrainingComplete ? 'Completed' : assignmentResults.length > 0 ? 'In Progress' : 'Not Started';
+                        
+                        return (
+                          <TableRow key={assignment.id}>
+                            <TableCell>
+                              <Box>
+                                <Chip
+                                  label={isFromLearningPath ? 'Learning Path' : 'Individual'}
+                                  size="small"
+                                  color={isFromLearningPath ? 'secondary' : 'primary'}
+                                  sx={{ mb: 0.5 }}
+                                />
+                                {isFromLearningPath && learningPath && (
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    {learningPath.title}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              {assignment.course?.title || 'Unknown Course'}
+                            </TableCell>
+                            <TableCell>{formatDate(assignment.createdAt)}</TableCell>
+                            <TableCell>{formatDate(startedDate)}</TableCell>
+                            <TableCell>
+                              {formatDate(assignment.trainingCompletedAt || (latestResult && assignment.isTrainingComplete ? latestResult.createdAt : null))}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={status}
+                                size="small"
+                                color={
+                                  status === 'Completed' ? 'success' :
+                                  status === 'In Progress' ? 'warning' : 'default'
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              {latestResult ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography variant="body2">
+                                    {latestResult.score}%
+                                  </Typography>
+                                  {latestResult.passed ? (
+                                    <CheckCircleIcon color="success" fontSize="small" />
+                                  ) : (
+                                    <CancelIcon color="error" fontSize="small" />
+                                  )}
+                                </Box>
+                              ) : (
+                                'N/A'
+                              )}
+                            </TableCell>
+                            <TableCell>{assignmentResults.length}</TableCell>
+                            <TableCell>
+                              <IconButton size="small" title="View Details">
+                                <VisibilityIcon fontSize="small" />
+                              </IconButton>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -985,43 +1378,161 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
                   <Table size="small">
                     <TableHead>
                       <TableRow>
+                        <TableCell></TableCell>
                         <TableCell>Learning Path</TableCell>
-                        <TableCell>Status</TableCell>
-                        <TableCell>Assigned</TableCell>
+                        <TableCell>Assigned Date</TableCell>
                         <TableCell>Due Date</TableCell>
-                        <TableCell>Completed</TableCell>
+                        <TableCell>Completed Date</TableCell>
+                        <TableCell>Status</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {selectedEmployee.learningPathAssignments.map((pathAssignment) => (
-                        <TableRow key={pathAssignment.id}>
-                          <TableCell>
-                            {pathAssignment.learningPath?.title || 'Unknown Path'}
-                          </TableCell>
-                          <TableCell>
-                            {pathAssignment.status || 'Not Started'}
-                          </TableCell>
-                          <TableCell>{formatDate(pathAssignment.assignedDate)}</TableCell>
-                          <TableCell>
-                            {pathAssignment.dueDate ? (
-                              <Typography
-                                color={
-                                  pathAssignment.dueDate &&
-                                  new Date(pathAssignment.dueDate) < new Date() &&
-                                  pathAssignment.status !== 'completed'
-                                    ? 'error'
-                                    : 'text.primary'
-                                }
-                              >
-                                {formatDate(pathAssignment.dueDate)}
-                              </Typography>
-                            ) : (
-                              'No due date'
+                      {selectedEmployee.learningPathAssignments.map((pathAssignment) => {
+                        const pathCourses = selectedEmployee.learningPathCourses.get(pathAssignment.learningPathId) || [];
+                        const isExpanded = expandedPathId === pathAssignment.id;
+                        const pathCourseAssignments = pathCourses.map((pc) => {
+                          const assignment = selectedEmployee.allAssignments.find((a) => 
+                            a.courseId === pc.courseId && a.learningPathId === pathAssignment.learningPathId
+                          );
+                          return { ...pc, assignment };
+                        }).filter((pca) => pca.assignment);
+
+                        return (
+                          <React.Fragment key={pathAssignment.id}>
+                            <TableRow>
+                              <TableCell>
+                                {pathCourseAssignments.length > 0 && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => setExpandedPathId(isExpanded ? null : pathAssignment.id)}
+                                  >
+                                    {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                  </IconButton>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {pathAssignment.learningPath?.title || 'Unknown Path'}
+                                {pathCourseAssignments.length > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                                    ({pathCourseAssignments.length} courses)
+                                  </Typography>
+                                )}
+                              </TableCell>
+                              <TableCell>{formatDate(pathAssignment.assignedDate)}</TableCell>
+                              <TableCell>
+                                {pathAssignment.dueDate ? (
+                                  <Typography
+                                    color={
+                                      pathAssignment.dueDate &&
+                                      new Date(pathAssignment.dueDate) < new Date() &&
+                                      pathAssignment.status !== 'completed'
+                                        ? 'error'
+                                        : 'text.primary'
+                                    }
+                                  >
+                                    {formatDate(pathAssignment.dueDate)}
+                                  </Typography>
+                                ) : (
+                                  'No due date'
+                                )}
+                              </TableCell>
+                              <TableCell>{formatDate(pathAssignment.completedDate)}</TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={pathAssignment.status || 'Not Started'}
+                                  size="small"
+                                  color={
+                                    pathAssignment.status === 'completed'
+                                      ? 'success'
+                                      : pathAssignment.status === 'in_progress'
+                                      ? 'warning'
+                                      : 'default'
+                                  }
+                                />
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && pathCourseAssignments.length > 0 && (
+                              <TableRow>
+                                <TableCell colSpan={6} sx={{ py: 2, backgroundColor: 'grey.50' }}>
+                                  <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>
+                                    Courses in this Learning Path:
+                                  </Typography>
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell>Course Name</TableCell>
+                                        <TableCell>Assigned Date</TableCell>
+                                        <TableCell>Started Date</TableCell>
+                                        <TableCell>Completed Date</TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell>Quiz Score</TableCell>
+                                        <TableCell>Attempts</TableCell>
+                                        <TableCell>Actions</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {pathCourseAssignments.map((pca) => {
+                                        const assignment = pca.assignment!;
+                                        const assignmentResults = selectedEmployee.results.filter(r => r.assignmentId === assignment.id);
+                                        const latestResult = assignmentResults.length > 0
+                                          ? assignmentResults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+                                          : null;
+                                        const startedDate = assignmentResults.length > 0
+                                          ? assignmentResults.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0].createdAt
+                                          : null;
+                                        const status = assignment.isTrainingComplete ? 'Completed' : assignmentResults.length > 0 ? 'In Progress' : 'Not Started';
+
+                                        return (
+                                          <TableRow key={assignment.id}>
+                                            <TableCell>{assignment.course?.title || pca.course?.title || 'Unknown Course'}</TableCell>
+                                            <TableCell>{formatDate(assignment.createdAt)}</TableCell>
+                                            <TableCell>{formatDate(startedDate)}</TableCell>
+                                            <TableCell>
+                                              {formatDate(assignment.trainingCompletedAt || (latestResult && assignment.isTrainingComplete ? latestResult.createdAt : null))}
+                                            </TableCell>
+                                            <TableCell>
+                                              <Chip
+                                                label={status}
+                                                size="small"
+                                                color={
+                                                  status === 'Completed' ? 'success' :
+                                                  status === 'In Progress' ? 'warning' : 'default'
+                                                }
+                                              />
+                                            </TableCell>
+                                            <TableCell>
+                                              {latestResult ? (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                  <Typography variant="body2">
+                                                    {latestResult.score}%
+                                                  </Typography>
+                                                  {latestResult.passed ? (
+                                                    <CheckCircleIcon color="success" fontSize="small" />
+                                                  ) : (
+                                                    <CancelIcon color="error" fontSize="small" />
+                                                  )}
+                                                </Box>
+                                              ) : (
+                                                'N/A'
+                                              )}
+                                            </TableCell>
+                                            <TableCell>{assignmentResults.length}</TableCell>
+                                            <TableCell>
+                                              <IconButton size="small" title="View Details">
+                                                <VisibilityIcon fontSize="small" />
+                                              </IconButton>
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </TableCell>
-                          <TableCell>{formatDate(pathAssignment.completedDate)}</TableCell>
-                        </TableRow>
-                      ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>

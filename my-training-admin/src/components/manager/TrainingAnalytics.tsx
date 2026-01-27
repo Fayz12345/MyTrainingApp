@@ -97,15 +97,18 @@ interface EmployeeProgress {
   employeeName: string;
   employeeEmail: string;
   managerName: string;
-  totalAssignments: number;
-  completedAssignments: number;
+  totalAssignments: number; // Individual course assignments only
+  completedAssignments: number; // Individual course assignments completed only
   completionRate: number;
   averageScore: number;
-  // Learning Path assignments
+  // Learning Path assignments (the learning path itself)
   totalLearningPathAssignments: number;
   completedLearningPathAssignments: number;
   learningPathCompletionRate: number;
   assignedLearningPaths: string[]; // Array of learning path titles
+  // Learning path course assignments (courses within learning paths)
+  totalLearningPathCourseAssignments: number;
+  completedLearningPathCourseAssignments: number;
 }
 
 interface RecentCompletion {
@@ -134,105 +137,217 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
       const session = await fetchAuthSession();
       const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
 
-      // Fetch all assignments with related data
-      const assignments = await client.models.Assignment.list({
-        authMode: 'userPool'
-      });
+      // Helper function to fetch all pages with pagination
+      const fetchAllPages = async <T,>(
+        fetchFn: (nextToken?: string) => Promise<{ data: T[] | null; nextToken?: string | null }>,
+        processFn?: (item: T) => any
+      ): Promise<any[]> => {
+        const allData: any[] = [];
+        let nextToken: string | undefined = undefined;
+        do {
+          const response: any = await fetchFn(nextToken);
+          const batch = (response.data || [])
+            .filter((item: any) => item.id !== null)
+            .map((item: any) => processFn ? processFn(item) : item);
+          allData.push(...batch);
+          nextToken = response.nextToken || undefined;
+        } while (nextToken);
+        return allData;
+      };
 
-      // Fetch all results
-      const results = await client.models.Result.list({
-        authMode: 'userPool'
-      });
-
-      // Fetch all courses
-      const courses = await client.models.Course.list({
-        authMode: 'userPool'
-      });
-
-      // Fetch all employees
-      const employees = await client.models.Employee.list({
-        authMode: 'userPool'
-      });
-
-      // Fetch all managers
-      const managers = await client.models.Manager.list({
-        authMode: 'userPool'
-      });
-
-      // Fetch learning path assignments
-      const learningPathAssignments = await client.models.LearningPathAssignment.list({
-        authMode: 'userPool'
-      });
-
-      // Fetch learning paths
-      const learningPaths = await client.models.LearningPath.list({
-        authMode: 'userPool'
-      });
-
-      if (!assignments.data || !results.data || !courses.data || !employees.data || !managers.data || !learningPathAssignments.data || !learningPaths.data) {
-        throw new Error('Failed to fetch analytics data');
-      }
+      // Fetch all independent data in parallel with pagination for better performance
+      const [assignmentsData, resultsData, coursesData, employeesDataRaw, managersData, learningPathAssignmentsData, learningPathsData] = await Promise.all([
+        fetchAllPages(
+          (nextToken) => client.models.Assignment.list({ authMode: 'userPool', nextToken }),
+          (a: any) => ({
+            id: a.id!,
+            employeeId: a.employeeId,
+            courseId: a.courseId,
+            status: a.status,
+            assignmentSource: a.assignmentSource || null,
+            learningPathId: a.learningPathId || null,
+            createdAt: a.createdAt,
+            updatedAt: a.updatedAt,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.Result.list({ authMode: 'userPool', nextToken }),
+          (r: any) => ({
+            id: r.id!,
+            assignmentId: r.assignmentId,
+            score: r.score,
+            passed: r.passed,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.Course.list({ authMode: 'userPool', nextToken }),
+          (c: any) => ({
+            id: c.id!,
+            title: c.title,
+            passingScore: c.passingScore,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.Employee.list({ 
+            authMode: 'userPool',
+            filter: { isActive: { eq: true } },
+            nextToken 
+          }),
+          (e: any) => ({
+            id: e.id!,
+            userId: e.userId,
+            email: e.email,
+            name: e.name,
+            department: e.department,
+            managerId: e.managerId,
+            createdBy: e.createdBy,
+            storeId: e.storeId,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.Manager.list({ authMode: 'userPool', nextToken }),
+          (m: any) => ({
+            id: m.id!,
+            userId: m.userId,
+            name: m.name,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.LearningPathAssignment.list({ authMode: 'userPool', nextToken }),
+          (lp: any) => ({
+            id: lp.id!,
+            employeeId: lp.employeeId,
+            learningPathId: lp.learningPathId,
+            status: lp.status,
+            assignedDate: lp.assignedDate,
+            dueDate: lp.dueDate,
+            completedDate: lp.completedDate,
+            updatedAt: lp.updatedAt,
+          })
+        ),
+        fetchAllPages(
+          (nextToken) => client.models.LearningPath.list({ authMode: 'userPool', nextToken }),
+          (lp: any) => ({
+            id: lp.id!,
+            title: lp.title,
+          })
+        ),
+      ]);
 
       // Cast data to proper types
-      const coursesData = courses.data as Course[];
-      let employeesData = employees.data as Employee[];
-      const managersData = managers.data as Manager[];
+      let employeesData = employeesDataRaw as Employee[];
+      const managersDataTyped = managersData as Manager[];
 
       // Filter employees by createdBy - managers should only see employees they created
       if (userId) {
-        console.log('[TrainingAnalytics] Filtering employees by createdBy:', userId);
         employeesData = employeesData.filter(emp => emp.createdBy === userId);
-        console.log('[TrainingAnalytics] Employees after createdBy filter:', employeesData.length);
       }
 
       // Filter employees by selected store (if store is selected)
       if (selectedStoreId) {
-        console.log('[TrainingAnalytics] Filtering employees by storeId:', selectedStoreId);
-        const beforeStoreFilter = employeesData.length;
-        // Type assertion needed until schema is deployed and types are regenerated
         employeesData = employeesData.filter(emp => (emp as any).storeId === selectedStoreId);
-        console.log(`[TrainingAnalytics] Filtered employees by store: ${beforeStoreFilter} -> ${employeesData.length}`);
       }
 
-      // Get employee IDs for filtering assignments and results
+      // Get employee IDs for filtering assignments and results - use Set for O(1) lookup
       const employeeIds = new Set(employeesData.map(emp => emp.id));
 
       // Filter assignments to only include those for employees created by this manager
-      const assignmentsData = (assignments.data as Assignment[]).filter(
+      const filteredAssignmentsData = assignmentsData.filter(
         assignment => employeeIds.has(assignment.employeeId)
       );
 
       // Filter learning path assignments to only include those for employees created by this manager
-      const learningPathAssignmentsData = (learningPathAssignments.data as any[]).filter(
+      const filteredLearningPathAssignmentsData = learningPathAssignmentsData.filter(
         assignment => employeeIds.has(assignment.employeeId)
       );
 
-      // Cast learning paths data
-      const learningPathsData = learningPaths.data as any[];
-
       // Filter results to only include those for assignments of employees created by this manager
-      const assignmentIds = new Set(assignmentsData.map(a => a.id));
-      const resultsData = (results.data as Result[]).filter(
+      const assignmentIds = new Set(filteredAssignmentsData.map(a => a.id));
+      const filteredResultsData = resultsData.filter(
         result => assignmentIds.has(result.assignmentId)
       );
 
-      // Create a map of managers for easy lookup by ID and by userId
-      const managerMap: Record<string, Manager> = {};
-      const managerByUserIdMap: Record<string, Manager> = {};
-      managersData.forEach(manager => {
-        managerMap[manager.id] = manager;
-        managerByUserIdMap[manager.userId] = manager;
+      // Create lookup maps for O(1) access instead of using .find()
+      const employeeMap = new Map(employeesData.map(emp => [emp.id, emp]));
+      const courseMap = new Map(coursesData.map(c => [c.id, c]));
+      const learningPathMap = new Map(learningPathsData.map(lp => [lp.id, lp]));
+      const managerMap = new Map(managersDataTyped.map(m => [m.id, m]));
+      const managerByUserIdMap = new Map(managersDataTyped.map(m => [m.userId, m]));
+      
+      // Create result lookup by assignment ID for O(1) access
+      const resultsByAssignment = new Map<string, Result[]>();
+      filteredResultsData.forEach(result => {
+        if (!resultsByAssignment.has(result.assignmentId)) {
+          resultsByAssignment.set(result.assignmentId, []);
+        }
+        resultsByAssignment.get(result.assignmentId)!.push(result);
+      });
+
+      // Create assignment lookup maps for efficient processing
+      // Separate individual course assignments from learning path course assignments
+      const assignmentsByEmployee = new Map<string, Assignment[]>();
+      const learningPathCourseAssignmentsByEmployee = new Map<string, Assignment[]>();
+      const assignmentsByCourse = new Map<string, Assignment[]>();
+      filteredAssignmentsData.forEach(assignment => {
+        // Check if this is a learning path assignment
+        // An assignment is from a learning path if:
+        // 1. assignmentSource is explicitly 'learning_path', OR
+        // 2. learningPathId is set (not null/undefined)
+        const isLearningPathAssignment = 
+          assignment.assignmentSource === 'learning_path' || 
+          (assignment.learningPathId !== null && assignment.learningPathId !== undefined);
+        
+        // By employee - separate individual and learning path assignments
+        if (isLearningPathAssignment) {
+          if (!learningPathCourseAssignmentsByEmployee.has(assignment.employeeId)) {
+            learningPathCourseAssignmentsByEmployee.set(assignment.employeeId, []);
+          }
+          learningPathCourseAssignmentsByEmployee.get(assignment.employeeId)!.push(assignment);
+        } else {
+          if (!assignmentsByEmployee.has(assignment.employeeId)) {
+            assignmentsByEmployee.set(assignment.employeeId, []);
+          }
+          assignmentsByEmployee.get(assignment.employeeId)!.push(assignment);
+        }
+        
+        // By course (for course stats, include all assignments)
+        if (!assignmentsByCourse.has(assignment.courseId)) {
+          assignmentsByCourse.set(assignment.courseId, []);
+        }
+        assignmentsByCourse.get(assignment.courseId)!.push(assignment);
+      });
+
+      // Create learning path assignments lookup by employee
+      const learningPathAssignmentsByEmployee = new Map<string, any[]>();
+      filteredLearningPathAssignmentsData.forEach(lpAssignment => {
+        if (!learningPathAssignmentsByEmployee.has(lpAssignment.employeeId)) {
+          learningPathAssignmentsByEmployee.set(lpAssignment.employeeId, []);
+        }
+        learningPathAssignmentsByEmployee.get(lpAssignment.employeeId)!.push(lpAssignment);
+      });
+
+      // Create learning path assignments lookup by path
+      const learningPathAssignmentsByPath = new Map<string, any[]>();
+      filteredLearningPathAssignmentsData.forEach(lpAssignment => {
+        if (!learningPathAssignmentsByPath.has(lpAssignment.learningPathId)) {
+          learningPathAssignmentsByPath.set(lpAssignment.learningPathId, []);
+        }
+        learningPathAssignmentsByPath.get(lpAssignment.learningPathId)!.push(lpAssignment);
       });
 
       // Get current manager info
-      const currentManager = userId ? managerByUserIdMap[userId] : null;
+      const currentManager = userId ? managerByUserIdMap.get(userId) : null;
       const currentManagerName = currentManager ? currentManager.name : 'Current Manager';
 
       // Calculate overall statistics
-      const totalAssignments = assignmentsData.length;
+      const totalAssignments = filteredAssignmentsData.length;
       // Count assignments as completed if they have a result (quiz taken) OR status is 'completed'
-      const assignmentIdsWithResults = new Set(resultsData.map((r: Result) => r.assignmentId));
-      const completedAssignments = assignmentsData.filter(
+      const assignmentIdsWithResults = new Set(filteredResultsData.map((r: Result) => r.assignmentId));
+      const completedAssignments = filteredAssignmentsData.filter(
         (a: Assignment) => 
           a.status === 'completed' || assignmentIdsWithResults.has(a.id)
       ).length;
@@ -241,87 +356,107 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         : 0;
 
       // Calculate average score and pass rate
-      const allScores = resultsData.map((r: Result) => r.score);
+      const allScores = filteredResultsData.map((r: Result) => r.score);
       const averageScore = allScores.length > 0
         ? allScores.reduce((sum: number, score: number) => sum + score, 0) / allScores.length
         : 0;
       
-      const passedResults = resultsData.filter((r: Result) => r.passed);
-      const passRate = resultsData.length > 0
-        ? (passedResults.length / resultsData.length) * 100
+      const passedResults = filteredResultsData.filter((r: Result) => r.passed);
+      const passRate = filteredResultsData.length > 0
+        ? (passedResults.length / filteredResultsData.length) * 100
         : 0;
 
-      // Calculate course statistics
-      const courseStats: CourseStat[] = coursesData.map((course: Course) => {
-        const courseAssignments = assignmentsData.filter(
-          (a: Assignment) => a.courseId === course.id
-        );
-        // Get assignment IDs with results for this course
-        const courseAssignmentIds = courseAssignments.map((a: Assignment) => a.id);
-        const courseResults = resultsData.filter((r: Result) => 
-          courseAssignmentIds.includes(r.assignmentId)
-        );
-        const courseAssignmentIdsWithResults = new Set(courseResults.map((r: Result) => r.assignmentId));
-        // Count as completed if status is 'completed' OR has a result
+      // Calculate course statistics - only for courses with assignments
+      const courseStats: CourseStat[] = [];
+      assignmentsByCourse.forEach((courseAssignments, courseId) => {
+        const course = courseMap.get(courseId);
+        if (!course) return;
+
+        // Get results for this course's assignments
+        const courseResults: Result[] = [];
+        const courseAssignmentIdsWithResults = new Set<string>();
+        courseAssignments.forEach(assignment => {
+          const results = resultsByAssignment.get(assignment.id) || [];
+          courseResults.push(...results);
+          if (results.length > 0 || assignment.status === 'completed') {
+            courseAssignmentIdsWithResults.add(assignment.id);
+          }
+        });
+
         const courseCompleted = courseAssignments.filter(
-          (a: Assignment) => 
-            a.status === 'completed' || courseAssignmentIdsWithResults.has(a.id)
-        );
-        
-        // courseResults already calculated above
+          (a: Assignment) => courseAssignmentIdsWithResults.has(a.id)
+        ).length;
         
         const courseScores = courseResults.map((r: Result) => r.score);
         const courseAverageScore = courseScores.length > 0
           ? courseScores.reduce((sum: number, score: number) => sum + score, 0) / courseScores.length
           : 0;
         
-        const coursePassed = courseResults.filter((r: Result) => r.passed);
+        const coursePassed = courseResults.filter((r: Result) => r.passed).length;
         const coursePassRate = courseResults.length > 0
-          ? (coursePassed.length / courseResults.length) * 100
+          ? (coursePassed / courseResults.length) * 100
           : 0;
 
-        return {
+        courseStats.push({
           courseId: course.id,
           courseTitle: course.title,
           totalAssignments: courseAssignments.length,
-          completedAssignments: courseCompleted.length,
+          completedAssignments: courseCompleted,
           completionRate: courseAssignments.length > 0
-            ? (courseCompleted.length / courseAssignments.length) * 100
+            ? (courseCompleted / courseAssignments.length) * 100
             : 0,
           averageScore: courseAverageScore,
           passRate: coursePassRate
-        };
+        });
       });
 
-      // Calculate employee progress
-      const employeeProgress: EmployeeProgress[] = employeesData.map((employee: Employee) => {
-        const employeeAssignments = assignmentsData.filter(
-          (a: Assignment) => a.employeeId === employee.id
-        );
+      // Calculate employee progress - only for employees with assignments
+      const employeeProgress: EmployeeProgress[] = [];
+      employeesData.forEach((employee: Employee) => {
+        // Individual course assignments (not from learning paths)
+        const employeeAssignments = assignmentsByEmployee.get(employee.id) || [];
+        // Learning path course assignments (courses within learning paths)
+        const employeeLearningPathCourseAssignments = learningPathCourseAssignmentsByEmployee.get(employee.id) || [];
+        // Learning path assignments (the learning path itself)
+        const employeeLearningPathAssignments = learningPathAssignmentsByEmployee.get(employee.id) || [];
         
-        // Get results for this employee's assignments
-        const employeeAssignmentIds = employeeAssignments.map((a: Assignment) => a.id);
-        const employeeResults = resultsData.filter((r: Result) => 
-          employeeAssignmentIds.includes(r.assignmentId)
-        );
+        // Skip employees with no assignments
+        if (employeeAssignments.length === 0 && employeeLearningPathCourseAssignments.length === 0 && employeeLearningPathAssignments.length === 0) {
+          return;
+        }
         
-        // Count as completed if status is 'completed' OR has a result (quiz taken)
+        // Get results for individual course assignments only
+        const employeeResults: Result[] = [];
+        employeeAssignments.forEach(assignment => {
+          const results = resultsByAssignment.get(assignment.id) || [];
+          employeeResults.push(...results);
+        });
+        
+        // Count individual course assignments as completed if status is 'completed' OR has a result (quiz taken)
         const employeeAssignmentIdsWithResults = new Set(employeeResults.map((r: Result) => r.assignmentId));
         const employeeCompleted = employeeAssignments.filter(
           (a: Assignment) => 
             a.status === 'completed' || employeeAssignmentIdsWithResults.has(a.id)
-        );
+        ).length;
         
         const employeeScores = employeeResults.map((r: Result) => r.score);
         const employeeAverageScore = employeeScores.length > 0
           ? employeeScores.reduce((sum: number, score: number) => sum + score, 0) / employeeScores.length
           : 0;
 
-        // Get learning path assignments for this employee
-        const employeeLearningPathAssignments = learningPathAssignmentsData.filter(
-          (lpAssignment: any) => lpAssignment.employeeId === employee.id
-        );
-        
+        // Count learning path course assignments completed
+        const learningPathCourseResults: Result[] = [];
+        employeeLearningPathCourseAssignments.forEach(assignment => {
+          const results = resultsByAssignment.get(assignment.id) || [];
+          learningPathCourseResults.push(...results);
+        });
+        const learningPathCourseAssignmentIdsWithResults = new Set(learningPathCourseResults.map((r: Result) => r.assignmentId));
+        const completedLearningPathCourseAssignments = employeeLearningPathCourseAssignments.filter(
+          (a: Assignment) => 
+            a.status === 'completed' || learningPathCourseAssignmentIdsWithResults.has(a.id)
+        ).length;
+
+        // Learning path assignments (the learning path itself)
         const completedLearningPathAssignments = employeeLearningPathAssignments.filter(
           (lpAssignment: any) => lpAssignment.status === 'completed'
         ).length;
@@ -333,50 +468,51 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         // Get assigned learning path titles
         const assignedLearningPaths = employeeLearningPathAssignments
           .map((lpAssignment: any) => {
-            const learningPath = learningPathsData.find((lp: any) => lp.id === lpAssignment.learningPathId);
+            const learningPath = learningPathMap.get(lpAssignment.learningPathId);
             return learningPath ? learningPath.title : null;
           })
           .filter((title: string | null): title is string => title !== null);
 
         // Get manager name who created this employee
-        // Since we filter by createdBy, all employees are created by the current manager
-        // But we can also check if there's a managerId assigned
         let managerName = currentManagerName;
-        if (employee.managerId && managerMap[employee.managerId]) {
-          // If employee has a managerId, show that manager's name
-          managerName = managerMap[employee.managerId].name;
-        } else if (employee.createdBy && managerByUserIdMap[employee.createdBy]) {
-          // Otherwise, show the manager who created this employee
-          managerName = managerByUserIdMap[employee.createdBy].name;
+        if (employee.managerId) {
+          const manager = managerMap.get(employee.managerId);
+          if (manager) managerName = manager.name;
+        } else if (employee.createdBy) {
+          const manager = managerByUserIdMap.get(employee.createdBy);
+          if (manager) managerName = manager.name;
         }
 
-        return {
+        employeeProgress.push({
           employeeId: employee.id,
           employeeName: employee.name,
           employeeEmail: employee.email,
           managerName: managerName,
-          totalAssignments: employeeAssignments.length,
-          completedAssignments: employeeCompleted.length,
+          totalAssignments: employeeAssignments.length, // Only individual course assignments
+          completedAssignments: employeeCompleted, // Only individual course assignments completed
           completionRate: employeeAssignments.length > 0
-            ? (employeeCompleted.length / employeeAssignments.length) * 100
+            ? (employeeCompleted / employeeAssignments.length) * 100
             : 0,
           averageScore: employeeAverageScore,
           // Learning Path assignments
           totalLearningPathAssignments: employeeLearningPathAssignments.length,
           completedLearningPathAssignments,
           learningPathCompletionRate,
-          assignedLearningPaths
-        };
+          assignedLearningPaths,
+          // Learning path course assignments (courses within learning paths)
+          totalLearningPathCourseAssignments: employeeLearningPathCourseAssignments.length,
+          completedLearningPathCourseAssignments: completedLearningPathCourseAssignments,
+        });
       });
 
       // Get recent completions (last 10) - include both course and learning path completions
-      const courseCompletions: RecentCompletion[] = resultsData
+      const courseCompletions: RecentCompletion[] = filteredResultsData
         .map((result: Result) => {
-          const assignment = assignmentsData.find((a: Assignment) => a.id === result.assignmentId);
+          const assignment = filteredAssignmentsData.find((a: Assignment) => a.id === result.assignmentId);
           if (!assignment) return null;
           
-          const employee = employeesData.find((e: Employee) => e.id === assignment.employeeId);
-          const course = coursesData.find((c: Course) => c.id === assignment.courseId);
+          const employee = employeeMap.get(assignment.employeeId);
+          const course = courseMap.get(assignment.courseId);
           
           if (!employee || !course) return null;
           
@@ -391,11 +527,11 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         .filter((item: RecentCompletion | null): item is RecentCompletion => item !== null);
 
       // Add learning path completions to recent completions
-      const learningPathCompletions: RecentCompletion[] = learningPathAssignmentsData
+      const learningPathCompletions: RecentCompletion[] = filteredLearningPathAssignmentsData
         .filter((lpAssignment: any) => lpAssignment.status === 'completed' && lpAssignment.completedDate)
         .map((lpAssignment: any) => {
-          const employee = employeesData.find((e: Employee) => e.id === lpAssignment.employeeId);
-          const learningPath = learningPathsData.find((lp: any) => lp.id === lpAssignment.learningPathId);
+          const employee = employeeMap.get(lpAssignment.employeeId);
+          const learningPath = learningPathMap.get(lpAssignment.learningPathId);
           
           if (!employee || !learningPath) return null;
           
@@ -415,25 +551,25 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         .slice(0, 10);
 
       // Calculate learning path statistics
-      const totalLearningPathAssignments = learningPathAssignmentsData.length;
-      const completedLearningPathAssignments = learningPathAssignmentsData.filter(
+      const totalLearningPathAssignments = filteredLearningPathAssignmentsData.length;
+      const completedLearningPathAssignments = filteredLearningPathAssignmentsData.filter(
         (lpAssignment: any) => lpAssignment.status === 'completed'
       ).length;
       const learningPathCompletionRate = totalLearningPathAssignments > 0
         ? (completedLearningPathAssignments / totalLearningPathAssignments) * 100
         : 0;
 
-      // Calculate learning path stats by path
-      const learningPathStats: LearningPathStat[] = learningPathsData.map((learningPath: any) => {
-        const pathAssignments = learningPathAssignmentsData.filter(
-          (lpAssignment: any) => lpAssignment.learningPathId === learningPath.id
-        );
+      // Calculate learning path stats by path - only for paths with assignments
+      const learningPathStats: LearningPathStat[] = [];
+      learningPathAssignmentsByPath.forEach((pathAssignments, pathId) => {
+        const learningPath = learningPathMap.get(pathId);
+        if (!learningPath) return;
         
         const completed = pathAssignments.filter((a: any) => a.status === 'completed').length;
         const inProgress = pathAssignments.filter((a: any) => a.status === 'in_progress').length;
         const notStarted = pathAssignments.filter((a: any) => a.status === 'not_started').length;
         
-        return {
+        learningPathStats.push({
           pathId: learningPath.id,
           pathTitle: learningPath.title,
           totalAssignments: pathAssignments.length,
@@ -443,8 +579,16 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
           completionRate: pathAssignments.length > 0
             ? (completed / pathAssignments.length) * 100
             : 0
-        };
+        });
       });
+
+      // Filter courseStats to only show courses with assignments
+      const filteredCourseStats = courseStats.filter((stat: CourseStat) => stat.totalAssignments > 0);
+      
+      // Filter employeeProgress to only show employees with assignments (course or learning path)
+      const filteredEmployeeProgress = employeeProgress.filter(
+        (progress: EmployeeProgress) => progress.totalAssignments > 0 || progress.totalLearningPathAssignments > 0
+      );
 
       setAnalytics({
         totalAssignments,
@@ -454,8 +598,8 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
         totalCourses: coursesData.length,
         averageScore: Math.round(averageScore * 10) / 10,
         passRate: Math.round(passRate * 10) / 10,
-        courseStats: courseStats.sort((a: CourseStat, b: CourseStat) => b.completionRate - a.completionRate),
-        employeeProgress: employeeProgress.sort((a: EmployeeProgress, b: EmployeeProgress) => b.completionRate - a.completionRate),
+        courseStats: filteredCourseStats.sort((a: CourseStat, b: CourseStat) => b.completionRate - a.completionRate),
+        employeeProgress: filteredEmployeeProgress.sort((a: EmployeeProgress, b: EmployeeProgress) => b.completionRate - a.completionRate),
         recentCompletions: allRecentCompletions,
         // Learning Path Analytics
         totalLearningPathAssignments,
@@ -763,101 +907,69 @@ const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ selectedStoreId }
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Employee</th>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Email</th>
                 <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>Manager</th>
-                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Courses Completed</th>
+                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Individual Courses</th>
+                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Learning Path Courses</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Course Completion Rate</th>
                 <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Avg Score</th>
-                {/* Hidden: Learning Path columns */}
-                {/* <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>Learning Paths</th>
-                <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '2px solid #e0e0e0' }}>LP Completion</th> */}
               </tr>
             </thead>
             <tbody>
-              {analytics.employeeProgress.map((employee) => (
-                <tr key={employee.employeeId} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '1rem' }}>{employee.employeeName}</td>
-                  <td style={{ padding: '1rem', color: '#666' }}>{employee.employeeEmail}</td>
-                  <td style={{ padding: '1rem', color: '#666' }}>{employee.managerName}</td>
-                  <td style={{ padding: '1rem', textAlign: 'center' }}>
-                    {employee.completedAssignments} / {employee.totalAssignments}
-                  </td>
-                  <td style={{ padding: '1rem', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ 
-                        flex: 1, 
-                        height: '8px', 
-                        backgroundColor: '#f0f0f0', 
-                        borderRadius: '4px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${employee.completionRate}%`,
-                          height: '100%',
-                          backgroundColor: employee.completionRate >= 80 ? '#4caf50' : employee.completionRate >= 50 ? '#ff9800' : '#f44336',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                      <span style={{ minWidth: '50px', fontSize: '0.9rem' }}>
-                        {employee.completionRate.toFixed(1)}%
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '1rem', textAlign: 'center', fontWeight: 'bold' }}>
-                    {employee.averageScore > 0 ? `${employee.averageScore.toFixed(1)}%` : 'N/A'}
-                  </td>
-                  {/* Hidden: Learning Path columns */}
-                  {/* <td style={{ padding: '1rem', textAlign: 'center' }}>
-                    {employee.assignedLearningPaths.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 'bold', color: '#9c27b0' }}>
-                          {employee.totalLearningPathAssignments}
+              {analytics.employeeProgress.map((employee) => {
+                // Calculate completion rate for individual courses only
+                const individualCompletionRate = employee.totalAssignments > 0
+                  ? (employee.completedAssignments / employee.totalAssignments) * 100
+                  : 0;
+                
+                return (
+                  <tr key={employee.employeeId} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '1rem' }}>{employee.employeeName}</td>
+                    <td style={{ padding: '1rem', color: '#666' }}>{employee.employeeEmail}</td>
+                    <td style={{ padding: '1rem', color: '#666' }}>{employee.managerName}</td>
+                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                      {employee.totalAssignments > 0 ? (
+                        <span>
+                          {employee.completedAssignments} / {employee.totalAssignments}
                         </span>
-                        <div style={{ fontSize: '0.8rem', color: '#666', maxWidth: '200px' }}>
-                          {employee.assignedLearningPaths.slice(0, 2).map((path, idx) => (
-                            <div key={idx} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              • {path}
-                            </div>
-                          ))}
-                          {employee.assignedLearningPaths.length > 2 && (
-                            <div style={{ color: '#999', fontStyle: 'italic' }}>
-                              +{employee.assignedLearningPaths.length - 2} more
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <span style={{ color: '#999' }}>None</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '1rem', textAlign: 'center' }}>
-                    {employee.totalLearningPathAssignments > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 'bold', color: '#9c27b0' }}>
-                          {employee.completedLearningPathAssignments} / {employee.totalLearningPathAssignments}
+                      ) : (
+                        <span style={{ color: '#999' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                      {employee.totalLearningPathCourseAssignments > 0 ? (
+                        <span>
+                          {employee.completedLearningPathCourseAssignments} / {employee.totalLearningPathCourseAssignments}
                         </span>
+                      ) : (
+                        <span style={{ color: '#999' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <div style={{ 
-                          width: '100px', 
+                          flex: 1, 
                           height: '8px', 
                           backgroundColor: '#f0f0f0', 
                           borderRadius: '4px',
                           overflow: 'hidden'
                         }}>
                           <div style={{
-                            width: `${employee.learningPathCompletionRate}%`,
+                            width: `${individualCompletionRate}%`,
                             height: '100%',
-                            backgroundColor: employee.learningPathCompletionRate >= 80 ? '#4caf50' : employee.learningPathCompletionRate >= 50 ? '#ff9800' : '#f44336',
+                            backgroundColor: individualCompletionRate >= 80 ? '#4caf50' : individualCompletionRate >= 50 ? '#ff9800' : '#f44336',
                             transition: 'width 0.3s ease'
                           }} />
                         </div>
-                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                          {employee.learningPathCompletionRate.toFixed(1)}%
+                        <span style={{ minWidth: '50px', fontSize: '0.9rem' }}>
+                          {individualCompletionRate.toFixed(1)}%
                         </span>
                       </div>
-                    ) : (
-                      <span style={{ color: '#999' }}>N/A</span>
-                    )}
-                  </td> */}
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ padding: '1rem', textAlign: 'center', fontWeight: 'bold' }}>
+                      {employee.averageScore > 0 ? `${employee.averageScore.toFixed(1)}%` : 'N/A'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

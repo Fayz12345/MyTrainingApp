@@ -83,22 +83,61 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
 
       console.log('Fetching employees for userId:', userId);
 
+      // Helper function to fetch all pages with pagination
+      const fetchAllPages = async <T,>(
+        fetchFn: (nextToken?: string) => Promise<{ data: T[] | null; nextToken?: string | null }>,
+        processFn?: (item: T) => any
+      ): Promise<any[]> => {
+        const allData: any[] = [];
+        let nextToken: string | undefined = undefined;
+        do {
+          const response: any = await fetchFn(nextToken);
+          const batch = (response.data || [])
+            .filter((item: any) => item.id !== null)
+            .map((item: any) => processFn ? processFn(item) : item);
+          allData.push(...batch);
+          nextToken = response.nextToken || undefined;
+        } while (nextToken);
+        return allData;
+      };
+
       // Fetch employees, assignments, courses, learning path assignments, and learning paths in parallel
-      const [employeesResult, assignmentsResult, coursesResult, pathAssignmentsResult, learningPathsResult] = await Promise.all([
+      // Fetch all assignments and filter in memory to include individual assignments (not from learning paths)
+      const [employeesResult, allAssignmentsData, coursesResult, pathAssignmentsResult, learningPathsResult] = await Promise.all([
         client.models.Employee.list({}),
-        client.models.Assignment.list({}),
+        fetchAllPages(
+          (nextToken) => client.models.Assignment.list({ nextToken }),
+          (a: any) => ({
+            id: a.id!,
+            employeeId: a.employeeId,
+            courseId: a.courseId,
+            status: a.status,
+            isTrainingComplete: a.isTrainingComplete ?? false,
+            trainingCompletedAt: a.trainingCompletedAt,
+            assignmentSource: a.assignmentSource || null,
+            learningPathId: a.learningPathId || null,
+            createdAt: a.createdAt,
+            updatedAt: a.updatedAt,
+          })
+        ),
         client.models.Course.list({}),
         client.models.LearningPathAssignment.list({}),
         client.models.LearningPath.list({})
       ]);
 
+      // Filter assignments to only get individual course assignments (not learning path assignments)
+      // Include assignments where assignmentSource is 'individual' OR null/undefined (for older assignments)
+      const assignmentsData = allAssignmentsData.filter(
+        (assignment: any) => 
+          assignment.assignmentSource === 'individual' || 
+          (assignment.assignmentSource === null || assignment.assignmentSource === undefined)
+      );
+
       if (employeesResult.errors && employeesResult.errors.length > 0) {
         throw new Error('Failed to fetch employees: ' + employeesResult.errors.map((e: any) => e.message).join(', '));
       }
 
-      if (assignmentsResult.errors && assignmentsResult.errors.length > 0) {
-        console.warn('Warning fetching assignments:', assignmentsResult.errors);
-      }
+      // No need to check for errors in assignmentsResult since we're using fetchAllPages
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {
         console.warn('Warning fetching courses:', coursesResult.errors);
@@ -133,7 +172,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
       }
 
       setEmployees(filteredEmployees);
-      setAssignments(assignmentsResult.data as Assignment[] || []);
+      setAssignments(assignmentsData as Assignment[]);
       setCourses(coursesResult.data as Course[] || []);
       setPathAssignments(pathAssignmentsResult.data as LearningPathAssignment[] || []);
       setLearningPaths(learningPathsResult.data as LearningPath[] || []);
