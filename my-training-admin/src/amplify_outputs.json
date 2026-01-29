@@ -2392,6 +2392,11 @@
               "list",
               "write",
               "delete"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list",
+              "write"
             ]
           }
         }

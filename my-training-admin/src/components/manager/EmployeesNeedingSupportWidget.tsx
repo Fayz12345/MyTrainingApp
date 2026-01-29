@@ -24,6 +24,7 @@ const client = generateClient<Schema>();
 
 interface EmployeesNeedingSupportWidgetProps {
   onViewAll: () => void;
+  selectedStoreId?: string | null;
 }
 
 interface StrugglingEmployee {
@@ -41,19 +42,23 @@ interface StrugglingEmployee {
   flagType: string;
 }
 
-const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps> = ({ onViewAll }) => {
+const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps> = ({ onViewAll, selectedStoreId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [strugglingEmployees, setStrugglingEmployees] = useState<StrugglingEmployee[]>([]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStoreId]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
+
+      // Get current user's ID for filtering
+      const session = await fetchAuthSession();
+      const userId = session.userSub || session.tokens?.idToken?.payload?.sub as string;
 
       // Helper function to fetch all pages with pagination
       const fetchAllPages = async <T,>(
@@ -74,7 +79,7 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
       };
 
       // Fetch all independent data in parallel for maximum performance
-      const [employeesData, coursesData, allAssignmentsData, resultsData] = await Promise.all([
+      const [employeesDataRaw, coursesData, allAssignmentsData, resultsData] = await Promise.all([
         // Fetch employees with pagination
         fetchAllPages(
           (nextToken) => client.models.Employee.list({
@@ -87,6 +92,8 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
             name: e.name,
             email: e.email,
             department: e.department,
+            storeId: e.storeId,
+            createdBy: e.createdBy,
           })
         ),
         // Fetch courses with pagination
@@ -132,22 +139,38 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
         ),
       ]);
 
+      // Filter employees by createdBy - managers should only see employees they created
+      let employeesData = employeesDataRaw;
+      if (userId) {
+        employeesData = employeesData.filter((emp: any) => emp.createdBy === userId);
+      }
+
+      // Filter employees by selected store (if store is selected)
+      if (selectedStoreId) {
+        employeesData = employeesData.filter((emp: any) => emp.storeId === selectedStoreId);
+      }
+
       // Create lookup maps for O(1) access
       const employeeMap = new Map(employeesData.map((e: any) => [e.id, e]));
       const courseMap = new Map(coursesData.map((c: any) => [c.id, c]));
 
-      // Process assignments with lookup maps
-      const assignmentsData: any[] = allAssignmentsData.map((a: any) => ({
-        id: a.id,
-        employeeId: a.employeeId,
-        courseId: a.courseId,
-        status: a.status,
-        isTrainingComplete: a.isTrainingComplete,
-        createdAt: a.createdAt,
-        updatedAt: a.updatedAt,
-        employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
-        course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
-      }));
+      // Get employee IDs for filtering assignments
+      const employeeIds = new Set(employeesData.map((e: any) => e.id));
+
+      // Process assignments with lookup maps - only include assignments for filtered employees
+      const assignmentsData: any[] = allAssignmentsData
+        .filter((a: any) => employeeIds.has(a.employeeId))
+        .map((a: any) => ({
+          id: a.id,
+          employeeId: a.employeeId,
+          courseId: a.courseId,
+          status: a.status,
+          isTrainingComplete: a.isTrainingComplete,
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+          employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
+          course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
+        }));
 
       // Identify struggling employees (simplified version)
       const struggling: StrugglingEmployee[] = [];
