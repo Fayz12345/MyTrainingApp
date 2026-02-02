@@ -133,6 +133,11 @@ const schema = a.schema({
       store: a.belongsTo('Store', 'storeId'),
       createdBy: a.string(), // userId of the Manager who created it
       isActive: a.boolean().default(true),
+      // Banking Information
+      transitNumber: a.string(), // Transit Number for banking
+      institutionNumber: a.string(), // Institution Number for banking
+      accountNumber: a.string(), // Account Number for banking
+      bankingDocumentKey: a.string(), // S3 key for uploaded banking document (Void Cheque or Direct Deposit Form)
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
       learningPathAssignments: a.hasMany('LearningPathAssignment', 'employeeId'), // Links to LearningPathAssignment via employeeId
       supportRecords: a.hasMany('EmployeeSupport', 'employeeId'), // Links to EmployeeSupport via employeeId
