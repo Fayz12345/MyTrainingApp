@@ -1129,6 +1129,34 @@
               "isRequired": false,
               "attributes": []
             },
+            "transitNumber": {
+              "name": "transitNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "institutionNumber": {
+              "name": "institutionNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "accountNumber": {
+              "name": "accountNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "bankingDocumentKey": {
+              "name": "bankingDocumentKey",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "assignments": {
               "name": "assignments",
               "isArray": true,
@@ -2397,6 +2425,18 @@
               "get",
               "list",
               "write"
+            ]
+          },
+          "banking/*": {
+            "groupsManagers": [
+              "get",
+              "list"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list",
+              "write",
+              "delete"
             ]
           }
         }
