@@ -2328,7 +2328,8 @@
                     "provider": "userPools",
                     "allow": "groups",
                     "operations": [
-                      "read"
+                      "read",
+                      "update"
                     ],
                     "groups": [
                       "Employees"

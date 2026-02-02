@@ -161,16 +161,16 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
       const assignmentsData: any[] = allAssignmentsData
         .filter((a: any) => employeeIds.has(a.employeeId))
         .map((a: any) => ({
-          id: a.id,
-          employeeId: a.employeeId,
-          courseId: a.courseId,
-          status: a.status,
-          isTrainingComplete: a.isTrainingComplete,
-          createdAt: a.createdAt,
-          updatedAt: a.updatedAt,
-          employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
-          course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
-        }));
+        id: a.id,
+        employeeId: a.employeeId,
+        courseId: a.courseId,
+        status: a.status,
+        isTrainingComplete: a.isTrainingComplete,
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt,
+        employee: a.employeeId ? (employeeMap.get(a.employeeId) || null) : null,
+        course: a.courseId ? (courseMap.get(a.courseId) || null) : null,
+      }));
 
       // Identify struggling employees (simplified version)
       const struggling: StrugglingEmployee[] = [];

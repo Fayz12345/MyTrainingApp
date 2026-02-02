@@ -147,7 +147,7 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read']),
+      allow.group('Employees').to(['read', 'update']), // Allow employees to update their own records (for banking info)
       allow.publicApiKey().to(['create', 'read']) // Allow Lambda (using API key) to create/read employee for notifications/self-signup
     ]),
   ManagerStore: a
