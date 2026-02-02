@@ -273,7 +273,7 @@ const schema = a.schema({
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read', 'update'])
     ])
 });
 
