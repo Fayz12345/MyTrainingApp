@@ -141,20 +141,30 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       const pathCourses = pathCoursesResult.data || [];
       const requiredCourses = pathCourses.filter((pc: any) => pc.isRequired !== false);
 
-      // Get all course assignments for this employee
-      const courseAssignmentsResult = await client.models.Assignment.list({
-        filter: { employeeId: { eq: employeeId } }
-      });
-
-      const courseAssignments = (courseAssignmentsResult.data || []) as Array<{
+      // Get all course assignments for this employee (with pagination)
+      let allCourseAssignments: Array<{
         id: string;
         courseId: string;
         status?: string | null;
         updatedAt: string;
         createdAt: string;
-      }>;
-      const courseAssignmentMap = new Map<string, typeof courseAssignments[0]>(
-        courseAssignments.map((ca) => [ca.courseId, ca])
+      }> = [];
+      let nextToken: string | undefined = undefined;
+      
+      do {
+        const courseAssignmentsResult: any = await client.models.Assignment.list({
+          filter: { employeeId: { eq: employeeId } },
+          nextToken: nextToken
+        });
+        
+        if (courseAssignmentsResult.data) {
+          allCourseAssignments = allCourseAssignments.concat(courseAssignmentsResult.data);
+        }
+        nextToken = courseAssignmentsResult.nextToken;
+      } while (nextToken);
+
+      const courseAssignmentMap = new Map<string, typeof allCourseAssignments[0]>(
+        allCourseAssignments.map((ca) => [ca.courseId, ca])
       );
 
       // Check if all required courses are completed
@@ -234,33 +244,68 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       const employeeMap = new Map(filteredEmployees.map(e => [e.id, e]));
       const storeEmployeeIds = new Set(filteredEmployees.map(e => e.id));
 
-      // Fetch all learning path assignments
-      const assignmentsResult = await client.models.LearningPathAssignment.list({});
+      // Fetch all learning path assignments (with pagination)
+      let allAssignments: any[] = [];
+      let nextToken: string | undefined = undefined;
+      
+      do {
+        const assignmentsResult: any = await client.models.LearningPathAssignment.list({
+          nextToken: nextToken
+        });
 
       if (assignmentsResult.errors && assignmentsResult.errors.length > 0) {
         throw new Error('Failed to fetch assignments: ' + assignmentsResult.errors.map((e: any) => e.message).join(', '));
       }
 
-      const allAssignments = assignmentsResult.data || [];
+        if (assignmentsResult.data) {
+          allAssignments = allAssignments.concat(assignmentsResult.data);
+        }
+        nextToken = assignmentsResult.nextToken;
+      } while (nextToken);
 
       // Filter by store if selected
       const filteredAssignments = selectedStoreId 
         ? allAssignments.filter((a: any) => storeEmployeeIds.has(a.employeeId))
         : allAssignments;
 
-      // Update statuses in background
-      filteredAssignments.forEach((assignment: any) => {
-        if (assignment.status !== 'completed') {
+      // Update statuses and wait for completion before proceeding
+      const statusUpdatePromises = filteredAssignments
+        .filter((assignment: any) => assignment.status !== 'completed')
+        .map((assignment: any) => 
           checkAndUpdatePathStatus(assignment.id, assignment.learningPathId, assignment.employeeId)
-            .catch(err => console.error('Error updating path status:', err));
+            .catch(err => {
+              console.error('Error updating path status:', err);
+              return false;
+            })
+        );
+      
+      await Promise.all(statusUpdatePromises);
+      
+      // Re-fetch assignments after status updates to get fresh data
+      allAssignments = [];
+      nextToken = undefined;
+      
+      do {
+        const assignmentsResult: any = await client.models.LearningPathAssignment.list({
+          nextToken: nextToken
+        });
+
+        if (assignmentsResult.data) {
+          allAssignments = allAssignments.concat(assignmentsResult.data);
         }
-      });
+        nextToken = assignmentsResult.nextToken;
+      } while (nextToken);
+
+      // Re-filter by store if selected
+      const updatedFilteredAssignments = selectedStoreId 
+        ? allAssignments.filter((a: any) => storeEmployeeIds.has(a.employeeId))
+        : allAssignments;
 
       // Build progress groups
       const progressGroups: PathProgressGroup[] = [];
 
       for (const path of paths) {
-        const pathAssignments = filteredAssignments.filter((a: any) => a.learningPathId === path.id);
+        const pathAssignments = updatedFilteredAssignments.filter((a: any) => a.learningPathId === path.id);
 
         if (pathAssignments.length === 0) continue; // Skip paths with no assignments
 
@@ -279,18 +324,28 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         for (const assignment of pathAssignments) {
           const employee = employeeMap.get(assignment.employeeId);
           
-          // Get course assignments for this employee
-          const courseAssignmentsResult = await client.models.Assignment.list({
-            filter: { employeeId: { eq: assignment.employeeId } }
-          });
-
-          const courseAssignments = (courseAssignmentsResult.data || []) as Array<{
+          // Get course assignments for this employee (with pagination)
+          let allCourseAssignments: Array<{
             id: string;
             courseId: string;
             status?: string | null;
-          }>;
-          const courseAssignmentMap = new Map<string, typeof courseAssignments[0]>(
-            courseAssignments.map((ca) => [ca.courseId, ca])
+          }> = [];
+          let courseNextToken: string | undefined = undefined;
+          
+          do {
+            const courseAssignmentsResult: any = await client.models.Assignment.list({
+              filter: { employeeId: { eq: assignment.employeeId } },
+              nextToken: courseNextToken
+            });
+            
+            if (courseAssignmentsResult.data) {
+              allCourseAssignments = allCourseAssignments.concat(courseAssignmentsResult.data);
+            }
+            courseNextToken = courseAssignmentsResult.nextToken;
+          } while (courseNextToken);
+          
+          const courseAssignmentMap = new Map<string, typeof allCourseAssignments[0]>(
+            allCourseAssignments.map((ca) => [ca.courseId, ca])
           );
 
           // Calculate courses completed
@@ -370,6 +425,22 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       setLoadingEmployeeDetails(true);
       setEmployeeDialogOpen(true);
 
+      // First, check and update path assignment status to ensure we have the latest status
+      const pathAssignmentResult = await client.models.LearningPathAssignment.list({
+        filter: {
+          learningPathId: { eq: pathId },
+          employeeId: { eq: employeeId }
+        }
+      });
+      
+      if (pathAssignmentResult.data && pathAssignmentResult.data.length > 0) {
+        const pathAssignment = pathAssignmentResult.data[0];
+        if (pathAssignment.status !== 'completed') {
+          // Check and update status if needed
+          await checkAndUpdatePathStatus(pathAssignment.id, pathId, employeeId);
+        }
+      }
+
       // Fetch all data in parallel
       const [
         assignmentResult,
@@ -378,20 +449,40 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
         pathCoursesResult,
         courseAssignmentsResult
       ] = await Promise.all([
-        client.models.LearningPathAssignment.list({
+        // Re-fetch assignment after status update to get fresh data
+        (async () => {
+          const result = await client.models.LearningPathAssignment.list({
           filter: {
             learningPathId: { eq: pathId },
             employeeId: { eq: employeeId }
           }
-        }),
+          });
+          return result;
+        })(),
         client.models.Employee.get({ id: employeeId }),
         client.models.LearningPath.get({ id: pathId }),
         client.models.LearningPathCourse.list({
           filter: { learningPathId: { eq: pathId } }
         }),
-        client.models.Assignment.list({
-          filter: { employeeId: { eq: employeeId } }
-        })
+        // Fetch all course assignments with pagination
+        (async () => {
+          let allCourseAssignments: any[] = [];
+          let nextToken: string | undefined = undefined;
+          
+          do {
+            const result: any = await client.models.Assignment.list({
+              filter: { employeeId: { eq: employeeId } },
+              nextToken: nextToken
+            });
+            
+            if (result.data) {
+              allCourseAssignments = allCourseAssignments.concat(result.data);
+            }
+            nextToken = result.nextToken;
+          } while (nextToken);
+          
+          return { data: allCourseAssignments };
+        })()
       ]);
 
       if (!assignmentResult.data || assignmentResult.data.length === 0) {

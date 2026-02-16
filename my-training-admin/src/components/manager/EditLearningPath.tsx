@@ -478,23 +478,30 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
             // Create assignments for each new course
             for (const courseId of newCourseIds) {
               try {
-                // Check if assignment already exists
-                const existingAssignments = await client.models.Assignment.list({
+                // Check if a learning path assignment already exists for this employee, course, and learning path
+                // We only check for learning path assignments, not individual ones, so they can coexist
+                const existingLearningPathAssignments = await client.models.Assignment.list({
                   filter: {
                     employeeId: { eq: employeeId },
-                    courseId: { eq: courseId }
+                    courseId: { eq: courseId },
+                    assignmentSource: { eq: 'learning_path' },
+                    learningPathId: { eq: learningPath.id }
                   }
                 });
 
-                // Only create if it doesn't exist
-                if (!existingAssignments.data || existingAssignments.data.length === 0) {
+                // Only create if a learning path assignment doesn't exist (individual assignments can coexist)
+                if (!existingLearningPathAssignments.data || existingLearningPathAssignments.data.length === 0) {
                   await client.models.Assignment.create({
                     employeeId: employeeId,
                     courseId: courseId,
                     status: 'assigned',
+                    assignmentSource: 'learning_path',
+                    learningPathId: learningPath.id,
                     createdAt: now,
                     updatedAt: now,
                   });
+                } else {
+                  console.log(`[EditLearningPath] Learning path assignment already exists for employee ${employeeId}, course ${courseId}, learning path ${learningPath.id}, skipping creation`);
                 }
               } catch (err) {
                 console.error(`Error creating assignment for employee ${employeeId}, course ${courseId}:`, err);

@@ -48,6 +48,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import Loader from '../common/Loader';
+import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
 
 const MySwal = withReactContent(Swal);
 const client = generateClient<Schema>();
@@ -385,17 +386,46 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
 
         // Create individual course assignments
         const courseAssignmentPromises = sortedCourses.map(async (pathCourse, index) => {
+          // Check if a learning path assignment already exists for this employee, course, and learning path
+          const existingLearningPathAssignments = await client.models.Assignment.list({
+            filter: {
+              employeeId: { eq: employeeId },
+              courseId: { eq: pathCourse.courseId },
+              assignmentSource: { eq: 'learning_path' },
+              learningPathId: { eq: selectedPath.id }
+            }
+          });
+
+          // If a learning path assignment already exists, skip creating a duplicate
+          if (existingLearningPathAssignments.data && existingLearningPathAssignments.data.length > 0) {
+            console.log(`[AssignLearningPath] Learning path assignment already exists for employee ${employeeId}, course ${pathCourse.courseId}, learning path ${selectedPath.id}, skipping creation`);
+            return { data: existingLearningPathAssignments.data[0], errors: null };
+          }
+
           const shouldBeAccessible = !isSequential || index === 0;
           return client.models.Assignment.create({
             employeeId: employeeId,
             courseId: pathCourse.courseId,
             status: shouldBeAccessible ? 'assigned' : 'assigned',
+            assignmentSource: 'learning_path',
+            learningPathId: selectedPath.id,
             createdAt: now,
             updatedAt: now,
           });
         });
 
-        await Promise.all(courseAssignmentPromises);
+        const courseAssignments = await Promise.all(courseAssignmentPromises);
+
+        // Check for errors in course assignments
+        const courseErrors = courseAssignments.filter(
+          (result) => result.errors && result.errors.length > 0
+        );
+        if (courseErrors.length > 0) {
+          throw new Error(
+            `Failed to create some course assignments: ${courseErrors.map((e) => e.errors?.map((err: any) => err.message).join(', ')).join('; ')}`
+          );
+        }
+
         return pathAssignmentResult.data;
       });
 
@@ -490,18 +520,20 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
       const pathCourses = group.learningPath.courses?.items || [];
       const courseIds = pathCourses.map(pc => pc.courseId);
 
-      // Find and delete course assignments
+      // Find and delete course assignments that belong to this learning path only
       for (const courseId of courseIds) {
         try {
-          // Find assignments for this employee and course
+          // Find assignments for this employee, course, and learning path
           const courseAssignments = await client.models.Assignment.list({
             filter: {
               employeeId: { eq: assignment.employeeId },
-              courseId: { eq: courseId }
+              courseId: { eq: courseId },
+              assignmentSource: { eq: 'learning_path' },
+              learningPathId: { eq: assignment.learningPathId }
             }
           });
 
-          // Delete each matching assignment
+          // Delete each matching learning path assignment (don't touch individual assignments)
           for (const courseAssignment of courseAssignments.data || []) {
             if (courseAssignment.id) {
               await client.models.Assignment.delete({ id: courseAssignment.id });
@@ -616,10 +648,21 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
         throw new Error('Selected learning path not found');
       }
 
-      const pathCourses = selectedPath.courses?.items || [];
+      // Fetch courses directly from database to ensure we have the latest data
+      const coursesResult = await client.models.LearningPathCourse.list({
+        filter: { learningPathId: { eq: selectedPathId } }
+      });
+
+      if (coursesResult.errors && coursesResult.errors.length > 0) {
+        throw new Error(`Failed to fetch learning path courses: ${coursesResult.errors.map((e: any) => e.message).join(', ')}`);
+      }
+
+      const pathCourses = (coursesResult.data || []).filter((pc: any) => pc.courseId);
       if (pathCourses.length === 0) {
         throw new Error('Selected learning path has no courses');
       }
+
+      console.log(`[AssignLearningPath] Creating assignments for ${pathCourses.length} courses in learning path ${selectedPathId}`);
 
       // Sort courses by order
       const sortedCourses = [...pathCourses].sort((a, b) => a.order - b.order);
@@ -646,32 +689,88 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
         }
 
         // Create individual course assignments
-        const courseAssignmentPromises = sortedCourses.map(async (pathCourse, index) => {
+        console.log(`[AssignLearningPath] Creating ${sortedCourses.length} course assignments for employee ${employeeId}`);
+        
+        const courseAssignments = [];
+        const courseErrors: string[] = [];
+
+        for (let index = 0; index < sortedCourses.length; index++) {
+          const pathCourse = sortedCourses[index];
+          
+          if (!pathCourse.courseId) {
+            const errorMsg = `Course at index ${index} has no courseId`;
+            console.error(`[AssignLearningPath] ${errorMsg}:`, pathCourse);
+            courseErrors.push(errorMsg);
+            continue;
+          }
+
           // For sequential paths, only the first course should be accessible initially
           // For non-sequential paths, all courses are accessible
           const shouldBeAccessible = !isSequential || index === 0;
 
-          return client.models.Assignment.create({
+          console.log(`[AssignLearningPath] Creating assignment for employee ${employeeId}, course ${pathCourse.courseId} (index ${index})`);
+
+          try {
+            // Check if a learning path assignment already exists for this employee, course, and learning path
+            // Note: We only check for learning path assignments, NOT individual assignments
+            // This allows both types to coexist for the same employee and course
+            const existingLearningPathAssignments = await client.models.Assignment.list({
+              filter: {
+                employeeId: { eq: employeeId },
+                courseId: { eq: pathCourse.courseId },
+                assignmentSource: { eq: 'learning_path' },
+                learningPathId: { eq: selectedPathId }
+              }
+            });
+
+            // If a learning path assignment already exists, skip creating a duplicate
+            // Individual assignments are not affected and will remain in the database
+            if (existingLearningPathAssignments.data && existingLearningPathAssignments.data.length > 0) {
+              console.log(`[AssignLearningPath] Learning path assignment already exists for employee ${employeeId}, course ${pathCourse.courseId}, learning path ${selectedPathId}, skipping creation`);
+              courseAssignments.push({ data: existingLearningPathAssignments.data[0], errors: null });
+              continue;
+            }
+
+            const assignmentResult = await client.models.Assignment.create({
             employeeId: employeeId,
             courseId: pathCourse.courseId,
             status: shouldBeAccessible ? 'assigned' : 'assigned', // All are assigned, but access is controlled by sequential logic
+              assignmentSource: 'learning_path',
+              learningPathId: selectedPathId,
             createdAt: now,
             updatedAt: now,
           });
-        });
 
-        const courseAssignments = await Promise.all(courseAssignmentPromises);
+            if (assignmentResult.errors && assignmentResult.errors.length > 0) {
+              const errorMsg = `Course ${pathCourse.courseId}: ${assignmentResult.errors.map((err: any) => err.message).join(', ')}`;
+              console.error(`[AssignLearningPath] Error creating assignment for employee ${employeeId}, course ${pathCourse.courseId}:`, assignmentResult.errors);
+              courseErrors.push(errorMsg);
+            } else {
+              console.log(`[AssignLearningPath] Successfully created assignment ${assignmentResult.data?.id} for employee ${employeeId}, course ${pathCourse.courseId}`);
+              courseAssignments.push(assignmentResult);
+            }
+          } catch (err) {
+            const errorMsg = `Course ${pathCourse.courseId}: ${err instanceof Error ? err.message : 'Unknown error'}`;
+            console.error(`[AssignLearningPath] Exception creating assignment for employee ${employeeId}, course ${pathCourse.courseId}:`, err);
+            courseErrors.push(errorMsg);
+          }
+        }
 
-        // Check for errors in course assignments
-        const courseErrors = courseAssignments.filter(
-          (result) => result.errors && result.errors.length > 0
-        );
         if (courseErrors.length > 0) {
+          const errorDetails = courseErrors.join('; ');
+          console.error(`[AssignLearningPath] Failed to create some course assignments for employee ${employeeId}:`, errorDetails);
           throw new Error(
-            `Failed to create some course assignments: ${courseErrors.map((e) => e.errors?.map((err: any) => err.message).join(', ')).join('; ')}`
+            `Failed to create some course assignments: ${errorDetails}`
           );
         }
 
+        if (courseAssignments.length !== sortedCourses.length) {
+          throw new Error(
+            `Expected to create ${sortedCourses.length} assignments but only created ${courseAssignments.length}`
+          );
+        }
+
+        console.log(`[AssignLearningPath] Successfully created ${courseAssignments.length} course assignments for employee ${employeeId}`);
         return { pathAssignment: pathAssignmentResult.data, courseAssignments };
       });
 
@@ -721,6 +820,34 @@ const AssignLearningPath: React.FC<AssignLearningPathProps> = ({ selectedStoreId
         icon: 'success',
         timer: 5000,
       });
+
+      // Log activity for each employee assignment
+      try {
+        const userInfo = await getCurrentUserInfo();
+        for (const employee of selectedEmployees) {
+          await activityLogger.logActivity(
+            'LEARNING_PATH_ASSIGNED',
+            userInfo.userId,
+            userInfo.userName,
+            userInfo.userEmail,
+            `Assigned learning path "${selectedPath.title}" to employee "${employee.name}"`,
+            {
+              learningPathId: selectedPathId,
+              learningPathTitle: selectedPath.title,
+              employeeId: employee.id,
+              employeeName: employee.name,
+              employeeEmail: employee.email,
+              coursesCount: sortedCourses.length,
+              isSequential,
+              dueDate: dueDateISO || null,
+              storeId: selectedStoreId || undefined,
+            },
+            selectedStoreId || undefined
+          );
+        }
+      } catch (logError) {
+        console.error('[AssignLearningPath] Error logging activity:', logError);
+      }
 
       // Reset form
       setSelectedPathId('');

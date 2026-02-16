@@ -637,6 +637,27 @@
               "isRequired": false,
               "attributes": []
             },
+            "pdfKey": {
+              "name": "pdfKey",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "pdfTitle": {
+              "name": "pdfTitle",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "contentType": {
+              "name": "contentType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "quiz": {
               "name": "quiz",
               "isArray": true,
@@ -685,6 +706,22 @@
                 ]
               }
             },
+            "supportRecords": {
+              "name": "supportRecords",
+              "isArray": true,
+              "type": {
+                "model": "EmployeeSupport"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "courseId"
+                ]
+              }
+            },
             "passingScore": {
               "name": "passingScore",
               "isArray": false,
@@ -717,6 +754,41 @@
               "name": "status",
               "isArray": false,
               "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "randomizeQuestions": {
+              "name": "randomizeQuestions",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "randomizeOptions": {
+              "name": "randomizeOptions",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "useQuestionPool": {
+              "name": "useQuestionPool",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "poolSize": {
+              "name": "poolSize",
+              "isArray": false,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": []
+            },
+            "questionsToDisplay": {
+              "name": "questionsToDisplay",
+              "isArray": false,
+              "type": "Int",
               "isRequired": false,
               "attributes": []
             },
@@ -842,6 +914,13 @@
               "isRequired": true,
               "attributes": []
             },
+            "questionType": {
+              "name": "questionType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "options": {
               "name": "options",
               "isArray": true,
@@ -854,7 +933,35 @@
               "name": "correctAnswer",
               "isArray": false,
               "type": "Int",
-              "isRequired": true,
+              "isRequired": false,
+              "attributes": []
+            },
+            "correctAnswerText": {
+              "name": "correctAnswerText",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "caseSensitive": {
+              "name": "caseSensitive",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "fuzzyMatching": {
+              "name": "fuzzyMatching",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "isActive": {
+              "name": "isActive",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
               "attributes": []
             },
             "createdAt": {
@@ -1022,6 +1129,34 @@
               "isRequired": false,
               "attributes": []
             },
+            "transitNumber": {
+              "name": "transitNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "institutionNumber": {
+              "name": "institutionNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "accountNumber": {
+              "name": "accountNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "bankingDocumentKey": {
+              "name": "bankingDocumentKey",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "assignments": {
               "name": "assignments",
               "isArray": true,
@@ -1043,6 +1178,22 @@
               "isArray": true,
               "type": {
                 "model": "LearningPathAssignment"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true,
+              "association": {
+                "connectionType": "HAS_MANY",
+                "associatedWith": [
+                  "employeeId"
+                ]
+              }
+            },
+            "supportRecords": {
+              "name": "supportRecords",
+              "isArray": true,
+              "type": {
+                "model": "EmployeeSupport"
               },
               "isRequired": false,
               "attributes": [],
@@ -1367,6 +1518,27 @@
               "isRequired": false,
               "attributes": []
             },
+            "hasViewedPdf": {
+              "name": "hasViewedPdf",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "assignmentSource": {
+              "name": "assignmentSource",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "learningPathId": {
+              "name": "learningPathId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -1474,6 +1646,14 @@
               "type": "Boolean",
               "isRequired": true,
               "attributes": []
+            },
+            "answers": {
+              "name": "answers",
+              "isArray": true,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true
             },
             "createdAt": {
               "name": "createdAt",
@@ -1998,6 +2178,172 @@
             "primaryKeyFieldName": "id",
             "sortKeyFieldNames": []
           }
+        },
+        "EmployeeSupport": {
+          "name": "EmployeeSupport",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "employeeId": {
+              "name": "employeeId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "courseId": {
+              "name": "courseId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "assignmentId": {
+              "name": "assignmentId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "employee": {
+              "name": "employee",
+              "isArray": false,
+              "type": {
+                "model": "Employee"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "employeeId"
+                ]
+              }
+            },
+            "course": {
+              "name": "course",
+              "isArray": false,
+              "type": {
+                "model": "Course"
+              },
+              "isRequired": false,
+              "attributes": [],
+              "association": {
+                "connectionType": "BELONGS_TO",
+                "targetNames": [
+                  "courseId"
+                ]
+              }
+            },
+            "flagType": {
+              "name": "flagType",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "supportAction": {
+              "name": "supportAction",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "notes": {
+              "name": "notes",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providedBy": {
+              "name": "providedBy",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providedAt": {
+              "name": "providedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            }
+          },
+          "syncable": true,
+          "pluralName": "EmployeeSupports",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "key",
+              "properties": {
+                "fields": [
+                  "id"
+                ]
+              }
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ],
+                    "groups": [
+                      "Managers"
+                    ]
+                  },
+                  {
+                    "groupClaim": "cognito:groups",
+                    "provider": "userPools",
+                    "allow": "groups",
+                    "operations": [
+                      "read",
+                      "update"
+                    ],
+                    "groups": [
+                      "Employees"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
         }
       },
       "enums": {
@@ -2055,6 +2401,43 @@
             "groupsEmployees": [
               "get",
               "list"
+            ]
+          },
+          "courses/pdfs/*": {
+            "groupsManagers": [
+              "get",
+              "list",
+              "write",
+              "delete"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list"
+            ]
+          },
+          "log/*": {
+            "groupsManagers": [
+              "get",
+              "list",
+              "write",
+              "delete"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list",
+              "write"
+            ]
+          },
+          "banking/*": {
+            "groupsManagers": [
+              "get",
+              "list"
+            ],
+            "groupsEmployees": [
+              "get",
+              "list",
+              "write",
+              "delete"
             ]
           }
         }

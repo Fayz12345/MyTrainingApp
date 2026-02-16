@@ -35,12 +35,30 @@ type CourseWithAssignment = {
   assignmentStatus: 'assigned' | 'completed';
   isTrainingComplete?: boolean | null;
   trainingCompletedAt?: string | null; // Date when training was completed (for recertification)
+  learningPathId?: string | null; // ID of learning path if course is part of a learning path
+  learningPathTitle?: string | null; // Title of learning path if course is part of a learning path
   createdAt: string;
   updatedAt: string;
 };
 
+type LearningPathPackage = {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  assignedDate: string;
+  dueDate?: string | null;
+  isSequential?: boolean | null;
+  courses: CourseWithAssignment[];
+  completedCourses: number;
+  totalCourses: number;
+  progressPercentage: number;
+};
+
 const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) => {
   const [courses, setCourses] = useState<CourseWithAssignment[]>([]);
+  const [learningPathPackages, setLearningPathPackages] = useState<LearningPathPackage[]>([]);
+  const [standaloneCourses, setStandaloneCourses] = useState<CourseWithAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<CourseWithAssignment | null>(null);
@@ -85,97 +103,252 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
       }
 
       console.log('[EmployeeDashboard] Loading courses for userId:', userId);
+      console.log('[EmployeeDashboard] User email:', userEmail);
 
-      // Use GraphQL query to get nested course data (similar to Flutter app)
-      const query = `
-        query GetAssignedCourses($userId: String!) {
-          listEmployees(filter: { userId: { eq: $userId } }) {
-            items {
-              id
-              assignments {
-                items {
-                  id
-                  status
-                  isTrainingComplete
-                  trainingCompletedAt
-                  course {
-                    id
-                    title
-                    description
-                    videoKey
-                    imageKey
-                    passingScore
-                    duration
-                    category
-                    createdAt
-                    updatedAt
-                  }
-                }
-              }
+      // Fetch employee by userId (Cognito user ID)
+      const employeesResult = await client.models.Employee.list({
+        filter: { userId: { eq: userId } }
+      });
+
+      if (employeesResult.errors && employeesResult.errors.length > 0) {
+        console.error('[EmployeeDashboard] Error fetching employee:', employeesResult.errors);
+        throw new Error('Failed to fetch employee: ' + employeesResult.errors.map((e: any) => e.message).join(', '));
+      }
+
+      const employees = employeesResult.data || [];
+      console.log('[EmployeeDashboard] Employee lookup result:', {
+        userId,
+        employeeCount: employees.length,
+        employees: employees.map((e: any) => ({ id: e.id, email: e.email, userId: e.userId }))
+      });
+
+      if (employees.length === 0) {
+        // Try alternative lookup by email
+        console.log('[EmployeeDashboard] No employee found by userId, trying email lookup:', userEmail);
+        if (userEmail) {
+          const employeesByEmailResult = await client.models.Employee.list({
+            filter: { email: { eq: userEmail } }
+          });
+          
+          if (employeesByEmailResult.data && employeesByEmailResult.data.length > 0) {
+            console.log('[EmployeeDashboard] Found employee by email:', employeesByEmailResult.data.length);
+            const employeeByEmail = employeesByEmailResult.data[0];
+            console.log('[EmployeeDashboard] Employee found by email:', {
+              id: employeeByEmail.id,
+              email: employeeByEmail.email,
+              userId: employeeByEmail.userId,
+              expectedUserId: userId
+            });
+            
+            // If userId doesn't match, this might be the issue
+            if (employeeByEmail.userId !== userId) {
+              console.warn('[EmployeeDashboard] ⚠️ UserId mismatch! Employee userId:', employeeByEmail.userId, 'Current userId:', userId);
             }
           }
         }
-      `;
-
-      const response = await client.graphql({
-        query,
-        variables: { userId }
-      });
-
-      const data = (response as any).data;
-      const errors = (response as any).errors;
-
-      if (errors && errors.length > 0) {
-        console.error('[EmployeeDashboard] GraphQL errors:', errors);
-        throw new Error(errors[0].message || 'Failed to load courses');
-      }
-
-      console.log('[EmployeeDashboard] GraphQL response:', data);
-
-      const employees = (data as any)?.listEmployees?.items;
-      if (!employees || employees.length === 0) {
+        
         console.log('[EmployeeDashboard] No employee found for userId:', userId);
         setCourses([]);
+        setStandaloneCourses([]);
+        setLearningPathPackages([]);
         setLoading(false);
         return;
       }
 
       const employee = employees[0];
-      const assignments = employee.assignments?.items || [];
+      console.log('[EmployeeDashboard] Employee found:', {
+        id: employee.id,
+        email: employee.email,
+        userId: employee.userId,
+        name: employee.name
+      });
 
-      console.log('[EmployeeDashboard] Found assignments:', assignments.length);
+      // Fetch assignments
+      const assignmentsResult = await client.models.Assignment.list({
+        filter: { employeeId: { eq: employee.id || '' } }
+      });
 
-      const coursesList: CourseWithAssignment[] = [];
+      if (assignmentsResult.errors && assignmentsResult.errors.length > 0) {
+        console.warn('[EmployeeDashboard] Warning fetching assignments:', assignmentsResult.errors);
+      }
 
-      for (const assignment of assignments) {
-        if (assignment.course) {
-          const course = assignment.course;
-          coursesList.push({
-            id: course.id,
-            title: course.title || 'Untitled Course',
-            description: course.description || null,
-            videoKey: course.videoKey || null,
-            imageKey: course.imageKey || null,
-            passingScore: course.passingScore || null,
-            duration: course.duration || null,
-            category: course.category || null,
-            assignmentId: assignment.id,
-            employeeId: employee.id, // Store employeeId for Lambda
-            assignmentStatus: assignment.status as 'assigned' | 'completed',
-            isTrainingComplete: assignment.isTrainingComplete ?? false,
-            trainingCompletedAt: assignment.trainingCompletedAt || null,
-            createdAt: course.createdAt,
-            updatedAt: course.updatedAt,
+      const assignments = assignmentsResult.data || [];
+      console.log('[EmployeeDashboard] Assignments found:', assignments.length, assignments.map((a: any) => ({ id: a.id, courseId: a.courseId, status: a.status })));
+
+      // Fetch learning path assignments
+      const learningPathAssignmentsResult = await client.models.LearningPathAssignment.list({
+        filter: { employeeId: { eq: employee.id || '' } }
+      });
+
+      if (learningPathAssignmentsResult.errors && learningPathAssignmentsResult.errors.length > 0) {
+        console.error('[EmployeeDashboard] Error fetching learning path assignments:', learningPathAssignmentsResult.errors);
+        console.warn('[EmployeeDashboard] Warning fetching learning path assignments:', learningPathAssignmentsResult.errors);
+      }
+
+      const learningPathAssignments = learningPathAssignmentsResult.data || [];
+      console.log('[EmployeeDashboard] Learning path assignments found:', learningPathAssignments.length);
+      console.log('[EmployeeDashboard] Learning path assignments details:', learningPathAssignments.map((a: any) => ({
+        id: a.id,
+        learningPathId: a.learningPathId,
+        employeeId: a.employeeId,
+        status: a.status
+      })));
+
+      // If no learning path assignments found, try without filter to see all assignments
+      if (learningPathAssignments.length === 0) {
+        console.log('[EmployeeDashboard] No learning path assignments found with filter, trying without filter...');
+        const allPathAssignmentsResult = await client.models.LearningPathAssignment.list();
+        console.log('[EmployeeDashboard] All learning path assignments (no filter):', allPathAssignmentsResult.data?.length || 0);
+        if (allPathAssignmentsResult.data && allPathAssignmentsResult.data.length > 0) {
+          const matchingAssignments = allPathAssignmentsResult.data.filter((a: any) => a.employeeId === employee.id);
+          console.log('[EmployeeDashboard] Matching assignments by employeeId:', matchingAssignments.length);
+          if (matchingAssignments.length > 0) {
+            console.log('[EmployeeDashboard] Found matching assignments:', matchingAssignments);
+          }
+        }
+      }
+
+      // Get all course IDs that are part of learning paths
+      const learningPathCourseIds = new Set<string>();
+      const learningPathMap = new Map<string, LearningPathPackage>();
+
+      // Process learning path assignments
+      for (const pathAssignment of learningPathAssignments) {
+        // Fetch learning path details
+        const learningPathResult = await client.models.LearningPath.get({ id: pathAssignment.learningPathId });
+        if (!learningPathResult.data) continue;
+
+        const learningPath = learningPathResult.data;
+
+        // Fetch courses in this learning path
+        const pathCoursesResult = await client.models.LearningPathCourse.list({
+          filter: { learningPathId: { eq: learningPath.id || '' } }
+        });
+
+        const pathCourseItems = pathCoursesResult.data || [];
+        
+        // Sort courses by order
+        const sortedCourses = [...pathCourseItems].sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+        const pathCourses: CourseWithAssignment[] = [];
+
+        // Find corresponding assignments for each course in the learning path
+        for (const pathCourseItem of sortedCourses) {
+          const courseId = pathCourseItem.courseId;
+          if (!courseId) continue;
+
+          // Find the assignment for this course
+          const courseAssignment = assignments.find((a: any) => a.courseId === courseId);
+          if (courseAssignment) {
+            // Fetch course details
+            const courseResult = await client.models.Course.get({ id: courseId });
+            if (!courseResult.data) continue;
+
+            const course = courseResult.data;
+            if (!course.id) continue;
+            learningPathCourseIds.add(course.id);
+            
+            pathCourses.push({
+              id: course.id,
+              title: course.title || 'Untitled Course',
+              description: course.description || null,
+              videoKey: course.videoKey || null,
+              imageKey: course.imageKey || null,
+              passingScore: course.passingScore || null,
+              duration: course.duration || null,
+              category: course.category || null,
+              assignmentId: courseAssignment.id || '',
+              employeeId: employee.id || undefined,
+              assignmentStatus: (courseAssignment.status as 'assigned' | 'completed') || 'assigned',
+              isTrainingComplete: courseAssignment.isTrainingComplete ?? false,
+              trainingCompletedAt: courseAssignment.trainingCompletedAt || null,
+              learningPathId: (learningPath.id || undefined) as string | undefined,
+              learningPathTitle: (learningPath.title || undefined) as string | undefined,
+              createdAt: course.createdAt,
+              updatedAt: course.updatedAt,
+            });
+          }
+        }
+
+        // Calculate progress for this learning path
+        const completed = pathCourses.filter(c => c.assignmentStatus === 'completed').length;
+        const total = pathCourses.length;
+        const progressPercentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        // Only add package if it has courses
+        if (pathCourses.length > 0) {
+          learningPathMap.set(pathAssignment.id || '', {
+            id: pathAssignment.id || '',
+            title: learningPath.title,
+            description: learningPath.description || null,
+            status: pathAssignment.status || 'not_started',
+            assignedDate: pathAssignment.assignedDate || new Date().toISOString(),
+            dueDate: (pathAssignment.dueDate || undefined) as string | undefined,
+            isSequential: learningPath.isSequential ?? true,
+            courses: pathCourses,
+            completedCourses: completed,
+            totalCourses: total,
+            progressPercentage: progressPercentage,
           });
         }
       }
 
-      console.log('[EmployeeDashboard] Courses loaded:', coursesList.length);
-      setCourses(coursesList);
+      // Separate standalone courses (not part of any learning path)
+      const standaloneCoursesList: CourseWithAssignment[] = [];
+      const allCoursesList: CourseWithAssignment[] = [];
+
+      for (const assignment of assignments) {
+        const courseId = assignment.courseId;
+        if (!courseId) continue;
+
+        // Skip if already part of a learning path
+        if (learningPathCourseIds.has(courseId)) continue;
+
+        // Fetch course details
+        const courseResult = await client.models.Course.get({ id: courseId });
+        if (!courseResult.data) continue;
+
+        const course = courseResult.data;
+        if (!course.id) continue;
+        const courseData: CourseWithAssignment = {
+          id: course.id,
+          title: course.title || 'Untitled Course',
+          description: course.description || null,
+          videoKey: course.videoKey || null,
+          imageKey: course.imageKey || null,
+          passingScore: course.passingScore || null,
+          duration: course.duration || null,
+          category: course.category || null,
+          assignmentId: assignment.id || '',
+          employeeId: employee.id || undefined,
+          assignmentStatus: (assignment.status as 'assigned' | 'completed') || 'assigned',
+          isTrainingComplete: assignment.isTrainingComplete ?? false,
+          trainingCompletedAt: assignment.trainingCompletedAt || null,
+          createdAt: course.createdAt,
+          updatedAt: course.updatedAt,
+        };
+
+        allCoursesList.push(courseData);
+        standaloneCoursesList.push(courseData);
+      }
+
+      // Add learning path courses to all courses list
+      const learningPathPackagesArray = Array.from(learningPathMap.values());
+      for (const pkg of learningPathPackagesArray) {
+        allCoursesList.push(...pkg.courses);
+      }
+
+      console.log('[EmployeeDashboard] Courses loaded:', allCoursesList.length);
+      console.log('[EmployeeDashboard] Standalone courses:', standaloneCoursesList.length);
+      console.log('[EmployeeDashboard] Learning path packages:', learningPathMap.size);
+
+      setCourses(allCoursesList);
+      setStandaloneCourses(standaloneCoursesList);
+      setLearningPathPackages(Array.from(learningPathMap.values()));
       
-      // Calculate progress
-      const total = coursesList.length;
-      const completed = coursesList.filter(c => c.assignmentStatus === 'completed').length;
+      // Calculate overall progress
+      const total = allCoursesList.length;
+      const completed = allCoursesList.filter(c => c.assignmentStatus === 'completed').length;
       setTotalCourses(total);
       setCompletedCourses(completed);
       
@@ -385,12 +558,19 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
     setQuizSubmitted(true);
 
     try {
+      // Convert quizAnswers (object with questionId keys) to array in question order
+      const answersArray: number[] = quizQuestions.map((question) => {
+        const answerStr = quizAnswers[question.id];
+        return answerStr !== undefined ? parseInt(answerStr, 10) : -1;
+      });
+
       // Create result using Amplify Data client
       const now = new Date().toISOString();
       const resultData = await client.models.Result.create({
         assignmentId: selectedCourse.assignmentId,
         score: score,
         passed: passed,
+        answers: answersArray,
         createdAt: now,
         updatedAt: now
       });
@@ -872,9 +1052,9 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
       <div className="dashboard-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
         <div className="employee-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h2 style={{ margin: 0 }}>Assigned Courses</h2>
+            <h2 style={{ margin: 0 }}>My Training</h2>
             <p style={{ color: '#666', margin: '5px 0 0 0' }}>
-              View and complete your assigned training courses
+              View and complete your assigned training courses and learning packages
             </p>
           </div>
           {totalCourses > 0 && (
@@ -926,7 +1106,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           </div>
         )}
 
-        {!loading && !error && courses.length === 0 && (
+        {!loading && !error && learningPathPackages.length === 0 && standaloneCourses.length === 0 && (
           <div style={{
             textAlign: 'center',
             padding: '40px',
@@ -938,10 +1118,189 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
           </div>
         )}
 
-        {!loading && !error && courses.length > 0 && (
-          <div style={{ display: 'grid', gap: '20px' }}>
-            {courses.map((course) => (
-              <div
+        {/* Learning Path Packages Section */}
+        {!loading && !error && learningPathPackages.length > 0 && (
+          <div style={{ marginBottom: '40px' }}>
+            <h3 style={{ marginBottom: '20px', fontSize: '1.5rem', color: '#333' }}>
+              📦 Learning Packages
+            </h3>
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {learningPathPackages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  style={{
+                    backgroundColor: 'white',
+                    padding: '20px',
+                    borderRadius: '8px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    border: '2px solid #007AFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: '1.25rem', color: '#007AFF' }}>
+                        {pkg.title}
+                      </h4>
+                      {pkg.description && (
+                        <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '0.9rem' }}>
+                          {pkg.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap', marginTop: '10px' }}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          backgroundColor: pkg.status === 'completed' ? '#4caf50' : pkg.status === 'in_progress' ? '#ff9800' : '#e3f2fd',
+                          color: pkg.status === 'completed' ? 'white' : pkg.status === 'in_progress' ? 'white' : '#1565c0',
+                          fontSize: '0.875rem',
+                          fontWeight: 500
+                        }}>
+                          {pkg.status === 'completed' ? '✅ Completed' : pkg.status === 'in_progress' ? '🔄 In Progress' : '📚 Not Started'}
+                        </span>
+                        {pkg.isSequential && (
+                          <span style={{ color: '#666', fontSize: '0.875rem' }}>
+                            🔗 Sequential
+                          </span>
+                        )}
+                        {pkg.dueDate && (
+                          <span style={{ color: '#666', fontSize: '0.875rem' }}>
+                            📅 Due: {new Date(pkg.dueDate).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', marginLeft: '20px' }}>
+                      <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', color: '#007AFF' }}>
+                        {pkg.progressPercentage}%
+                      </p>
+                      <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: '#666' }}>
+                        {pkg.completedCourses}/{pkg.totalCourses} courses
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div style={{
+                    width: '100%',
+                    height: '8px',
+                    backgroundColor: '#e0e0e0',
+                    borderRadius: '4px',
+                    overflow: 'hidden',
+                    marginBottom: '15px'
+                  }}>
+                    <div style={{
+                      width: `${pkg.progressPercentage}%`,
+                      height: '100%',
+                      backgroundColor: '#007AFF',
+                      transition: 'width 0.3s ease',
+                      borderRadius: '4px'
+                    }} />
+                  </div>
+
+                  {/* Courses in Package */}
+                  <div style={{ marginTop: '15px' }}>
+                    <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', fontWeight: 500, color: '#666' }}>
+                      Courses in this package:
+                    </p>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {pkg.courses.map((course, index) => (
+                        <div
+                          key={course.id}
+                          onClick={() => handleViewCourse(course)}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: '#f5f5f5',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            border: '1px solid #e0e0e0',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#e3f2fd';
+                            e.currentTarget.style.borderColor = '#007AFF';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f5f5f5';
+                            e.currentTarget.style.borderColor = '#e0e0e0';
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {pkg.isSequential && (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '50%',
+                                  backgroundColor: course.assignmentStatus === 'completed' ? '#4caf50' : '#007AFF',
+                                  color: 'white',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  flexShrink: 0
+                                }}>
+                                  {index + 1}
+                                </span>
+                              )}
+                              <div>
+                                <p style={{ margin: 0, fontWeight: 500, color: '#333' }}>
+                                  {course.title}
+                                </p>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '4px' }}>
+                                  {course.assignmentStatus === 'completed' ? (
+                                    <span style={{
+                                      padding: '2px 8px',
+                                      borderRadius: '10px',
+                                      backgroundColor: '#e8f5e9',
+                                      color: '#2e7d32',
+                                      fontSize: '0.75rem'
+                                    }}>
+                                      ✅ Completed
+                                    </span>
+                                  ) : (
+                                    <span style={{
+                                      padding: '2px 8px',
+                                      borderRadius: '10px',
+                                      backgroundColor: '#e3f2fd',
+                                      color: '#1565c0',
+                                      fontSize: '0.75rem'
+                                    }}>
+                                      📚 Assigned
+                                    </span>
+                                  )}
+                                  {course.passingScore && (
+                                    <span style={{ color: '#666', fontSize: '0.75rem' }}>
+                                      Passing: {course.passingScore}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <span style={{ color: '#999', fontSize: '1.2rem', marginLeft: '10px' }}>→</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Standalone Courses Section */}
+        {!loading && !error && standaloneCourses.length > 0 && (
+          <div>
+            <h3 style={{ marginBottom: '20px', fontSize: '1.5rem', color: '#333' }}>
+              📚 Individual Courses
+            </h3>
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {standaloneCourses.map((course) => (
+                <div
                 key={course.id}
                 onClick={() => handleViewCourse(course)}
                 style={{
@@ -990,7 +1349,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ signOut, user }) 
                   </div>
                 </div>
               </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

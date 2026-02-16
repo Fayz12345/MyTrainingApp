@@ -80,11 +80,17 @@ const schema = a.schema({
       quiz: a.hasMany('QuizQuestion', 'courseId'), // Links to QuizQuestion via courseId
       assignments: a.hasMany('Assignment', 'courseId'), // Links to Assignment via courseId
       learningPathCourses: a.hasMany('LearningPathCourse', 'courseId'), // Links to LearningPathCourse via courseId
+      supportRecords: a.hasMany('EmployeeSupport', 'courseId'), // Links to EmployeeSupport via courseId
       passingScore: a.integer(),
       duration: a.string(), // Course duration (e.g., "45 min", "1 hr 30 min", "2 hr")
       category: a.string(), // Course category (e.g., "Leadership", "Marketing", "IT")
       tag: a.string(), // Course Tag
       status: a.string(), // Course status
+      randomizeQuestions: a.boolean().default(false), // Whether to randomize quiz question order for each attempt
+      randomizeOptions: a.boolean().default(false), // Whether to randomize answer option order for multiple-choice questions
+      useQuestionPool: a.boolean().default(false), // Whether to use question pool mode (randomly select subset of questions)
+      poolSize: a.integer(), // Total number of questions in the pool (only used if useQuestionPool is true)
+      questionsToDisplay: a.integer(), // Number of questions to randomly select and display per quiz attempt (only used if useQuestionPool is true)
       createdBy: a.string(), // managerId (userId from Cognito) - for filtering courses by manager
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
@@ -100,8 +106,13 @@ const schema = a.schema({
       courseId: a.id(), // Foreign key linking to Course
       course: a.belongsTo('Course', 'courseId'), // Added: Reciprocal relationship
       question: a.string().required(),
+      questionType: a.string().default('multiple_choice'), // 'multiple_choice', 'true_false', 'fill_blank'
       options: a.string().array().required(),
-      correctAnswer: a.integer().required(),
+      correctAnswer: a.integer(), // For multiple_choice and true_false (index or 0/1)
+      correctAnswerText: a.string(), // For fill_blank (comma-separated accepted answers)
+      caseSensitive: a.boolean().default(false), // For fill_blank: whether answer matching is case-sensitive
+      fuzzyMatching: a.boolean().default(false), // For fill_blank: enable Levenshtein distance matching (≤2 chars)
+      isActive: a.boolean().default(true), // Whether question is active and can be selected for question pools
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
@@ -122,15 +133,21 @@ const schema = a.schema({
       store: a.belongsTo('Store', 'storeId'),
       createdBy: a.string(), // userId of the Manager who created it
       isActive: a.boolean().default(true),
+      // Banking Information
+      transitNumber: a.string(), // Transit Number for banking
+      institutionNumber: a.string(), // Institution Number for banking
+      accountNumber: a.string(), // Account Number for banking
+      bankingDocumentKey: a.string(), // S3 key for uploaded banking document (Void Cheque or Direct Deposit Form)
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
       learningPathAssignments: a.hasMany('LearningPathAssignment', 'employeeId'), // Links to LearningPathAssignment via employeeId
+      supportRecords: a.hasMany('EmployeeSupport', 'employeeId'), // Links to EmployeeSupport via employeeId
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
       allow.group('SuperAdmin').to(['create', 'read', 'update', 'delete']),
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read']),
+      allow.group('Employees').to(['read', 'update']), // Allow employees to update their own records (for banking info)
       allow.publicApiKey().to(['create', 'read']) // Allow Lambda (using API key) to create/read employee for notifications/self-signup
     ]),
   ManagerStore: a
@@ -160,6 +177,8 @@ const schema = a.schema({
       isTrainingComplete: a.boolean().default(false),
       trainingCompletedAt: a.datetime(), // Date when training was completed (for recertification tracking)
       hasViewedPdf: a.boolean().default(false), // Track if employee has viewed the PDF document
+      assignmentSource: a.string(), // 'individual' or 'learning_path' - indicates if assignment comes from individual course assignment or learning path
+      learningPathId: a.id(), // ID of the learning path if assignmentSource is 'learning_path' (optional)
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
@@ -174,6 +193,7 @@ const schema = a.schema({
       assignmentId: a.id().required(),
       score: a.integer().required(),
       passed: a.boolean().required(),
+      answers: a.integer().array(), // Array of answer indices (0-based) for each question in order
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
@@ -228,6 +248,26 @@ const schema = a.schema({
       assignedDate: a.datetime(), // Date when the path was assigned
       dueDate: a.datetime(), // Optional due date for completion
       completedDate: a.datetime(), // Date when the path was completed
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read', 'update'])
+    ]),
+  EmployeeSupport: a
+    .model({
+      id: a.id(),
+      employeeId: a.id().required(),
+      courseId: a.id().required(),
+      assignmentId: a.id(), // Optional: link to the assignment
+      employee: a.belongsTo('Employee', 'employeeId'),
+      course: a.belongsTo('Course', 'courseId'),
+      flagType: a.string(), // 'failed_quizzes', 'low_score', 'no_progress', 'video_no_quiz', 'excessive_time'
+      supportAction: a.string().required(), // The action taken to provide support
+      notes: a.string(), // Additional notes about the support provided
+      providedBy: a.string(), // userId of the manager who provided support
+      providedAt: a.datetime().required(), // When support was provided
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })

@@ -39,6 +39,23 @@ type Course = {
   readonly title: string;
 };
 
+type LearningPathAssignment = {
+  readonly id: string;
+  readonly employeeId: string;
+  readonly learningPathId: string;
+  readonly status?: string | null;
+  readonly assignedDate?: string | null;
+  readonly dueDate?: string | null;
+  readonly completedDate?: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type LearningPath = {
+  readonly id: string;
+  readonly title: string;
+};
+
 interface EmployeeListProps {
   refreshTrigger?: number;
   selectedStoreId?: string | null;
@@ -48,6 +65,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [pathAssignments, setPathAssignments] = useState<LearningPathAssignment[]>([]);
+  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
@@ -64,23 +83,72 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
 
       console.log('Fetching employees for userId:', userId);
 
-      // Fetch employees, assignments, and courses in parallel
-      const [employeesResult, assignmentsResult, coursesResult] = await Promise.all([
+      // Helper function to fetch all pages with pagination
+      const fetchAllPages = async <T,>(
+        fetchFn: (nextToken?: string) => Promise<{ data: T[] | null; nextToken?: string | null }>,
+        processFn?: (item: T) => any
+      ): Promise<any[]> => {
+        const allData: any[] = [];
+        let nextToken: string | undefined = undefined;
+        do {
+          const response: any = await fetchFn(nextToken);
+          const batch = (response.data || [])
+            .filter((item: any) => item.id !== null)
+            .map((item: any) => processFn ? processFn(item) : item);
+          allData.push(...batch);
+          nextToken = response.nextToken || undefined;
+        } while (nextToken);
+        return allData;
+      };
+
+      // Fetch employees, assignments, courses, learning path assignments, and learning paths in parallel
+      // Fetch all assignments and filter in memory to include individual assignments (not from learning paths)
+      const [employeesResult, allAssignmentsData, coursesResult, pathAssignmentsResult, learningPathsResult] = await Promise.all([
         client.models.Employee.list({}),
-        client.models.Assignment.list({}),
-        client.models.Course.list({})
+        fetchAllPages(
+          (nextToken) => client.models.Assignment.list({ nextToken }),
+          (a: any) => ({
+            id: a.id!,
+            employeeId: a.employeeId,
+            courseId: a.courseId,
+            status: a.status,
+            isTrainingComplete: a.isTrainingComplete ?? false,
+            trainingCompletedAt: a.trainingCompletedAt,
+            assignmentSource: a.assignmentSource || null,
+            learningPathId: a.learningPathId || null,
+            createdAt: a.createdAt,
+            updatedAt: a.updatedAt,
+          })
+        ),
+        client.models.Course.list({}),
+        client.models.LearningPathAssignment.list({}),
+        client.models.LearningPath.list({})
       ]);
+
+      // Filter assignments to only get individual course assignments (not learning path assignments)
+      // Include assignments where assignmentSource is 'individual' OR null/undefined (for older assignments)
+      const assignmentsData = allAssignmentsData.filter(
+        (assignment: any) => 
+          assignment.assignmentSource === 'individual' || 
+          (assignment.assignmentSource === null || assignment.assignmentSource === undefined)
+      );
 
       if (employeesResult.errors && employeesResult.errors.length > 0) {
         throw new Error('Failed to fetch employees: ' + employeesResult.errors.map((e: any) => e.message).join(', '));
       }
 
-      if (assignmentsResult.errors && assignmentsResult.errors.length > 0) {
-        console.warn('Warning fetching assignments:', assignmentsResult.errors);
-      }
+      // No need to check for errors in assignmentsResult since we're using fetchAllPages
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {
         console.warn('Warning fetching courses:', coursesResult.errors);
+      }
+
+      if (pathAssignmentsResult.errors && pathAssignmentsResult.errors.length > 0) {
+        console.warn('Warning fetching learning path assignments:', pathAssignmentsResult.errors);
+      }
+
+      if (learningPathsResult.errors && learningPathsResult.errors.length > 0) {
+        console.warn('Warning fetching learning paths:', learningPathsResult.errors);
       }
 
       // Filter employees by createdBy - managers should only see employees they created
@@ -104,8 +172,10 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
       }
 
       setEmployees(filteredEmployees);
-      setAssignments(assignmentsResult.data as Assignment[] || []);
+      setAssignments(assignmentsData as Assignment[]);
       setCourses(coursesResult.data as Course[] || []);
+      setPathAssignments(pathAssignmentsResult.data as LearningPathAssignment[] || []);
+      setLearningPaths(learningPathsResult.data as LearningPath[] || []);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -159,10 +229,19 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
     return course?.title || 'Unknown Course';
   };
 
+  const getEmployeePathAssignments = (employeeId: string) => {
+    return pathAssignments.filter(pathAssignment => pathAssignment.employeeId === employeeId);
+  };
+
+  const getLearningPathTitle = (learningPathId: string) => {
+    const learningPath = learningPaths.find(lp => lp.id === learningPathId);
+    return learningPath?.title || 'Unknown Learning Path';
+  };
+
   const deleteEmployee = async (employeeId: string, employeeName: string) => {
     const result = await MySwal.fire({
       title: "Are you sure?",
-      text: `Do you want to delete employee "${employeeName}"? This will also remove all their course assignments.`,
+      text: `Do you want to delete employee "${employeeName}"? This will also remove all their course assignments and learning path assignments.`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#d33",
@@ -178,6 +257,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
       const employeeAssignments = getEmployeeAssignments(employeeId);
       for (const assignment of employeeAssignments) {
         await client.models.Assignment.delete({ id: assignment.id });
+      }
+
+      // Delete all learning path assignments for this employee
+      const employeePathAssignments = getEmployeePathAssignments(employeeId);
+      for (const pathAssignment of employeePathAssignments) {
+        await client.models.LearningPathAssignment.delete({ id: pathAssignment.id });
       }
 
       // Then delete the employee
@@ -203,7 +288,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
 
   useEffect(() => {
     fetchData();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, selectedStoreId]);
 
   if (loading) {
     return <Loader message="Loading employees..." />;
@@ -336,6 +421,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
       <div style={{ display: 'grid', gap: '1rem' }}>
         {employees.map((employee) => {
           const employeeAssignments = getEmployeeAssignments(employee.id);
+          const employeePathAssignments = getEmployeePathAssignments(employee.id);
           const isExpanded = expandedEmployee === employee.id;
           
           return (
@@ -379,11 +465,14 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
                       </p>
                     )}
                     <p style={{ margin: 0, color: '#666' }}>
-                      <strong>Assignments:</strong> {employeeAssignments.length}
+                      <strong>Course Assignments:</strong> {employeeAssignments.length}
+                    </p>
+                    <p style={{ margin: 0, color: '#666' }}>
+                      <strong>Learning Paths:</strong> {employeePathAssignments.length}
                     </p>
                   </div>
 
-                  {employeeAssignments.length > 0 && (
+                  {(employeeAssignments.length > 0 || employeePathAssignments.length > 0) && (
                     <button
                       onClick={() => toggleEmployeeExpansion(employee.id)}
                       style={{
@@ -395,13 +484,82 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
                         fontSize: '0.9rem'
                       }}
                     >
-                      {isExpanded ? '▼ Hide' : '▶ Show'} Course Assignments
+                      {isExpanded ? '▼ Hide' : '▶ Show'} Assignments & Learning Paths
                     </button>
+                  )}
+
+                  {isExpanded && employeePathAssignments.length > 0 && (
+                    <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#e3f2fd', borderRadius: '4px', border: '2px solid #1976d2', marginBottom: '1rem' }}>
+                      <h5 style={{ margin: '0 0 0.75rem 0', color: '#1565c0' }}>
+                        🛤️ Learning Path Assignments ({employeePathAssignments.length}):
+                      </h5>
+                      <div style={{ display: 'grid', gap: '0.5rem' }}>
+                        {employeePathAssignments.map((pathAssignment) => (
+                          <div 
+                            key={pathAssignment.id}
+                            style={{ 
+                              padding: '0.75rem', 
+                              backgroundColor: 'white', 
+                              borderRadius: '4px',
+                              border: '1px solid #1976d2',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 'bold', color: '#1565c0' }}>
+                                {getLearningPathTitle(pathAssignment.learningPathId)}
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                Status: {pathAssignment.status || 'not_started'}
+                                {pathAssignment.assignedDate && (
+                                  <>
+                                    <br />
+                                    Assigned: {new Date(pathAssignment.assignedDate).toLocaleDateString()}
+                                  </>
+                                )}
+                                {pathAssignment.dueDate && (
+                                  <>
+                                    <br />
+                                    Due: {new Date(pathAssignment.dueDate).toLocaleDateString()}
+                                    {new Date(pathAssignment.dueDate) < new Date() && pathAssignment.status !== 'completed' && (
+                                      <span style={{ color: '#d32f2f', fontWeight: 'bold', marginLeft: '0.5rem' }}>
+                                        (OVERDUE)
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                                {pathAssignment.completedDate && (
+                                  <>
+                                    <br />
+                                    Completed: {new Date(pathAssignment.completedDate).toLocaleDateString()}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <span style={{
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                              backgroundColor: pathAssignment.status === 'completed' ? '#4caf50' :
+                                             pathAssignment.status === 'in_progress' ? '#ff9800' : 
+                                             '#9e9e9e',
+                              color: 'white'
+                            }}>
+                              {pathAssignment.status === 'completed' ? 'COMPLETED' :
+                               pathAssignment.status === 'in_progress' ? 'IN PROGRESS' : 
+                               'NOT STARTED'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   {isExpanded && employeeAssignments.length > 0 && (
                     <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
-                      <h5 style={{ margin: '0 0 0.75rem 0' }}>All Course Assignments ({employeeAssignments.length}):</h5>
+                      <h5 style={{ margin: '0 0 0.75rem 0' }}>📚 Course Assignments ({employeeAssignments.length}):</h5>
                       <div style={{ display: 'grid', gap: '0.5rem' }}>
                         {employeeAssignments.map((assignment) => (
                           <div 

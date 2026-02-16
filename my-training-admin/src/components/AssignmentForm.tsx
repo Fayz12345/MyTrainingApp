@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../../amplify/data/resource';
-import Swal from "sweetalert2";
-import withReactContent from "sweetalert2-react-content";
-import Loader from '../common/Loader';
-import { activityLogger, getCurrentUserInfo } from '../../utils/activityLogger';
-const MySwal = withReactContent(Swal);
+import type { Schema } from '../../../amplify/data/resource';
 
 const client = generateClient<Schema>();
 
@@ -29,11 +24,7 @@ type Employee = {
   readonly updatedAt: string;
 };
 
-interface AssignmentFormProps {
-  selectedStoreId?: string | null;
-}
-
-const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
+const AssignmentForm: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -41,8 +32,6 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const fetchData = async () => {
     try {
@@ -51,8 +40,8 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
 
       // Fetch courses and employees in parallel
       const [coursesResult, employeesResult] = await Promise.all([
-        client.models.Course.list({}),
-        client.models.Employee.list({})
+        client.models.Course.list(),
+        client.models.Employee.list()
       ]);
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {
@@ -63,18 +52,8 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
         throw new Error('Failed to fetch employees: ' + employeesResult.errors.map((e: any) => e.message).join(', '));
       }
 
-      // Filter employees by selected store (if store is selected)
-      let filteredEmployees = employeesResult.data as Employee[];
-      if (selectedStoreId) {
-        console.log('[AssignmentForm] Filtering employees by storeId:', selectedStoreId);
-        const beforeStoreFilter = filteredEmployees.length;
-        // Type assertion needed until schema is deployed and types are regenerated
-        filteredEmployees = filteredEmployees.filter(emp => (emp as any).storeId === selectedStoreId);
-        console.log(`[AssignmentForm] Filtered employees by store: ${beforeStoreFilter} -> ${filteredEmployees.length}`);
-      }
-
       setCourses(coursesResult.data as Course[]);
-      setEmployees(filteredEmployees);
+      setEmployees(employeesResult.data as Employee[]);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -85,7 +64,7 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedStoreId]); // Refetch when storeId changes
+  }, []);
 
   const handleCourseSelection = (courseId: string, isSelected: boolean) => {
     if (isSelected) {
@@ -93,75 +72,18 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
     } else {
       setSelectedCourseIds(selectedCourseIds.filter(id => id !== courseId));
     }
-    // Clear course error when user selects a course
-    if (fieldErrors.courses) {
-      setFieldErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.courses;
-        return newErrors;
-      });
-    }
-  };
-
-  const handleEmployeeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedEmployeeId(e.target.value);
-    // Clear error when user selects an employee
-    if (fieldErrors.employeeId) {
-      setFieldErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.employeeId;
-        return newErrors;
-      });
-    }
-  };
-
-  const handleEmployeeBlur = () => {
-    setTouchedFields(prev => ({ ...prev, employeeId: true }));
-    if (!selectedEmployeeId) {
-      setFieldErrors(prev => ({ ...prev, employeeId: 'Please select an employee' }));
-    } else {
-      setFieldErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.employeeId;
-        return newErrors;
-      });
-    }
-  };
-
-  const handleCoursesBlur = () => {
-    setTouchedFields(prev => ({ ...prev, courses: true }));
-    if (selectedCourseIds.length === 0) {
-      setFieldErrors(prev => ({ ...prev, courses: 'Please select at least one course' }));
-    } else {
-      setFieldErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.courses;
-        return newErrors;
-      });
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate all fields
-    const errors: Record<string, string> = {};
-    const touched: Record<string, boolean> = {};
-    
     if (!selectedEmployeeId) {
-      errors.employeeId = 'Please select an employee';
-      touched.employeeId = true;
+      alert('Please select an employee');
+      return;
     }
-    
+
     if (selectedCourseIds.length === 0) {
-      errors.courses = 'Please select at least one course';
-      touched.courses = true;
-    }
-    
-    setFieldErrors(errors);
-    setTouchedFields(touched);
-    
-    if (Object.keys(errors).length > 0) {
+      alert('Please select at least one course');
       return;
     }
 
@@ -210,58 +132,25 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
       const selectedEmployee = employees.find(emp => emp.id === selectedEmployeeId);
       const selectedCourses = courses.filter(course => selectedCourseIds.includes(course.id));
       
-      await MySwal.fire({
-        title: "Success!",
-        text: `Successfully assigned ${selectedCourses.length} course(s) to ${selectedEmployee?.name}`,
-        icon: "success",
-        timer: 2000,
-        showConfirmButton: false,
-      });
-
-      // Log activity for each course assignment
-      try {
-        const userInfo = await getCurrentUserInfo();
-        for (const course of selectedCourses) {
-          await activityLogger.logActivity(
-            'COURSE_ASSIGNED',
-            userInfo.userId,
-            userInfo.userName,
-            userInfo.userEmail,
-            `Assigned course "${course.title}" to employee "${selectedEmployee?.name}"`,
-            {
-              employeeId: selectedEmployeeId,
-              employeeName: selectedEmployee?.name || 'Unknown',
-              employeeEmail: selectedEmployee?.email || 'Unknown',
-              courseId: course.id,
-              courseTitle: course.title,
-              storeId: selectedStoreId || undefined,
-            },
-            selectedStoreId || undefined
-          );
-        }
-      } catch (logError) {
-        console.error('[AssignmentForm] Error logging activity:', logError);
-      }
+      alert(`Successfully assigned ${selectedCourses.length} course(s) to ${selectedEmployee?.name}`);
       
       // Reset form
       setSelectedEmployeeId('');
       setSelectedCourseIds([]);
-      setFieldErrors({});
-      setTouchedFields({});
     } catch (err) {
       console.error('Error creating assignments:', err);
-      await MySwal.fire({
-        title: "Error!",
-        text: 'Failed to create assignments: ' + (err instanceof Error ? err.message : 'Unknown error'),
-        icon: "error",
-      });
+      alert('Failed to create assignments: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return <Loader message="Loading courses and employees..." />;
+    return (
+      <div style={{ textAlign: 'center', padding: '2rem' }}>
+        <p>Loading courses and employees...</p>
+      </div>
+    );
   }
 
   if (error) {
@@ -285,18 +174,6 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
     );
   }
 
-  // Show message if no store is selected
-  if (!selectedStoreId) {
-    return (
-      <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
-        <h2>Assign Courses to Employee</h2>
-        <p style={{ color: '#666', marginTop: '1rem', fontStyle: 'italic' }}>
-          Please select a store from the dashboard to assign courses to employees.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
       <h2>Assign Courses to Employee</h2>
@@ -309,41 +186,32 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
           </label>
           {employees.length === 0 ? (
             <p style={{ color: '#d32f2f', fontStyle: 'italic' }}>
-              No employees found for the selected store. You'll need to add employees to this store first.
+              No employees found. You'll need to add employees first.
             </p>
           ) : (
-            <>
-              <select
-                value={selectedEmployeeId}
-                onChange={handleEmployeeChange}
-                onBlur={handleEmployeeBlur}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: fieldErrors.employeeId ? '2px solid #d32f2f' : '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '1rem',
-                  outline: 'none'
-                }}
-                required
-              >
-                <option value="">Choose an employee...</option>
-                {employees
-                  .filter(emp => emp.isActive !== false)
-                  .map(employee => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.name} ({employee.email})
-                      {employee.department && ` - ${employee.department}`}
-                    </option>
-                  ))
-                }
-              </select>
-              {touchedFields.employeeId && fieldErrors.employeeId && (
-                <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                  {fieldErrors.employeeId}
-                </div>
-              )}
-            </>
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '1rem'
+              }}
+              required
+            >
+              <option value="">Choose an employee...</option>
+              {employees
+                .filter(emp => emp.isActive !== false)
+                .map(employee => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name} ({employee.email})
+                    {employee.department && ` - ${employee.department}`}
+                  </option>
+                ))
+              }
+            </select>
           )}
         </div>
 
@@ -357,18 +225,13 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
               No courses found. Create courses first before assigning them.
             </p>
           ) : (
-            <>
-              <div 
-                style={{ 
-                  border: fieldErrors.courses ? '2px solid #d32f2f' : '1px solid #ccc', 
-                  borderRadius: '4px', 
-                  maxHeight: '300px', 
-                  overflowY: 'auto',
-                  padding: '1rem'
-                }}
-                onBlur={handleCoursesBlur}
-                tabIndex={0}
-              >
+            <div style={{ 
+              border: '1px solid #ccc', 
+              borderRadius: '4px', 
+              maxHeight: '300px', 
+              overflowY: 'auto',
+              padding: '1rem'
+            }}>
               {courses.map(course => (
                 <div key={course.id} style={{ 
                   display: 'flex', 
@@ -399,18 +262,12 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
                   </label>
                 </div>
               ))}
-              </div>
-              {touchedFields.courses && fieldErrors.courses && (
-                <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                  {fieldErrors.courses}
-                </div>
-              )}
-              {selectedCourseIds.length > 0 && !fieldErrors.courses && (
-                <p style={{ marginTop: '0.5rem', color: '#1976d2', fontSize: '0.9rem' }}>
-                  {selectedCourseIds.length} course(s) selected
-                </p>
-              )}
-            </>
+            </div>
+          )}
+          {selectedCourseIds.length > 0 && (
+            <p style={{ marginTop: '0.5rem', color: '#1976d2', fontSize: '0.9rem' }}>
+              {selectedCourseIds.length} course(s) selected
+            </p>
           )}
         </div>
 
