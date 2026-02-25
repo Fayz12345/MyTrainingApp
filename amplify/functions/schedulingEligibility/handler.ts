@@ -343,9 +343,9 @@ async function callClearviewConnectAPI(payload: {
 
   const statusCode = response.status;
   let responseData: any = null;
+  const responseText = await response.text();
 
   try {
-    const responseText = await response.text();
     if (responseText) {
       responseData = JSON.parse(responseText);
     }
