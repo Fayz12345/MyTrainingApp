@@ -14,7 +14,7 @@ export const schedulingTest = defineFunction({
   entry: './handler.ts',
   timeoutSeconds: 30,
   environment: {
-    SCHEDULING_API_URL: process.env.SCHEDULING_API_URL || 'https://api.example-scheduling.com/v1',
+    SCHEDULING_API_URL: process.env.SCHEDULING_API_URL || 'https://sandbox.clearviewconnect.com/api/v1',
     SCHEDULING_API_TOKEN: process.env.SCHEDULING_API_TOKEN || 'YOUR_TOKEN'
   }
 });

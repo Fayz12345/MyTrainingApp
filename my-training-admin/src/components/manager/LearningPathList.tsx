@@ -48,6 +48,7 @@ interface LearningPath {
   version?: number | null;
   isArchived?: boolean | null;
   isSequential?: boolean | null;
+  mandatoryForScheduling?: boolean | null;
   createdAt: string;
   updatedAt: string;
   courses?: {
@@ -331,6 +332,14 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
                       color={path.status === 'published' ? 'success' : 'default'}
                       size="small"
                     />
+            {path.mandatoryForScheduling && (
+              <Chip
+                label="Mandatory for Scheduling"
+                size="small"
+                color="primary"
+                variant="outlined"
+              />
+            )}
             {isArchived && (
               <Chip
                 label="Cannot be assigned"

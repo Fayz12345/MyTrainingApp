@@ -61,6 +61,7 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
   const [description, setDescription] = useState('');
   const [isSequential, setIsSequential] = useState(true);
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
+  const [mandatoryForScheduling, setMandatoryForScheduling] = useState(false);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<LearningPathCourse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -207,6 +208,7 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
         status: publish ? 'published' : 'draft',
         version: 1,
         isArchived: false,
+        mandatoryForScheduling,
         createdAt: now,
         updatedAt: now,
       });
@@ -349,7 +351,7 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
             rows={3}
             sx={{ mb: 2 }}
           />
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexDirection: 'column' }}>
             <FormControlLabel
               control={
                 <Switch
@@ -359,10 +361,24 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
               }
               label="Sequential (courses must be completed in order)"
             />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={mandatoryForScheduling}
+                  onChange={(e) => setMandatoryForScheduling(e.target.checked)}
+                />
+              }
+              label="Mandatory for Scheduling"
+            />
           </Box>
           {!isSequential && (
             <Alert severity="info" sx={{ mb: 2 }}>
               Flexible mode: Employees can take courses in any order.
+            </Alert>
+          )}
+          {mandatoryForScheduling && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              This learning path is mandatory for scheduling eligibility. Employees must complete this path and have banking information on file to be eligible for scheduling.
             </Alert>
           )}
         </CardContent>

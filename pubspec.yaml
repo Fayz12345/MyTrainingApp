@@ -16,6 +16,7 @@ dependencies:
   amplify_authenticator: ^2.0.0
   amplify_api: ^2.0.0
   amplify_storage_s3: ^2.0.0
+  amplify_secure_storage: ^0.5.13
   
   # Video Player
   video_player: ^2.8.0
@@ -28,20 +29,43 @@ dependencies:
   flutter_bloc: ^8.1.6
   equatable: ^2.0.5
   
+  # Routing
+  go_router: ^14.0.0
+  
   # HTTP & Storage
-  http: ^1.2.0
+  dio: ^5.7.0
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
   intl: ^0.20.2
   image_picker:
+  
+  # PDF Viewer
+  syncfusion_flutter_pdfviewer: ^32.1.22
+  open_filex: ^4.5.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
+  
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
   
   assets:
-    - amplify_outputs.json
+    # Configuration
+    - assets/amplify_outputs.json
+    
+    # Common Images
+    - assets/images/common/
+    - assets/images/icons/
+    - assets/images/logos/
+    
+    # Animations
+    - assets/animations/
+    
+    # Constants
+    - assets/constants/
+  

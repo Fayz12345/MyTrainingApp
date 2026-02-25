@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Training</string>
+	<string>Restaurant SASS</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -52,9 +52,23 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.myTrainingApp</string>
+				<string>com.mytrainingapp</string>
 			</array>
 		</dict>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow access to your photo library to select pictures for your profile or posts.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow access to your camera to take photos for your profile or posts.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow access to your microphone to record video with audio (only if you plan to use video recording).</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Allow access to documents folder to save and open PDF files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Allow access to downloads folder to save PDF documents.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

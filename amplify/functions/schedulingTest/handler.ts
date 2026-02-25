@@ -89,8 +89,8 @@ export const handler = async (event: LambdaEvent): Promise<any> => {
   }
 
   try {
-    // Get configuration from environment variables
-    const SCHEDULING_API_URL = process.env.SCHEDULING_API_URL || 'https://api.example-scheduling.com/v1';
+    // Get configuration from environment variables - Default to Clearview Connect sandbox
+    const SCHEDULING_API_URL = process.env.SCHEDULING_API_URL || 'https://sandbox.clearviewconnect.com/api/v1';
     const SCHEDULING_API_TOKEN = process.env.SCHEDULING_API_TOKEN || 'YOUR_TOKEN';
     
     console.log(`${logPrefix} [CONFIG] API URL: ${SCHEDULING_API_URL}`);
@@ -232,11 +232,15 @@ export const handler = async (event: LambdaEvent): Promise<any> => {
         const postUrl = customEndpoint || `${SCHEDULING_API_URL}/employees/${employeeId}/training`;
         console.log(`${logPrefix} [TEST 3] POST URL: ${postUrl}`);
         
+        // Clearview Connect API payload format
         const postBody = {
           employeeId,
-          trainingComplete: true,
-          timestamp: new Date().toISOString(),
-          source: 'training-management-system'
+          employeeName: 'Test Employee',
+          employeeEmail: 'test@example.com',
+          storeId: 'test-store-123',
+          eligibleDate: new Date().toISOString(),
+          completedLearningPaths: ['test-path-1'],
+          bankingInfoOnFile: true
         };
 
         console.log(`${logPrefix} [TEST 3] Request body:`, JSON.stringify(postBody, null, 2));
