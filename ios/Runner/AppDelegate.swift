@@ -10,4 +10,14 @@ import UIKit
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
+  
+  // Handle OAuth redirects for Google Sign-In
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey : Any] = [:]
+  ) -> Bool {
+    // Let Amplify handle OAuth redirects
+    return super.application(app, open: url, options: options)
+  }
 }

@@ -65,6 +65,7 @@ interface LearningPath {
   parentPathId?: string | null;
   isArchived?: boolean | null;
   isSequential?: boolean | null;
+  mandatoryForScheduling?: boolean | null;
   createdBy?: string | null;
 }
 
@@ -79,6 +80,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
   const [description, setDescription] = useState(learningPath.description || '');
   const [isSequential, setIsSequential] = useState(learningPath.isSequential ?? true);
   const [status, setStatus] = useState<'draft' | 'published'>(learningPath.status === 'published' ? 'published' : 'draft');
+  const [mandatoryForScheduling, setMandatoryForScheduling] = useState(learningPath.mandatoryForScheduling ?? false);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<LearningPathCourse[]>([]);
   const [originalCourses, setOriginalCourses] = useState<LearningPathCourse[]>([]);
@@ -351,6 +353,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           version: maxVersion + 1,
           parentPathId,
           isArchived: false,
+          mandatoryForScheduling,
           createdAt: now,
           updatedAt: now,
         });
@@ -414,6 +417,7 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           description: description.trim() || null,
           isSequential,
           status: saveStatus,
+          mandatoryForScheduling,
           updatedAt: now,
         });
 
@@ -609,27 +613,43 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
             rows={3}
             sx={{ mb: 2 }}
           />
-          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={isSequential}
-                  onChange={(e) => setIsSequential(e.target.checked)}
-                />
-              }
-              label="Sequential (courses must be completed in order)"
-            />
-            <FormControl sx={{ minWidth: 200 }}>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
-                label="Status"
-              >
-                <MenuItem value="draft">Draft</MenuItem>
-                <MenuItem value="published">Published</MenuItem>
-              </Select>
-            </FormControl>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={isSequential}
+                    onChange={(e) => setIsSequential(e.target.checked)}
+                  />
+                }
+                label="Sequential (courses must be completed in order)"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={mandatoryForScheduling}
+                    onChange={(e) => setMandatoryForScheduling(e.target.checked)}
+                  />
+                }
+                label="Mandatory for Scheduling"
+              />
+              <FormControl sx={{ minWidth: 200 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
+                  label="Status"
+                >
+                  <MenuItem value="draft">Draft</MenuItem>
+                  <MenuItem value="published">Published</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+            {mandatoryForScheduling && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                This learning path is mandatory for scheduling eligibility. Employees must complete this path and have banking information on file to be eligible for scheduling.
+              </Alert>
+            )}
           </Box>
         </CardContent>
       </Card>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../../amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { getUrl } from 'aws-amplify/storage';
 import EmployeeForm from './EmployeeForm';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
@@ -19,6 +20,11 @@ type Employee = {
   readonly managerId?: string | null;
   readonly createdBy?: string | null;
   readonly isActive?: boolean | null;
+  readonly transitNumber?: string | null;
+  readonly institutionNumber?: string | null;
+  readonly accountNumber?: string | null;
+  readonly bankingDocumentKey?: string | null;
+  readonly schedulingEligible?: boolean | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -186,6 +192,25 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
 
   const toggleEmployeeExpansion = (employeeId: string) => {
     setExpandedEmployee(expandedEmployee === employeeId ? null : employeeId);
+  };
+
+  const handleViewBankingDocument = async (documentKey: string) => {
+    try {
+      const { url } = await getUrl({
+        path: documentKey,
+        options: {
+          expiresIn: 3600, // 1 hour
+        }
+      });
+      window.open(url.toString(), '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Error getting banking document URL:', error);
+      MySwal.fire({
+        title: 'Error',
+        text: 'Failed to retrieve banking document. Please try again later.',
+        icon: 'error',
+      });
+    }
   };
 
   const getEmployeeAssignments = (employeeId: string) => {
@@ -437,13 +462,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
             >
               <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <h4 style={{ margin: 0, color: '#1976d2' }}>
                       {employee.name}
                     </h4>
                     {employee.isActive === false && (
                       <span style={{ 
-                        marginLeft: '0.5rem', 
                         padding: '0.25rem 0.5rem', 
                         backgroundColor: '#d32f2f', 
                         color: 'white', 
@@ -451,6 +475,28 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
                         fontSize: '0.75rem' 
                       }}>
                         INACTIVE
+                      </span>
+                    )}
+                    {employee.schedulingEligible ? (
+                      <span style={{ 
+                        padding: '0.25rem 0.5rem', 
+                        backgroundColor: '#4caf50', 
+                        color: 'white', 
+                        borderRadius: '4px', 
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold'
+                      }}>
+                        ✓ SCHEDULING ELIGIBLE
+                      </span>
+                    ) : (
+                      <span style={{ 
+                        padding: '0.25rem 0.5rem', 
+                        backgroundColor: '#ff9800', 
+                        color: 'white', 
+                        borderRadius: '4px', 
+                        fontSize: '0.75rem'
+                      }}>
+                        ⚠ NOT ELIGIBLE FOR SCHEDULING
                       </span>
                     )}
                   </div>
@@ -470,6 +516,76 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
                     <p style={{ margin: 0, color: '#666' }}>
                       <strong>Learning Paths:</strong> {employeePathAssignments.length}
                     </p>
+                  </div>
+
+                  {/* Banking Information Section */}
+                  <div style={{ marginTop: '1rem', marginBottom: '1rem', padding: '1rem', backgroundColor: '#f5f5f5', borderRadius: '4px', border: '1px solid #ddd' }}>
+                    <h5 style={{ margin: '0 0 0.75rem 0', color: '#1976d2', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      💳 Banking Information
+                      {(!employee.transitNumber && !employee.institutionNumber && !employee.accountNumber && !employee.bankingDocumentKey) && (
+                        <span style={{ 
+                          fontSize: '0.75rem', 
+                          color: '#d32f2f', 
+                          fontWeight: 'normal',
+                          marginLeft: '0.5rem'
+                        }}>
+                          (Not Provided)
+                        </span>
+                      )}
+                    </h5>
+                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                      {employee.transitNumber ? (
+                        <p style={{ margin: 0, color: '#666' }}>
+                          <strong>Transit Number:</strong> {employee.transitNumber}
+                        </p>
+                      ) : (
+                        <p style={{ margin: 0, color: '#999', fontStyle: 'italic' }}>
+                          <strong>Transit Number:</strong> Not provided
+                        </p>
+                      )}
+                      {employee.institutionNumber ? (
+                        <p style={{ margin: 0, color: '#666' }}>
+                          <strong>Institution Number:</strong> {employee.institutionNumber}
+                        </p>
+                      ) : (
+                        <p style={{ margin: 0, color: '#999', fontStyle: 'italic' }}>
+                          <strong>Institution Number:</strong> Not provided
+                        </p>
+                      )}
+                      {employee.accountNumber ? (
+                        <p style={{ margin: 0, color: '#666' }}>
+                          <strong>Account Number:</strong> {employee.accountNumber}
+                        </p>
+                      ) : (
+                        <p style={{ margin: 0, color: '#999', fontStyle: 'italic' }}>
+                          <strong>Account Number:</strong> Not provided
+                        </p>
+                      )}
+                      {employee.bankingDocumentKey ? (
+                        <p style={{ margin: 0, color: '#666' }}>
+                          <strong>Banking Document:</strong> 
+                          <button
+                            onClick={() => handleViewBankingDocument(employee.bankingDocumentKey!)}
+                            style={{ 
+                              marginLeft: '0.5rem', 
+                              color: '#1976d2', 
+                              background: 'none',
+                              border: 'none',
+                              textDecoration: 'underline',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: 'inherit'
+                            }}
+                          >
+                            View Document
+                          </button>
+                        </p>
+                      ) : (
+                        <p style={{ margin: 0, color: '#999', fontStyle: 'italic' }}>
+                          <strong>Banking Document:</strong> Not uploaded
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {(employeeAssignments.length > 0 || employeePathAssignments.length > 0) && (
@@ -773,3 +889,4 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ refreshTrigger, selectedSto
 };
 
 export default EmployeeList;
+

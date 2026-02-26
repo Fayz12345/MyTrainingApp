@@ -138,6 +138,7 @@ const schema = a.schema({
       institutionNumber: a.string(), // Institution Number for banking
       accountNumber: a.string(), // Account Number for banking
       bankingDocumentKey: a.string(), // S3 key for uploaded banking document (Void Cheque or Direct Deposit Form)
+      schedulingEligible: a.boolean().default(false), // Indicates if employee is eligible for scheduling (all mandatory paths completed + banking info on file)
       assignments: a.hasMany('Assignment', 'employeeId'), // Links to Assignment via employeeId
       learningPathAssignments: a.hasMany('LearningPathAssignment', 'employeeId'), // Links to LearningPathAssignment via employeeId
       supportRecords: a.hasMany('EmployeeSupport', 'employeeId'), // Links to EmployeeSupport via employeeId
@@ -212,6 +213,7 @@ const schema = a.schema({
       version: a.integer().default(1), // Version number (1, 2, 3, etc.)
       parentPathId: a.id(), // ID of the original learning path (for version tracking)
       isArchived: a.boolean().default(false), // Archived paths cannot be assigned but remain viewable
+      mandatoryForScheduling: a.boolean().default(false), // Designates if this learning path gates scheduling eligibility
       courses: a.hasMany('LearningPathCourse', 'learningPathId'),
       assignments: a.hasMany('LearningPathAssignment', 'learningPathId'),
       createdAt: a.datetime().required(),

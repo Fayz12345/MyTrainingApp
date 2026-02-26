@@ -2,80 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:amplify_flutter/amplify_flutter.dart';
 import 'package:amplify_auth_cognito/amplify_auth_cognito.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'screens/course_list_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/signup_screen.dart';
-import 'screens/verification_screen.dart';
-import 'screens/forgot_password_screen.dart';
-import 'services/amplify_service.dart';
-import 'services/file_logger.dart';
-import 'bloc/auth/auth_bloc.dart';
-import 'widgets/app_loader.dart';
+import 'package:go_router/go_router.dart';
+import 'features/auth/presentation/screens/signup_screen.dart';
+import 'features/course/presentation/screens/course_list_screen.dart';
+import 'features/profile/presentation/screens/profile_screen.dart';
+import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/auth/presentation/screens/social_login_error_screen.dart';
+import 'core/services/amplify_service.dart';
+import 'features/auth/services/file_logger.dart';
+import 'features/auth/presentation/bloc/auth_bloc.dart';
+import 'features/course/presentation/bloc/course_bloc.dart';
+import 'features/learning_path/presentation/bloc/learning_path_bloc.dart';
+import 'core/widgets/app_loader.dart';
+import 'core/router/app_router.dart';
+import 'core/theme/app_theme.dart';
 
-/*
 void main() async {
-  safePrint('[LOGIN_FLOW] ========================================');
-  safePrint('[LOGIN_FLOW] 🚀 APP STARTING');
-  safePrint('[LOGIN_FLOW] ========================================');
-
-  safePrint('[LOGIN_FLOW] Initializing Flutter binding...');
   WidgetsFlutterBinding.ensureInitialized();
-  safePrint('[LOGIN_FLOW] ✅ Flutter binding initialized');
 
   try {
     // Initialize file logger
-    safePrint('[LOGIN_FLOW] Initializing file logger...');
+
     await FileLogger.initialize();
-    safePrint('[LOGIN_FLOW] ✅ File logger initialized');
-    await FileLogger.log(
-      'APP STARTED',
-      variables: {
-        'timestamp': DateTime.now().toIso8601String(),
-        'app_version': '1.0.0+1',
-      },
-    );
 
-    // Configure Amplify
-    await AmplifyService.configure();
-    safePrint('[LOGIN_FLOW] ✅ Amplify configured successfully');
-    await FileLogger.log(
-      'AMPLIFY CONFIGURED',
-      variables: {
-        'status': 'success',
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-    );
-  } catch (e) {
-    safePrint('[LOGIN_FLOW] ❌ ERROR configuring Amplify: $e');
-    await FileLogger.log(
-      'AMPLIFY CONFIGURATION ERROR',
-      variables: {
-        'error': e.toString(),
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-    );
-  }
-
-  safePrint('[LOGIN_FLOW] Running MyApp...');
-  runApp(const MyApp());
-}
- */
-
-void main() async {
-  safePrint('[LOGIN_FLOW] ========================================');
-  safePrint('[LOGIN_FLOW] 🚀 APP STARTING');
-  safePrint('[LOGIN_FLOW] ========================================');
-
-  safePrint('[LOGIN_FLOW] Initializing Flutter binding...');
-  WidgetsFlutterBinding.ensureInitialized();
-  safePrint('[LOGIN_FLOW] ✅ Flutter binding initialized');
-
-  try {
-    // Initialize file logger
-    safePrint('[LOGIN_FLOW] Initializing file logger...');
-    await FileLogger.initialize();
-    safePrint('[LOGIN_FLOW] ✅ File logger initialized');
     await FileLogger.log(
       'APP STARTED',
       variables: {
@@ -109,97 +58,49 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final AuthBloc _authBloc;
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create AuthBloc once in initState - persists across hot reloads
+    _authBloc = AuthBloc()..add(const CheckUserGroups());
+    // Create router once in initState - persists across hot reloads
+    _router = AppRouter.createRouter(_authBloc);
+  }
+
+  @override
+  void dispose() {
+    _authBloc.close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    safePrint('[LOGIN_FLOW] [MyApp] Building app widget...');
-    safePrint(
-      '[LOGIN_FLOW] [MyApp] Creating AuthBloc and triggering CheckUserGroups...',
-    );
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (context) {
-            safePrint('[LOGIN_FLOW] [MyApp] Creating AuthBloc instance...');
-            final bloc = AuthBloc();
-            safePrint(
-              '[LOGIN_FLOW] [MyApp] Triggering CheckUserGroups event...',
-            );
-            bloc.add(const CheckUserGroups());
-            return bloc;
-          },
-        ),
+        BlocProvider.value(value: _authBloc),
       ],
-      child: Builder(
-        builder: (context) {
-          final authBloc = context.read<AuthBloc>();
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: 'My Training App',
-            theme: ThemeData(
-              primarySwatch: Colors.blue,
-              primaryColor: const Color(0xFF007AFF),
-              useMaterial3: true,
-            ),
-            home: const AppContent(),
-            onGenerateRoute: (settings) {
-              switch (settings.name) {
-                case '/login':
-                  return MaterialPageRoute(
-                    builder: (_) => BlocProvider.value(
-                      value: authBloc,
-                      child: const LoginScreen(),
-                    ),
-                  );
-                case '/signup':
-                  return MaterialPageRoute(
-                    builder: (_) => BlocProvider.value(
-                      value: authBloc,
-                      child: const SignUpScreen(),
-                    ),
-                  );
-                case '/verification':
-                  final args = settings.arguments;
-                  if (args is Map<String, dynamic>) {
-                    final email = args['email'] as String?;
-                    final password = args['password'] as String?;
-                    if (email != null && password != null) {
-                      return MaterialPageRoute(
-                        builder: (_) => BlocProvider.value(
-                          value: authBloc,
-                          child: VerificationScreen(
-                            email: email,
-                            password: password,
-                          ),
-                        ),
-                      );
-                    }
-                  }
-                  return null;
-                case '/forgot-password':
-                  return MaterialPageRoute(
-                    builder: (_) => BlocProvider.value(
-                      value: authBloc,
-                      child: const ForgotPasswordScreen(),
-                    ),
-                  );
-                case '/home':
-                case '/courses':
-                  // Direct route to MainTabNavigator (CourseListScreen with bottom nav)
-                  return MaterialPageRoute(
-                    builder: (_) => BlocProvider.value(
-                      value: authBloc,
-                      child: const MainTabNavigator(),
-                    ),
-                  );
-                default:
-                  return null;
-              }
-            },
-          );
-        },
+      child: MaterialApp.router(
+        debugShowCheckedModeBanner: false,
+        title: 'My Training App',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          primaryColor: const Color(0xFF007AFF),
+          useMaterial3: true,
+          //fontFamily: AppTheme.defaultFontFamily,
+          textTheme: AppTheme.getTextTheme(context),
+        ),
+        routerConfig: _router,
       ),
     );
   }
@@ -216,18 +117,8 @@ class _AppContentState extends State<AppContent> {
   @override
   void initState() {
     super.initState();
-    safePrint('[LOGIN_FLOW] [AppContent] Initializing...');
 
-    // Listen to Amplify Hub events to track authentication
-    safePrint('[LOGIN_FLOW] [AppContent] Setting up Amplify Hub listener...');
     final hubSubscription = Amplify.Hub.listen(HubChannel.Auth, (event) async {
-      safePrint('[LOGIN_FLOW] ========================================');
-      safePrint('[LOGIN_FLOW] [HUB] 🔔 Auth Hub Event Received');
-      safePrint('[LOGIN_FLOW] [HUB] Event Type: ${event.type}');
-      safePrint('[LOGIN_FLOW] [HUB] Event Payload: ${event.payload}');
-      safePrint('[LOGIN_FLOW] [HUB] Event String: $event');
-      safePrint('[LOGIN_FLOW] [HUB] Event Runtime Type: ${event.runtimeType}');
-
       // Log ALL events to file for debugging
       await FileLogger.log(
         'HUB_EVENT',
@@ -239,14 +130,8 @@ class _AppContentState extends State<AppContent> {
         },
       );
 
-      safePrint('[LOGIN_FLOW] ========================================');
-
       switch (event.type) {
         case AuthHubEventType.signedIn:
-          safePrint('[LOGIN_FLOW] [HUB] ✅✅✅ USER SIGNED IN SUCCESSFULLY! ✅✅✅');
-          safePrint('[LOGIN_FLOW] [HUB] Event data: ${event.payload}');
-
-          // Log complete authentication response to file
           try {
             final user = await Amplify.Auth.getCurrentUser();
             final session = await Amplify.Auth.fetchAuthSession();
@@ -381,19 +266,12 @@ class _AppContentState extends State<AppContent> {
           break;
 
         case AuthHubEventType.signedOut:
-          safePrint('[LOGIN_FLOW] [HUB] 👋 User signed out');
-          safePrint('[LOGIN_FLOW] [HUB] Event data: ${event.payload}');
           break;
 
         case AuthHubEventType.userDeleted:
-          safePrint('[LOGIN_FLOW] [HUB] 🗑️ User deleted');
-          safePrint('[LOGIN_FLOW] [HUB] Event data: ${event.payload}');
           break;
 
         default:
-          safePrint('[LOGIN_FLOW] [HUB] ⚠️ Other auth event: ${event.type}');
-          safePrint('[LOGIN_FLOW] [HUB] Event payload: ${event.payload}');
-          safePrint('[LOGIN_FLOW] [HUB] Full event: $event');
 
           // Check if this is an error event
           final eventString = event.toString().toLowerCase();
@@ -406,12 +284,6 @@ class _AppContentState extends State<AppContent> {
               payloadString.contains('exception') ||
               payloadString.contains('incorrect') ||
               payloadString.contains('notauthorized')) {
-            safePrint(
-              '[LOGIN_FLOW] [HUB] ❌❌❌ AUTHENTICATION ERROR DETECTED! ❌❌❌',
-            );
-            safePrint('[LOGIN_FLOW] [HUB] Error Event Type: ${event.type}');
-            safePrint('[LOGIN_FLOW] [HUB] Error Details: ${event.payload}');
-
             // Extract error message
             String? errorMessage;
             String? errorCode;
@@ -527,13 +399,32 @@ class _AppContentState extends State<AppContent> {
               '[LOGIN_FLOW] [AppContent] Clearing navigation stack for authenticated user...');
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) {
-              Navigator.of(context, rootNavigator: true).popUntil((route) {
-                safePrint(
-                    '[LOGIN_FLOW] [AppContent] Popping route: ${route.settings.name ?? route.runtimeType}');
-                return route.isFirst;
-              });
+              // Use go_router to navigate to home
+              context.go('/home');
               safePrint(
                   '[LOGIN_FLOW] [AppContent] Navigation stack cleared, will rebuild with MainTabNavigator');
+            }
+          });
+        }
+        // Handle verification required states - redirect to verification screen
+        if (state is VerificationRequired) {
+          safePrint(
+              '[LOGIN_FLOW] [AppContent] Verification required - redirecting to verification screen');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              context.go(
+                '/verification?email=${Uri.encodeComponent(state.email)}&password=${Uri.encodeComponent(state.password)}',
+              );
+            }
+          });
+        } else if (state is SignUpConfirmationRequired) {
+          safePrint(
+              '[LOGIN_FLOW] [AppContent] Sign up confirmation required - redirecting to verification screen');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              context.go(
+                '/verification?email=${Uri.encodeComponent(state.email)}&password=${Uri.encodeComponent(state.password)}',
+              );
             }
           });
         }
@@ -544,36 +435,46 @@ class _AppContentState extends State<AppContent> {
           // Clear all navigation routes to ensure we're at the root
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) {
-              Navigator.of(context, rootNavigator: true)
-                  .popUntil((route) => route.isFirst);
+              context.go('/');
             }
           });
         }
       },
       buildWhen: (previous, current) {
-        safePrint(
-            '[LOGIN_FLOW] [AppContent] buildWhen called - Previous: ${previous.runtimeType}, Current: ${current.runtimeType}');
-        // Always rebuild on state changes
         final shouldRebuild = previous.runtimeType != current.runtimeType;
         safePrint('[LOGIN_FLOW] [AppContent] buildWhen result: $shouldRebuild');
-        return true; // Always rebuild to ensure we catch state changes
+        return true;
       },
       builder: (context, state) {
-        // Also read the current state directly from the bloc to ensure we have the latest
         final currentState = authBloc.state;
         safePrint(
-          '[LOGIN_FLOW] [AppContent] Builder called - State from builder: ${state.runtimeType}',
+          '[LOGIN_FLOW] [AppContent] Builder called - State from builder: ${state.runtimeType}, State details: $state State from bloc: ${currentState.runtimeType}',
         );
-        safePrint(
-          '[LOGIN_FLOW] [AppContent] Builder called - State from bloc: ${currentState.runtimeType}',
-        );
-        safePrint(
-          '[LOGIN_FLOW] [AppContent] State details: $state',
-        );
-
-        // Use the state from bloc if it's different (shouldn't happen, but just in case)
         final effectiveState = currentState;
 
+        // Check if we're on login/signup route - never show loading screen for those
+        bool isOnAuthScreen = false;
+        try {
+          final currentLocation = GoRouterState.of(context).uri.path;
+          isOnAuthScreen =
+              currentLocation == '/login' || currentLocation == '/signup';
+        } catch (e) {
+          // Route not available, continue
+        }
+
+        // If on auth screen, always show the auth screen (API calls happen in background)
+        if (isOnAuthScreen) {
+          try {
+            final currentLocation = GoRouterState.of(context).uri.path;
+            return currentLocation == '/login'
+                ? const LoginScreen()
+                : const SignUpScreen();
+          } catch (e) {
+            return const LoginScreen();
+          }
+        }
+
+        // Only show loading screen for non-auth screens (like initial app load, group checks, etc.)
         if (effectiveState is AuthLoading || effectiveState is AuthInitial) {
           safePrint('[LOGIN_FLOW] [AppContent] Showing loading screen...');
           return const Scaffold(
@@ -632,20 +533,94 @@ class _AppContentState extends State<AppContent> {
           return const LoginScreen();
         }
 
+        // Handle verification required states - redirect to verification screen
+        if (effectiveState is VerificationRequired) {
+          safePrint(
+              '[LOGIN_FLOW] [AppContent] Verification required - redirecting to verification screen');
+          // Navigate to verification screen
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              context.go(
+                '/verification?email=${Uri.encodeComponent(effectiveState.email)}&password=${Uri.encodeComponent(effectiveState.password)}',
+              );
+            }
+          });
+          // Show loading while navigating
+          return const Scaffold(
+            body: LoadingWidget(
+              message: 'Redirecting to verification...',
+            ),
+          );
+        } else if (effectiveState is SignUpConfirmationRequired) {
+          safePrint(
+              '[LOGIN_FLOW] [AppContent] Sign up confirmation required - redirecting to verification screen');
+          // Navigate to verification screen
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              context.go(
+                '/verification?email=${Uri.encodeComponent(effectiveState.email)}&password=${Uri.encodeComponent(effectiveState.password)}',
+              );
+            }
+          });
+          // Show loading while navigating
+          return const Scaffold(
+            body: LoadingWidget(
+              message: 'Redirecting to verification...',
+            ),
+          );
+        }
+
         if (effectiveState is AuthError) {
           final errorState = effectiveState;
-          safePrint('[LOGIN_FLOW] [AppContent] ❌ Showing error screen');
           safePrint(
-            '[LOGIN_FLOW] [AppContent] Error message: ${errorState.message}',
-          );
+              '[LOGIN_FLOW] [AppContent] ❌ Error detected: ${errorState.message}');
 
-          // Check if it's a social login not available error
+          // Filter out social login errors - redirect to social login error screen
           final isSocialLoginError =
               errorState.message.contains('GOOGLE_LOGIN_NOT_AVAILABLE') ||
                   errorState.message.contains('APPLE_LOGIN_NOT_AVAILABLE') ||
                   errorState.message.contains('InvalidAccountTypeException') ||
                   errorState.message.contains('No user pool registered');
 
+          if (isSocialLoginError) {
+            return const SocialLoginErrorScreen();
+          }
+
+          // Check if error is related to login/signup - these should be handled by login/signup screens with SnackBar
+          final isLoginSignupError =
+              errorState.message.contains('Failed to sign in') ||
+                  errorState.message.contains('Failed to sign up') ||
+                  errorState.message.contains('Incorrect email') ||
+                  errorState.message.contains('Incorrect username') ||
+                  errorState.message.contains('password') ||
+                  errorState.message.contains('UserNotFoundException') ||
+                  errorState.message.contains('NotAuthorizedException') ||
+                  errorState.message.contains('UserNotConfirmedException') ||
+                  errorState.message.contains('UsernameExistsException');
+
+          // If it's a login/signup error, show login screen - it will handle error with SnackBar
+          if (isLoginSignupError) {
+            safePrint(
+                '[LOGIN_FLOW] [AppContent] Login/signup error detected - showing login screen with SnackBar');
+            return const LoginScreen();
+          }
+
+          // Check current route - if on login/signup, show that screen instead of error
+          try {
+            final currentLocation = GoRouterState.of(context).uri.path;
+            if (currentLocation == '/login' || currentLocation == '/signup') {
+              safePrint(
+                  '[LOGIN_FLOW] [AppContent] On login/signup route - showing screen with SnackBar');
+              return currentLocation == '/login'
+                  ? const LoginScreen()
+                  : const SignUpScreen();
+            }
+          } catch (e) {
+            safePrint('[LOGIN_FLOW] [AppContent] Could not get route: $e');
+          }
+
+          // Only show full-page error for non-login/signup errors on other screens
+          safePrint('[LOGIN_FLOW] [AppContent] Showing full-page error screen');
           return Scaffold(
             body: Center(
               child: Padding(
@@ -739,25 +714,13 @@ class _AppContentState extends State<AppContent> {
           safePrint(
             '[LOGIN_FLOW] [AppContent] Is Employee: ${authState.isEmployee}',
           );
-          safePrint('[LOGIN_FLOW] [AppContent] Showing MainTabNavigator...');
-          safePrint(
-              '[LOGIN_FLOW] [AppContent] MainTabNavigator will show CourseListScreen with bottom nav');
-          safePrint('[LOGIN_FLOW] ========================================');
-          safePrint('[LOGIN_FLOW] ✅ LOGIN FLOW COMPLETE - USER LOGGED IN');
-          safePrint('[LOGIN_FLOW] ========================================');
 
-          // Return MainTabNavigator which shows CourseListScreen with bottom navigation
-          safePrint(
-              '[LOGIN_FLOW] [AppContent] About to return MainTabNavigator widget...');
           final navigator = const MainTabNavigator();
           safePrint(
               '[LOGIN_FLOW] [AppContent] MainTabNavigator widget created, returning...');
           return navigator;
         }
 
-        safePrint(
-          '[LOGIN_FLOW] [AppContent] ⚠️ Unknown state: ${effectiveState.runtimeType}',
-        );
         return Scaffold(
           body: Center(
             child: Column(
@@ -780,43 +743,69 @@ class _AppContentState extends State<AppContent> {
   }
 }
 
-class MainTabNavigator extends StatelessWidget {
+class MainTabNavigator extends StatefulWidget {
   const MainTabNavigator({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    safePrint('[NAVIGATION] ========================================');
-    safePrint('[NAVIGATION] 🚀 MainTabNavigator building...');
-    safePrint(
-        '[NAVIGATION] Setting up CourseListScreen and ProfileScreen with bottom nav');
-    safePrint('[NAVIGATION] ========================================');
+  State<MainTabNavigator> createState() => _MainTabNavigatorState();
+}
 
-    return DefaultTabController(
-      length: 2,
-      initialIndex: 0, // Start with Courses tab
-      child: Scaffold(
-        body: const TabBarView(
-          children: [
-            CourseListScreen(), // First tab - Course List
-            ProfileScreen(), // Second tab - Profile
-          ],
-        ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: TabBar(
-            labelColor: const Color(0xFF007AFF),
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: const Color(0xFF007AFF),
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.school),
-                text: 'Courses',
-              ),
-              Tab(
-                icon: Icon(Icons.person),
-                text: 'Profile',
-              ),
+class _MainTabNavigatorState extends State<MainTabNavigator> {
+  late final CourseBloc _courseBloc;
+  late final LearningPathBloc _learningPathBloc;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create BLoCs once in initState - they will persist across hot reloads
+    _courseBloc = CourseBloc();
+    _learningPathBloc = LearningPathBloc();
+  }
+
+  @override
+  void dispose() {
+    // Properly dispose BLoCs to prevent memory leaks
+    _courseBloc.close();
+    _learningPathBloc.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Use BlocProvider.value to reuse existing BLoC instances
+    // This ensures state persists across hot reloads
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider.value(value: _courseBloc),
+        BlocProvider.value(value: _learningPathBloc),
+      ],
+      child: DefaultTabController(
+        length: 2,
+        initialIndex: 0, // Start with Courses tab
+        child: Scaffold(
+          body: const TabBarView(
+            children: [
+              CourseListScreen(), // First tab - Course List
+              ProfileScreen(), // Second tab - Profile
             ],
+          ),
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: TabBar(
+              labelColor: const Color(0xFF007AFF),
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: const Color(0xFF007AFF),
+              tabs: const [
+                Tab(
+                  icon: Icon(Icons.school),
+                  text: 'Courses',
+                ),
+                Tab(
+                  icon: Icon(Icons.person),
+                  text: 'Profile',
+                ),
+              ],
+            ),
           ),
         ),
       ),

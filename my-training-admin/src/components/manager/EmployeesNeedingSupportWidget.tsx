@@ -335,6 +335,7 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
                         </Typography>
                       </Box>
                     }
+                    secondaryTypographyProps={{ component: 'div' }}
                   />
                 </ListItem>
               ))}
