@@ -116,8 +116,8 @@ const CertificationCompliance: React.FC<CertificationComplianceProps> = ({ selec
       );
 
       // Enrich with employee and learningPath (list may not include nested by default)
-      const pathIds = [...new Set(withExpiration.map((a: any) => a.learningPathId))];
-      const empIds = [...new Set(withExpiration.map((a: any) => a.employeeId))];
+      const pathIds = Array.from(new Set(withExpiration.map((a: any) => a.learningPathId)));
+      const empIds = Array.from(new Set(withExpiration.map((a: any) => a.employeeId)));
       const pathMap = new Map<string, LearningPath>();
       const empMap = new Map<string, Employee>();
 
