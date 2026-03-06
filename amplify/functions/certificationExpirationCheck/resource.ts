@@ -14,6 +14,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const certificationExpirationCheck = defineFunction({
   name: 'certificationExpirationCheck',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 120,
   environment: {
     SNS_TOPIC_ARN: process.env.SNS_TOPIC_ARN || 'arn:aws:sns:ca-central-1:216348571084:training-completion-notifications',

@@ -14,8 +14,8 @@ import { defineFunction } from '@aws-amplify/backend';
  */
 export const assignEmployeeGroup = defineFunction({
   name: 'assignEmployeeGroup',
-  // Use the existing JavaScript handler file
-  entry: './handler.js'
+  entry: './handler.js',
+  runtime: 20,
   // Environment variables APPSYNC_API_URL and APPSYNC_API_KEY are set automatically
   // by Amplify Console environment variables for each branch
 });

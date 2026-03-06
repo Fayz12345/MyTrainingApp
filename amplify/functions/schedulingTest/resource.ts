@@ -12,6 +12,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const schedulingTest = defineFunction({
   name: 'schedulingTest',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 30,
   environment: {
     SCHEDULING_API_URL: process.env.SCHEDULING_API_URL || 'https://sandbox.clearviewconnect.com/api/v1',

@@ -11,6 +11,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const sendLearningPathAssignmentNotification = defineFunction({
   name: 'sendLearningPathAssignmentNotification',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 15,
   environment: {
     FROM_EMAIL: process.env.FROM_EMAIL || 'circular360dev@gmail.com'

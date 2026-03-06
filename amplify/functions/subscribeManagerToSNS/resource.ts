@@ -3,6 +3,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const subscribeManagerToSNS = defineFunction({
   name: 'subscribeManagerToSNS',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 10,
   environment: {
     SNS_TOPIC_ARN: 'arn:aws:sns:ca-central-1:216348571084:training-completion-notifications'
