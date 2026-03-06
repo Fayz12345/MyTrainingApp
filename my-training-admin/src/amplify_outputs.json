@@ -1157,6 +1157,13 @@
               "isRequired": false,
               "attributes": []
             },
+            "schedulingEligible": {
+              "name": "schedulingEligible",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
             "assignments": {
               "name": "assignments",
               "isArray": true,
@@ -1604,7 +1611,8 @@
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
-                      "read"
+                      "read",
+                      "create"
                     ]
                   }
                 ]
@@ -1787,6 +1795,27 @@
               "name": "isArchived",
               "isArray": false,
               "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "mandatoryForScheduling": {
+              "name": "mandatoryForScheduling",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "isCertification": {
+              "name": "isCertification",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "certificationExpirationDays": {
+              "name": "certificationExpirationDays",
+              "isArray": false,
+              "type": "Int",
               "isRequired": false,
               "attributes": []
             },
@@ -2017,6 +2046,13 @@
                     "groups": [
                       "Employees"
                     ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read"
+                    ]
                   }
                 ]
               }
@@ -2110,6 +2146,34 @@
               "isRequired": false,
               "attributes": []
             },
+            "expirationDate": {
+              "name": "expirationDate",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "certificationStatus": {
+              "name": "certificationStatus",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "lastReminderSentAt": {
+              "name": "lastReminderSentAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "reminderCount": {
+              "name": "reminderCount",
+              "isArray": false,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -2168,6 +2232,15 @@
                     ],
                     "groups": [
                       "Employees"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "read",
+                      "create",
+                      "update"
                     ]
                   }
                 ]
