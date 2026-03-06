@@ -66,6 +66,8 @@ interface LearningPath {
   isArchived?: boolean | null;
   isSequential?: boolean | null;
   mandatoryForScheduling?: boolean | null;
+  isCertification?: boolean | null;
+  certificationExpirationDays?: number | null;
   createdBy?: string | null;
 }
 
@@ -81,6 +83,8 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
   const [isSequential, setIsSequential] = useState(learningPath.isSequential ?? true);
   const [status, setStatus] = useState<'draft' | 'published'>(learningPath.status === 'published' ? 'published' : 'draft');
   const [mandatoryForScheduling, setMandatoryForScheduling] = useState(learningPath.mandatoryForScheduling ?? false);
+  const [isCertification, setIsCertification] = useState(learningPath.isCertification ?? false);
+  const [certificationExpirationDays, setCertificationExpirationDays] = useState<number>(learningPath.certificationExpirationDays ?? 365);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<LearningPathCourse[]>([]);
   const [originalCourses, setOriginalCourses] = useState<LearningPathCourse[]>([]);
@@ -354,6 +358,8 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           parentPathId,
           isArchived: false,
           mandatoryForScheduling,
+          isCertification,
+          certificationExpirationDays: isCertification ? certificationExpirationDays : null,
           createdAt: now,
           updatedAt: now,
         });
@@ -418,6 +424,8 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
           isSequential,
           status: saveStatus,
           mandatoryForScheduling,
+          isCertification,
+          certificationExpirationDays: isCertification ? certificationExpirationDays : null,
           updatedAt: now,
         });
 
@@ -633,6 +641,26 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
                 }
                 label="Mandatory for Scheduling"
               />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={isCertification}
+                    onChange={(e) => setIsCertification(e.target.checked)}
+                  />
+                }
+                label="Certification (expires, requires recertification)"
+              />
+              {isCertification && (
+                <TextField
+                  type="number"
+                  label="Valid for (days)"
+                  value={certificationExpirationDays}
+                  onChange={(e) => setCertificationExpirationDays(Math.max(1, parseInt(e.target.value, 10) || 365))}
+                  inputProps={{ min: 1, max: 3650 }}
+                  size="small"
+                  sx={{ maxWidth: 160 }}
+                />
+              )}
               <FormControl sx={{ minWidth: 200 }}>
                 <InputLabel>Status</InputLabel>
                 <Select
@@ -648,6 +676,11 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
             {mandatoryForScheduling && (
               <Alert severity="warning" sx={{ mt: 1 }}>
                 This learning path is mandatory for scheduling eligibility. Employees must complete this path and have banking information on file to be eligible for scheduling.
+              </Alert>
+            )}
+            {isCertification && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                Certification expires after {certificationExpirationDays} days. Reminders at 30, 14, and 7 days; auto re-assignment on expiration.
               </Alert>
             )}
           </Box>

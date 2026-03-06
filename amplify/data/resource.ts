@@ -186,7 +186,7 @@ const schema = a.schema({
     .authorization(allow => [
       allow.group('Managers').to(['create', 'update', 'delete', 'read']),
       allow.group('Employees').to(['read', 'update']), // Allow employees to update their own assignments (for quiz completion)
-      allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read assignments for notifications
+      allow.publicApiKey().to(['read', 'create']) // Allow Lambda to read and create assignments (e.g. certification re-assignment)
     ]),
   Result: a
     .model({
@@ -214,6 +214,8 @@ const schema = a.schema({
       parentPathId: a.id(), // ID of the original learning path (for version tracking)
       isArchived: a.boolean().default(false), // Archived paths cannot be assigned but remain viewable
       mandatoryForScheduling: a.boolean().default(false), // Designates if this learning path gates scheduling eligibility
+      isCertification: a.boolean().default(false), // If true, completion expires and requires recertification
+      certificationExpirationDays: a.integer(), // Days until certification expires (e.g. 365); used when isCertification is true
       courses: a.hasMany('LearningPathCourse', 'learningPathId'),
       assignments: a.hasMany('LearningPathAssignment', 'learningPathId'),
       createdAt: a.datetime().required(),
@@ -237,7 +239,8 @@ const schema = a.schema({
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read'])
+      allow.group('Employees').to(['read']),
+      allow.publicApiKey().to(['read']) // Lambda certificationExpirationCheck lists path courses for re-assignment
     ]),
   LearningPathAssignment: a
     .model({
@@ -246,16 +249,21 @@ const schema = a.schema({
       employeeId: a.id().required(),
       learningPath: a.belongsTo('LearningPath', 'learningPathId'),
       employee: a.belongsTo('Employee', 'employeeId'),
-      status: a.string(), // 'not_started', 'in_progress', 'completed'
+      status: a.string(), // 'not_started', 'in_progress', 'completed', 'expired'
       assignedDate: a.datetime(), // Date when the path was assigned
       dueDate: a.datetime(), // Optional due date for completion
       completedDate: a.datetime(), // Date when the path was completed
+      expirationDate: a.datetime(), // When certification expires (set on completion if path is certification)
+      certificationStatus: a.string(), // 'valid', 'expiring_soon', 'expired'
+      lastReminderSentAt: a.datetime(), // Last time a reminder email was sent
+      reminderCount: a.integer(), // Number of reminders sent (30d, 14d, 7d)
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
     .authorization(allow => [
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
-      allow.group('Employees').to(['read', 'update'])
+      allow.group('Employees').to(['read', 'update']),
+      allow.publicApiKey().to(['read', 'create', 'update']) // Lambda certificationExpirationCheck: list, expire, re-assign
     ]),
   EmployeeSupport: a
     .model({

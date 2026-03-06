@@ -53,6 +53,7 @@ import EmployeesNeedingSupport from './EmployeesNeedingSupport';
 import EmployeesNeedingSupportWidget from './EmployeesNeedingSupportWidget';
 import TrainingReports from './TrainingReports';
 import TrainingLeaderboard from './TrainingLeaderboard';
+import CertificationCompliance from './CertificationCompliance';
 
 const client = generateClient<Schema>();
 
@@ -79,7 +80,8 @@ type ViewMode =
   | 'quiz-analytics'
   | 'employees-needing-support'
   | 'training-reports'
-  | 'training-leaderboard';
+  | 'training-leaderboard'
+  | 'certification-compliance';
 
 type CourseSummary = {
   readonly id: string;
@@ -236,7 +238,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const learningPathSubmenuItems = [
     { key: 'learning-paths', label: 'Create Learning Path', icon: '🛤️' },
     { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
-    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
+    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' },
+    { key: 'certification-compliance', label: 'Certification Compliance', icon: '📜' }
   ];
 
   const handleMenuClick = (view: ViewMode) => {
@@ -690,6 +693,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
+      case 'certification-compliance':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <CertificationCompliance selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -726,7 +743,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' },
                 { key: 'employees-needing-support', title: 'Employees Needing Support', description: 'Identify and support employees who need additional training assistance.', icon: '🆘' },
                 { key: 'training-reports', title: 'Training Reports', description: 'Generate comprehensive training reports and analytics.', icon: '📄' },
-                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' }
+                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' },
+                { key: 'certification-compliance', title: 'Certification Compliance', description: 'View certifications expiring soon, expired, and valid; reminders and auto re-assignment.', icon: '📜' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
@@ -747,7 +765,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'certification-compliance' ? 'View Compliance' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
                       </Button>
                     </CardActions>
                   </Card>
@@ -919,7 +937,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                    currentView === 'assign-learning-path' || 
                    currentView === 'learning-path-progress' ||
                    currentView === 'create-learning-path' ||
-                    currentView === 'edit-learning-path'
+                   currentView === 'edit-learning-path' ||
+                   currentView === 'certification-compliance'
                 }
                 sx={{
                     '&.Mui-selected': {
@@ -1007,7 +1026,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                   currentView === 'assign-learning-path' || 
                   currentView === 'learning-path-progress' ||
                   currentView === 'create-learning-path' ||
-                  currentView === 'edit-learning-path'
+                  currentView === 'edit-learning-path' ||
+                  currentView === 'certification-compliance'
                 }
               >
                 <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>

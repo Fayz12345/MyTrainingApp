@@ -53,6 +53,8 @@ interface LearningPath {
   description?: string | null;
   version?: number | null;
   isSequential?: boolean | null;
+  isCertification?: boolean | null;
+  certificationExpirationDays?: number | null;
 }
 
 interface Employee {
@@ -70,6 +72,8 @@ interface EmployeeAssignment {
   assignedDate: string;
   dueDate?: string | null;
   completedDate?: string | null;
+  expirationDate?: string | null;
+  certificationStatus?: string | null;
   coursesCompleted: number;
   totalCourses: number;
   progressPercentage: number;
@@ -174,17 +178,28 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
       });
 
       if (allRequiredCompleted) {
-        // Get current assignment
+        // Get current assignment and path (for certification expiration)
         const currentAssignment = await client.models.LearningPathAssignment.get({ id: pathAssignmentId });
+        const pathResult = await client.models.LearningPath.get({ id: pathId });
+        const path = pathResult.data as any;
         
         if (currentAssignment.data && currentAssignment.data.status !== 'completed') {
-          // Update to completed
-          await client.models.LearningPathAssignment.update({
+          const now = new Date().toISOString();
+          const updatePayload: any = {
             id: pathAssignmentId,
             status: 'completed',
-            completedDate: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
+            completedDate: now,
+            updatedAt: now,
+          };
+          // If path is a certification with expiration, set expirationDate and certificationStatus
+          if (path?.isCertification && path?.certificationExpirationDays) {
+            const expDate = new Date();
+            expDate.setDate(expDate.getDate() + path.certificationExpirationDays);
+            updatePayload.expirationDate = expDate.toISOString();
+            updatePayload.certificationStatus = 'valid';
+            updatePayload.reminderCount = 0;
+          }
+          await client.models.LearningPathAssignment.update(updatePayload);
           return true; // Status was updated
         }
       } else {
@@ -376,6 +391,8 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
             assignedDate: String(assignment.assignedDate || assignment.createdAt || new Date().toISOString()),
             dueDate: assignment.dueDate ? String(assignment.dueDate) : null,
             completedDate: assignment.completedDate ? String(assignment.completedDate) : null,
+            expirationDate: assignment.expirationDate ? String(assignment.expirationDate) : null,
+            certificationStatus: assignment.certificationStatus ? String(assignment.certificationStatus) : null,
             coursesCompleted,
             totalCourses,
             progressPercentage,
@@ -629,6 +646,25 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
     const now = new Date();
     const diff = due.getTime() - now.getTime();
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const getCertificationDaysRemaining = (expirationDate: string | null | undefined): number | null => {
+    if (!expirationDate) return null;
+    return calculateDaysRemaining(expirationDate);
+  };
+
+  const getCertificationStatusInfo = (
+    expirationDate: string | null | undefined,
+    certificationStatus: string | null | undefined
+  ): { label: string; color: 'success' | 'warning' | 'error' | 'default' } => {
+    if (!expirationDate) return { label: '—', color: 'default' };
+    const days = getCertificationDaysRemaining(expirationDate);
+    if (days === null) return { label: '—', color: 'default' };
+    if (days < 0) return { label: 'Expired', color: 'error' };
+    if (days <= 7) return { label: `Expires in ${days}d`, color: 'error' };
+    if (days <= 14) return { label: `Expires in ${days}d`, color: 'warning' };
+    if (days <= 30) return { label: `Expires in ${days}d`, color: 'warning' };
+    return { label: 'Valid', color: 'success' };
   };
 
   const exportToCSV = () => {
@@ -1030,6 +1066,8 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                                 <TableCell align="center">Progress</TableCell>
                                 <TableCell>Assigned</TableCell>
                                 <TableCell>Due Date</TableCell>
+                                <TableCell>Expiration</TableCell>
+                                <TableCell align="center">Certification</TableCell>
                                 <TableCell align="center">Details</TableCell>
                               </TableRow>
                             </TableHead>
@@ -1098,6 +1136,27 @@ const LearningPathProgress: React.FC<LearningPathProgressProps> = ({ selectedSto
                                         })()}
                                       </Box>
                                     ) : '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    {empAssignment.expirationDate ? (
+                                      <Typography variant="body2">
+                                        {formatDate(empAssignment.expirationDate)}
+                                      </Typography>
+                                    ) : '—'}
+                                  </TableCell>
+                                  <TableCell align="center">
+                                    {empAssignment.expirationDate ? (
+                                      (() => {
+                                        const info = getCertificationStatusInfo(empAssignment.expirationDate, empAssignment.certificationStatus);
+                                        return (
+                                          <Chip
+                                            label={info.label}
+                                            size="small"
+                                            color={info.color}
+                                          />
+                                        );
+                                      })()
+                                    ) : '—'}
                                   </TableCell>
                                   <TableCell align="center">
                                     <Tooltip title="View Details">

@@ -13,6 +13,7 @@ import { sendLearningPathAssignmentNotification } from './functions/sendLearning
 import { sendEmployeeSupportMessage } from './functions/sendEmployeeSupportMessage/resource';
 import { schedulingTest } from './functions/schedulingTest/resource';
 import { schedulingEligibility } from './functions/schedulingEligibility/resource';
+import { certificationExpirationCheck } from './functions/certificationExpirationCheck/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -31,6 +32,7 @@ defineBackend({
   sendLearningPathAssignmentNotification,
   sendEmployeeSupportMessage,
   schedulingTest,
-  schedulingEligibility
+  schedulingEligibility,
+  certificationExpirationCheck,
 });
 
