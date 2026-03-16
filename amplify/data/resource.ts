@@ -73,6 +73,7 @@ const schema = a.schema({
       title: a.string().required(),
       description: a.string(), // Course description
       blocksJson: a.string(), // Serialized course content blocks (canvas editor)
+      lessons: a.hasMany('Lesson', 'courseId'), // Structured lessons belonging to this course
       videoKey: a.string(), // S3 key for video
       imageKey: a.string(), // S3 key for course image/thumbnail
       pdfKey: a.string(), // S3 key for PDF document
@@ -101,6 +102,21 @@ const schema = a.schema({
       allow.group('Managers').to(['create', 'read', 'update', 'delete']),
       allow.group('Employees').to(['read']),
       allow.publicApiKey().to(['read']) // Allow Lambda (using API key) to read course details for notifications
+    ]),
+  Lesson: a
+    .model({
+      id: a.id(),
+      courseId: a.id().required(), // Parent course id
+      course: a.belongsTo('Course', 'courseId'),
+      title: a.string().required(), // Lesson title shown to learners
+      order: a.integer().required(), // Display order within the course (1, 2, 3, ...)
+      contentBlocks: a.string(), // JSON string of block array (same shape as Course.blocksJson)
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required()
+    })
+    .authorization(allow => [
+      allow.group('Managers').to(['create', 'read', 'update', 'delete']),
+      allow.group('Employees').to(['read'])
     ]),
   QuizQuestion: a
     .model({
