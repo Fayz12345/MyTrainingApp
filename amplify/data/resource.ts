@@ -72,6 +72,7 @@ const schema = a.schema({
       id: a.id(),
       title: a.string().required(),
       description: a.string(), // Course description
+      blocksJson: a.string(), // Serialized course content blocks (canvas editor)
       videoKey: a.string(), // S3 key for video
       imageKey: a.string(), // S3 key for course image/thumbnail
       pdfKey: a.string(), // S3 key for PDF document
@@ -92,6 +93,7 @@ const schema = a.schema({
       poolSize: a.integer(), // Total number of questions in the pool (only used if useQuestionPool is true)
       questionsToDisplay: a.integer(), // Number of questions to randomly select and display per quiz attempt (only used if useQuestionPool is true)
       createdBy: a.string(), // managerId (userId from Cognito) - for filtering courses by manager
+      isTemplate: a.boolean().default(false), // If true, course appears in template gallery for "Start from Template"
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required()
     })
