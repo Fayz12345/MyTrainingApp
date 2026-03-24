@@ -29,6 +29,7 @@ import {
   Menu,
   MenuItem,
   Collapse,
+  Stack,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -37,7 +38,8 @@ import StoreIcon from '@mui/icons-material/Store';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import ArrowDropDown from '@mui/icons-material/ArrowDropDown';
-import CourseForm from './CourseForm';
+import CourseBuilder from './courseBuilder/CourseBuilder';
+import TemplateGallery from './courseBuilder/TemplateGallery';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
 import EmployeeList from './EmployeeList';
@@ -89,9 +91,14 @@ type CourseSummary = {
   readonly description?: string | null;
   readonly videoKey?: string | null;
   readonly imageKey?: string | null;
+  readonly pdfKey?: string | null;
+  readonly pdfTitle?: string | null;
+  readonly contentType?: string | null;
   readonly passingScore?: number | null;
   readonly duration?: string | null;
   readonly category?: string | null;
+  readonly blocksJson?: string | null;
+  readonly isTemplate?: boolean | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -118,6 +125,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [mobileLearningPathMenuOpen, setMobileLearningPathMenuOpen] = useState(false);
   const [desktopLearningPathMenuOpen, setDesktopLearningPathMenuOpen] = useState(false);
   const [logoImageError, setLogoImageError] = useState(false);
+  type CreateCourseMode = 'choice' | 'blank' | 'template';
+  const [createCourseMode, setCreateCourseMode] = useState<CreateCourseMode>('choice');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -395,26 +404,69 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
       
-      case 'create-course':
+      case 'create-course': {
+        const handleUseTemplate = async (newCourseId: string) => {
+          try {
+            const result = await client.models.Course.get({ id: newCourseId });
+            if (result.data) {
+              setSelectedCourse(result.data as CourseSummary);
+              setCurrentView('edit-course');
+              setCreateCourseMode('choice');
+            }
+          } catch (e) {
+            console.error('Failed to load cloned course:', e);
+          }
+        };
         return (
           <Box>
             <Button
               startIcon={<ArrowBackIcon />}
-              onClick={() => navigateToCourses()}
+              onClick={() => {
+                navigateToCourses();
+                setCreateCourseMode('choice');
+              }}
               sx={{ mb: 2 }}
             >
               Back to Courses
             </Button>
-            <CourseForm
-              onSuccess={() => {
-                navigateToCourses();
-              }}
-              onCancel={() => {
-                setCurrentView('courses');
-              }}
-            />
+            {createCourseMode === 'choice' && (
+              <Card variant="outlined" sx={{ mb: 2, maxWidth: 560 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Create a new course
+                  </Typography>
+                  <Typography color="text.secondary" sx={{ mb: 2 }}>
+                    Start from scratch or use a template to copy structure and quiz.
+                  </Typography>
+                  <Stack direction="row" spacing={2} flexWrap="wrap">
+                    <Button variant="contained" onClick={() => setCreateCourseMode('blank')}>
+                      Create blank course
+                    </Button>
+                    <Button variant="outlined" onClick={() => setCreateCourseMode('template')}>
+                      Start from template
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+            {createCourseMode === 'blank' && (
+              <CourseBuilder
+                onSuccess={() => {
+                  navigateToCourses();
+                  setCreateCourseMode('choice');
+                }}
+                onCancel={() => setCreateCourseMode('choice')}
+              />
+            )}
+            {createCourseMode === 'template' && (
+              <TemplateGallery
+                onUseTemplate={handleUseTemplate}
+                onCancel={() => setCreateCourseMode('choice')}
+              />
+            )}
           </Box>
         );
+      }
 
       case 'edit-course':
         if (!selectedCourse) {
@@ -443,7 +495,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             >
               Back to Courses
             </Button>
-            <CourseForm
+            <CourseBuilder
               course={selectedCourse}
               onSuccess={() => {
                 navigateToCourses();
