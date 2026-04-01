@@ -271,10 +271,27 @@ export default function BlockEditor({ blocks, onChange }: Props) {
   };
 
   return (
-    <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h6">Course content</Typography>
-        <Button startIcon={<AddIcon />} variant="contained" onClick={(e) => setAddAnchor(e.currentTarget)}>
+    <Box sx={{ minWidth: 0 }}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        spacing={1.5}
+        sx={{ mb: 2 }}
+      >
+        <Typography variant="h6" component="h3" sx={{ minWidth: 0 }}>
+          Course content
+        </Typography>
+        <Button
+          startIcon={<AddIcon />}
+          variant="contained"
+          onClick={(e) => setAddAnchor(e.currentTarget)}
+          sx={{
+            flexShrink: 0,
+            alignSelf: { xs: 'flex-start', sm: 'auto' },
+            whiteSpace: 'nowrap',
+          }}
+        >
           Add block
         </Button>
       </Stack>

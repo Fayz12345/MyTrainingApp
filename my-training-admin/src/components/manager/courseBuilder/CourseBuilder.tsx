@@ -51,6 +51,8 @@ const MySwal = withReactContent(Swal);
 const client = generateClient<Schema>();
 
 interface QuizQuestion {
+  /** Set when loaded from API — used for update-in-place (no delete-all + recreate). */
+  id?: string;
   question: string;
   questionType?: 'multiple_choice' | 'true_false' | 'fill_blank';
   options: string[];
@@ -61,6 +63,115 @@ interface QuizQuestion {
 }
 
 const DEBOUNCE_MS = 1800;
+/** Quiz saves separately so editing course content does not rewrite QuizQuestion rows. */
+const QUIZ_DEBOUNCE_MS = 2000;
+
+const normalizeQuestionType = (questionType?: string): QuizQuestion['questionType'] => {
+  const normalized = (questionType || 'multiple_choice').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  if (normalized === 'true_false' || normalized === 'truefalse' || normalized === 'tf') return 'true_false';
+  if (normalized === 'fill_blank' || normalized === 'fillinblank' || normalized === 'fill_in_blank') return 'fill_blank';
+  return 'multiple_choice';
+};
+
+const prepareQuestionsForPersistence = (questions: QuizQuestion[]): QuizQuestion[] =>
+  questions
+    .filter((q) => q.question.trim().length > 0)
+    .map((q) => {
+      const questionType = normalizeQuestionType(q.questionType);
+      if (questionType === 'true_false') {
+        return {
+          ...q,
+          questionType,
+          options: ['True', 'False'],
+          correctAnswer: q.correctAnswer === 1 ? 1 : 0,
+          correctAnswerText: undefined,
+        };
+      }
+      if (questionType === 'fill_blank') {
+        return {
+          ...q,
+          questionType,
+          // Keep a non-empty placeholder option to satisfy backend schema constraints.
+          options: [''],
+          correctAnswer: undefined,
+          correctAnswerText: q.correctAnswerText?.trim() || '',
+        };
+      }
+      const raw = (q.options?.length ? q.options : ['', '', '', '']).map((o) => String(o).trim());
+      const options = raw.length > 0 ? raw : ['', '', '', ''];
+      return {
+        ...q,
+        questionType,
+        options,
+        correctAnswer:
+          q.correctAnswer != null && q.correctAnswer >= 0 && q.correctAnswer < options.length ? q.correctAnswer : 0,
+        correctAnswerText: undefined,
+      };
+    });
+
+/** Paginated list — default page size can miss rows if not looped. */
+async function listAllQuizQuestionsForCourse(courseId: string) {
+  const rows: any[] = [];
+  let nextToken: string | undefined;
+  do {
+    const result: any = await client.models.QuizQuestion.list({
+      filter: { courseId: { eq: courseId } },
+      nextToken,
+    });
+    rows.push(...(result.data ?? []));
+    nextToken = result.nextToken;
+  } while (nextToken);
+  return rows;
+}
+
+/** Update existing rows by id, create new rows, delete removed — avoids duplicate inserts from overlapping saves. */
+async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: QuizQuestion[]) {
+  const validQuestions = prepareQuestionsForPersistence(quizSnapshot);
+  const existing = await listAllQuizQuestionsForCourse(courseId);
+  const existingById = new Map(existing.map((r: any) => [r.id as string, r]));
+
+  const keptIds = new Set<string>();
+  const now = new Date().toISOString();
+
+  for (const q of validQuestions) {
+    const payload = {
+      question: q.question.trim(),
+      questionType: q.questionType || 'multiple_choice',
+      options: q.options,
+      correctAnswer: q.correctAnswer ?? null,
+      correctAnswerText: q.correctAnswerText?.trim() ? q.correctAnswerText.trim() : null,
+      caseSensitive: q.caseSensitive ?? false,
+      fuzzyMatching: q.fuzzyMatching ?? false,
+      updatedAt: now,
+    };
+
+    const qid = q.id;
+    if (qid && existingById.has(qid)) {
+      await client.models.QuizQuestion.update({
+        id: qid,
+        courseId,
+        ...payload,
+      });
+      keptIds.add(qid);
+    } else {
+      const res = await client.models.QuizQuestion.create({
+        courseId,
+        ...payload,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const newId = (res as { data?: { id?: string } | null })?.data?.id;
+      if (newId) keptIds.add(newId);
+    }
+  }
+
+  for (const row of existing) {
+    const rid = row?.id as string | undefined;
+    if (rid && !keptIds.has(rid)) {
+      await client.models.QuizQuestion.delete({ id: rid });
+    }
+  }
+}
 
 type CourseInput = {
   readonly id: string;
@@ -116,6 +227,8 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [quizOpen, setQuizOpen] = useState(true);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
+  /** False in edit mode until loadQuiz finishes — prevents autosave from wiping DB before state is hydrated. */
+  const [quizServerSynced, setQuizServerSynced] = useState(() => !course?.id);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savingAsTemplate, setSavingAsTemplate] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,6 +237,11 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const lessonSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [renamingLessonId, setRenamingLessonId] = useState<string | null>(null);
+  /** Serialize persist so overlapping writes cannot race. */
+  const persistChainRef = useRef(Promise.resolve());
+  /** After upsert + reload, skip one quiz autosave (avoid redundant persist). */
+  const skipNextQuizSaveRef = useRef(false);
+  const quizDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSaveAsTemplate = async () => {
     if (!course?.id) return;
@@ -145,29 +263,48 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
   const loadQuiz = useCallback(async (courseId: string) => {
     setIsLoadingQuiz(true);
     try {
-      const result = await client.models.QuizQuestion.list({ filter: { courseId: { eq: courseId } } });
-      if (result.data?.length) {
+      const raw = await listAllQuizQuestionsForCourse(courseId);
+      const data = raw.slice().sort((a: any, b: any) => {
+        const ta = new Date(a?.createdAt ?? 0).getTime();
+        const tb = new Date(b?.createdAt ?? 0).getTime();
+        return ta - tb;
+      });
+      if (data.length) {
         setQuiz(
-          result.data.map((q: any) => ({
+          data.map((q: any) => ({
+            id: q.id as string | undefined,
             question: q.question,
             questionType: (q.questionType || 'multiple_choice') as QuizQuestion['questionType'],
-            options: (q.options as string[]) ?? ['', '', '', ''],
+            options: Array.isArray(q.options) && q.options.length ? (q.options as string[]) : ['', '', '', ''],
             correctAnswer: q.correctAnswer,
             correctAnswerText: q.correctAnswerText ?? undefined,
             caseSensitive: q.caseSensitive ?? false,
             fuzzyMatching: q.fuzzyMatching ?? false,
           }))
         );
+      } else {
+        setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
       }
     } catch (e) {
       console.error('Load quiz failed:', e);
     } finally {
       setIsLoadingQuiz(false);
+      setQuizServerSynced(true);
     }
   }, []);
 
   useEffect(() => {
-    if (course?.id) loadQuiz(course.id);
+    if (!course?.id) {
+      setQuizServerSynced(true);
+      return;
+    }
+    persistChainRef.current = Promise.resolve();
+    if (quizDebounceRef.current) {
+      clearTimeout(quizDebounceRef.current);
+      quizDebounceRef.current = null;
+    }
+    setQuizServerSynced(false);
+    loadQuiz(course.id);
   }, [course?.id, loadQuiz]);
 
   // Load lessons for edit mode; migrate from blocksJson if no lessons exist yet.
@@ -246,84 +383,82 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
     setSelectedLessonId(localId);
   }, [isEditMode]);
 
-  const persistCourse = useCallback(
-    async (
-      payload: {
-        title: string;
-        blocksJson: string;
-        description: string | null;
-        videoKey: string | null;
-        imageKey: string | null;
-        pdfKey: string | null;
-        pdfTitle: string | null;
-        contentType: 'video' | 'pdf' | 'both';
-        passingScore: number;
-        duration: string | null;
-        category: string | null;
-        randomizeQuestions: boolean;
-        randomizeOptions: boolean;
-        useQuestionPool: boolean;
-        poolSize: number | null;
-        questionsToDisplay: number | null;
-      },
-      quizSnapshot: QuizQuestion[]
-    ) => {
+  const persistCourseMetadata = useCallback(
+    (payload: {
+      title: string;
+      blocksJson: string;
+      description: string | null;
+      videoKey: string | null;
+      imageKey: string | null;
+      pdfKey: string | null;
+      pdfTitle: string | null;
+      contentType: 'video' | 'pdf' | 'both';
+      passingScore: number;
+      duration: string | null;
+      category: string | null;
+      randomizeQuestions: boolean;
+      randomizeOptions: boolean;
+      useQuestionPool: boolean;
+      poolSize: number | null;
+      questionsToDisplay: number | null;
+    }) => {
       if (!course?.id) return;
-      setSaveStatus('saving');
-      try {
-        await client.models.Course.update({
-          id: course.id,
-          title: payload.title.trim(),
-          description: payload.description,
-          videoKey: payload.videoKey,
-          imageKey: payload.imageKey,
-          pdfKey: payload.pdfKey,
-          pdfTitle: payload.pdfTitle,
-          contentType: payload.contentType,
-          passingScore: payload.passingScore,
-          duration: payload.duration,
-          category: payload.category,
-          blocksJson: payload.blocksJson,
-          randomizeQuestions: payload.randomizeQuestions,
-          randomizeOptions: payload.randomizeOptions,
-          useQuestionPool: payload.useQuestionPool,
-          poolSize: payload.poolSize ?? null,
-          questionsToDisplay: payload.questionsToDisplay ?? null,
-          updatedAt: new Date().toISOString(),
-        });
-        const validQuestions = quizSnapshot.filter(
-          (q) =>
-            q.question.trim() &&
-            (q.questionType === 'true_false'
-              ? q.options.length === 2 && (q.correctAnswer === 0 || q.correctAnswer === 1)
-              : q.questionType === 'fill_blank'
-                ? q.correctAnswerText?.trim()
-                : q.options.every((o) => o.trim()) && q.correctAnswer != null && q.correctAnswer >= 0 && q.correctAnswer < q.options.length)
-        );
-        const existing = await client.models.QuizQuestion.list({ filter: { courseId: { eq: course.id } } });
-        if (existing.data) for (const row of existing.data) await client.models.QuizQuestion.delete({ id: row.id });
-        for (const q of validQuestions) {
-          await client.models.QuizQuestion.create({
-            courseId: course.id,
-            question: q.question.trim(),
-            questionType: q.questionType || 'multiple_choice',
-            options: q.options.map((o) => o.trim()),
-            correctAnswer: q.correctAnswer,
-            correctAnswerText: q.correctAnswerText ?? null,
-            caseSensitive: q.caseSensitive ?? false,
-            fuzzyMatching: q.fuzzyMatching ?? false,
-            createdAt: new Date().toISOString(),
+      const courseId = course.id;
+
+      persistChainRef.current = persistChainRef.current.catch(() => {}).then(async () => {
+        setSaveStatus('saving');
+        try {
+          await client.models.Course.update({
+            id: courseId,
+            title: payload.title.trim(),
+            description: payload.description,
+            videoKey: payload.videoKey,
+            imageKey: payload.imageKey,
+            pdfKey: payload.pdfKey,
+            pdfTitle: payload.pdfTitle,
+            contentType: payload.contentType,
+            passingScore: payload.passingScore,
+            duration: payload.duration,
+            category: payload.category,
+            blocksJson: payload.blocksJson,
+            randomizeQuestions: payload.randomizeQuestions,
+            randomizeOptions: payload.randomizeOptions,
+            useQuestionPool: payload.useQuestionPool,
+            poolSize: payload.poolSize ?? null,
+            questionsToDisplay: payload.questionsToDisplay ?? null,
             updatedAt: new Date().toISOString(),
           });
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (e) {
+          console.error('Auto-save failed:', e);
+          setSaveStatus('error');
         }
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
-      } catch (e) {
-        console.error('Auto-save failed:', e);
-        setSaveStatus('error');
-      }
+      });
     },
     [course?.id]
+  );
+
+  const persistQuizToServer = useCallback(
+    (quizSnapshot: QuizQuestion[]) => {
+      if (!course?.id || !quizServerSynced) return;
+      const courseId = course.id;
+
+      persistChainRef.current = persistChainRef.current.catch(() => {}).then(async () => {
+        setSaveStatus('saving');
+        try {
+          await upsertQuizQuestionsForCourse(courseId, quizSnapshot);
+          skipNextQuizSaveRef.current = true;
+          await loadQuiz(courseId);
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (e) {
+          console.error('Quiz save failed:', e);
+          setSaveStatus('error');
+        }
+      });
+    },
+    [course?.id, quizServerSynced, loadQuiz]
   );
 
   useEffect(() => {
@@ -345,12 +480,43 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
-      if (title.trim().length >= 3) persistCourse(payload, quiz);
+      if (title.trim().length >= 3) persistCourseMetadata(payload);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [isEditMode, course?.id, blocks, title, passingScore, duration, category, randomizeQuestions, randomizeOptions, useQuestionPool, poolSize, questionsToDisplay, quiz, persistCourse]);
+  }, [
+    isEditMode,
+    course?.id,
+    blocks,
+    title,
+    passingScore,
+    duration,
+    category,
+    randomizeQuestions,
+    randomizeOptions,
+    useQuestionPool,
+    poolSize,
+    questionsToDisplay,
+    persistCourseMetadata,
+  ]);
+
+  useEffect(() => {
+    if (!isEditMode || !course?.id) return;
+    if (!quizServerSynced) return;
+    if (skipNextQuizSaveRef.current) {
+      skipNextQuizSaveRef.current = false;
+      return;
+    }
+    if (quizDebounceRef.current) clearTimeout(quizDebounceRef.current);
+    quizDebounceRef.current = setTimeout(() => {
+      quizDebounceRef.current = null;
+      if (title.trim().length >= 3) persistQuizToServer(quiz);
+    }, QUIZ_DEBOUNCE_MS);
+    return () => {
+      if (quizDebounceRef.current) clearTimeout(quizDebounceRef.current);
+    };
+  }, [isEditMode, course?.id, quizServerSynced, quiz, title, persistQuizToServer]);
 
   useEffect(() => {
     return () => {
@@ -418,23 +584,15 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
           });
         }
 
-        const validQuestions = quiz.filter(
-          (q) =>
-            q.question.trim() &&
-            (q.questionType === 'true_false'
-              ? q.options.length === 2 && (q.correctAnswer === 0 || q.correctAnswer === 1)
-              : q.questionType === 'fill_blank'
-                ? q.correctAnswerText?.trim()
-                : q.options.every((o) => o.trim()) && q.correctAnswer != null && q.correctAnswer >= 0 && q.correctAnswer < q.options.length)
-        );
+        const validQuestions = prepareQuestionsForPersistence(quiz);
         for (const q of validQuestions) {
           await client.models.QuizQuestion.create({
             courseId: created.id,
             question: q.question.trim(),
             questionType: q.questionType || 'multiple_choice',
-            options: q.options.map((o) => o.trim()),
+            options: q.options,
             correctAnswer: q.correctAnswer,
-            correctAnswerText: q.correctAnswerText ?? null,
+            correctAnswerText: q.correctAnswerText?.trim() || null,
             caseSensitive: q.caseSensitive ?? false,
             fuzzyMatching: q.fuzzyMatching ?? false,
             createdAt: new Date().toISOString(),
@@ -777,7 +935,7 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
                   ))}
                 </Stack>
               </Box>
-              <Box sx={{ flex: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
                 {selectedLesson ? (
                   <BlockEditor blocks={blocks} onChange={handleBlocksChange} />
                 ) : (

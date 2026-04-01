@@ -1458,7 +1458,7 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseBreakdownData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="course" angle={-45} textAnchor="end" height={120} />
+                    <XAxis dataKey="course" tick={false} />
                     <YAxis />
                     <RechartsTooltip />
                     <Legend />

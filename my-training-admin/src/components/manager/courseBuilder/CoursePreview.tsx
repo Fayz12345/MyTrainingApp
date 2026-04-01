@@ -8,6 +8,7 @@ import {
   Divider,
   IconButton,
   Paper,
+  Radio,
   Stack,
   Typography,
 } from '@mui/material';
@@ -44,6 +45,8 @@ export default function CoursePreview({
   passingScore = 80,
 }: CoursePreviewProps) {
   const validQuiz = quiz.filter((q) => q.question.trim());
+  const normalizeQuestionType = (questionType?: string) =>
+    (questionType || 'multiple_choice').toLowerCase().trim().replace(/[\s-]+/g, '_');
 
   return (
     <Dialog
@@ -91,11 +94,22 @@ export default function CoursePreview({
                     {idx + 1}. {q.question}
                   </Typography>
                   {q.options && q.options.filter((o) => o.trim()).length > 0 ? (
-                    q.questionType === 'multiple_choice' ? (
+                    ['multiple_choice', 'multiplechoice', 'mcq'].includes(normalizeQuestionType(q.questionType)) ? (
                       <Stack spacing={0.5}>
                         {q.options.map((opt, oi) => (
                           <Stack key={oi} direction="row" alignItems="center" spacing={1}>
                             <Checkbox disabled size="small" />
+                            <Typography variant="body2">
+                              {opt.trim() || '\u00a0'}
+                            </Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    ) : ['true_false', 'truefalse', 'tf'].includes(normalizeQuestionType(q.questionType)) ? (
+                      <Stack spacing={0.5}>
+                        {q.options.map((opt, oi) => (
+                          <Stack key={oi} direction="row" alignItems="center" spacing={1}>
+                            <Radio disabled size="small" />
                             <Typography variant="body2">
                               {opt.trim() || '\u00a0'}
                             </Typography>

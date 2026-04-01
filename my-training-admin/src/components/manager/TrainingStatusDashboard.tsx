@@ -46,6 +46,18 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 const client = generateClient<Schema>();
 
+/** Recharts Tooltip formatter `value` is a wide union; normalize for safe math. */
+function rechartsTooltipNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
 interface Employee {
   id: string;
   name: string;
@@ -730,6 +742,11 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
 
   const COLORS = ['#4caf50', '#ff9800', '#9e9e9e', '#f44336', '#2196f3', '#9c27b0'];
 
+  const statusPieData = statusDistributionData.filter((d) => d.value > 0);
+  const statusPieTotal = statusDistributionData.reduce((s, d) => s + d.value, 0);
+  const completionPieData = completionRateData.filter((d) => d.value > 0);
+  const completionPieTotal = completionRateData.reduce((s, d) => s + d.value, 0);
+
   if (showHistoryView && selectedEmployeeForHistory) {
     return (
       <EmployeeTrainingHistory
@@ -858,28 +875,53 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
               <Typography variant="h6" gutterBottom>
                 Status Distribution
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={statusDistributionData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={(props: any) => {
-                      const { name = '', percent = 0 } = props;
-                      return `${name}: ${(percent * 100).toFixed(0)}%`;
-                    }}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {statusDistributionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {statusPieData.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 6, textAlign: 'center' }}>
+                  No employees in this view
+                </Typography>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                    <Pie
+                      data={statusPieData}
+                      cx="50%"
+                      cy="45%"
+                      paddingAngle={2}
+                      labelLine={false}
+                      label={false}
+                      innerRadius={48}
+                      outerRadius={78}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {statusPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => {
+                        const n = rechartsTooltipNumber(value);
+                        return [
+                          `${n} (${statusPieTotal > 0 ? ((n / statusPieTotal) * 100).toFixed(0) : 0}%)`,
+                          'Count',
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      layout="vertical"
+                      align="center"
+                      wrapperStyle={{ paddingTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const v = entry.payload?.value ?? 0;
+                        const pct =
+                          statusPieTotal > 0 ? ((v / statusPieTotal) * 100).toFixed(0) : '0';
+                        return `${value}: ${v} (${pct}%)`;
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -891,28 +933,55 @@ const TrainingStatusDashboard: React.FC<TrainingStatusDashboardProps> = ({ selec
               <Typography variant="h6" gutterBottom>
                 Completion Overview
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={completionRateData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={(props: any) => {
-                      const { name = '', value = 0, percent = 0 } = props;
-                      return `${name}: ${value} (${(percent * 100).toFixed(0)}%)`;
-                    }}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {completionRateData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {completionPieData.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 6, textAlign: 'center' }}>
+                  No employees in this view
+                </Typography>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                    <Pie
+                      data={completionPieData}
+                      cx="50%"
+                      cy="45%"
+                      paddingAngle={2}
+                      labelLine={false}
+                      label={false}
+                      innerRadius={48}
+                      outerRadius={78}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {completionPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => {
+                        const n = rechartsTooltipNumber(value);
+                        return [
+                          `${n} (${completionPieTotal > 0 ? ((n / completionPieTotal) * 100).toFixed(0) : 0}%)`,
+                          'Count',
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      layout="vertical"
+                      align="center"
+                      wrapperStyle={{ paddingTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const v = entry.payload?.value ?? 0;
+                        const pct =
+                          completionPieTotal > 0
+                            ? ((v / completionPieTotal) * 100).toFixed(0)
+                            : '0';
+                        return `${value}: ${v} (${pct}%)`;
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </Grid>

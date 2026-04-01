@@ -909,7 +909,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={topPerformersChartData}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                        <XAxis dataKey="name" tick={false} />
                         <YAxis />
                         <RechartsTooltip />
                         <Legend />
@@ -1027,7 +1027,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={metricComparisonData}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                        <XAxis dataKey="name" tick={false} />
                         <YAxis />
                         <RechartsTooltip />
                         <Legend />
@@ -1191,7 +1191,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
                         rank: r.rank,
                       }))}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
+                        <XAxis dataKey="name" tick={false} />
                         <YAxis />
                         <RechartsTooltip />
                         <Legend />
@@ -1253,7 +1253,7 @@ const TrainingLeaderboard: React.FC<TrainingLeaderboardProps> = ({ selectedStore
                     <ResponsiveContainer width="100%" height={350}>
                       <BarChart data={metricComparisonData}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                        <XAxis dataKey="name" tick={false} />
                         <YAxis yAxisId="left" />
                         <YAxis yAxisId="right" orientation="right" />
                         <RechartsTooltip />

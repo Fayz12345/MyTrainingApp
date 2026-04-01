@@ -41,15 +41,21 @@ import * as XLSX from 'xlsx';
 
 const client = generateClient<Schema>();
 
+/** Recharts Tooltip formatter `value` is a wide union; normalize for safe math. */
+function rechartsTooltipNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
 interface QuizAnalyticsProps {
   selectedStoreId?: string | null;
 }
-
-// Helper function to truncate course names
-const truncateCourseName = (name: string, maxLength: number = 20): string => {
-  if (name.length <= maxLength) return name;
-  return name.substring(0, maxLength) + '...';
-};
 
 // Custom Tooltip component to show full course name on hover
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -631,6 +637,10 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
     theme.palette.info.main,
   ];
 
+  const passFailPieTotal = passFailDistributionData.reduce((s, d) => s + d.value, 0);
+  const scoreRangePieTotal = scoreRangeDistributionData.reduce((s, d) => s + d.value, 0);
+  const questionSuccessPieTotal = questionSuccessRateDistributionData.reduce((s, d) => s + d.value, 0);
+
   const overallAverageScore =
     filteredResults.length > 0
       ? Math.round(filteredResults.reduce((sum, r) => sum + r.score, 0) / filteredResults.length)
@@ -869,18 +879,17 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <Typography variant="h6" gutterBottom>
                   Pass/Fail Distribution
                 </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                     <Pie
                       data={passFailDistributionData}
                       cx="50%"
-                      cy="50%"
+                      cy="45%"
+                      paddingAngle={2}
                       labelLine={false}
-                      label={(props: any) => {
-                        const { name = '', value = 0, percent = 0 } = props;
-                        return `${name}: ${value} (${(percent * 100).toFixed(0)}%)`;
-                      }}
-                      outerRadius={80}
+                      label={false}
+                      innerRadius={48}
+                      outerRadius={78}
                       fill="#8884d8"
                       dataKey="value"
                     >
@@ -888,8 +897,27 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
-                    <Legend />
+                    <Tooltip
+                      formatter={(value) => {
+                        const n = rechartsTooltipNumber(value);
+                        return [
+                          `${n} (${passFailPieTotal > 0 ? ((n / passFailPieTotal) * 100).toFixed(0) : 0}%)`,
+                          'Attempts',
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      layout="vertical"
+                      align="center"
+                      wrapperStyle={{ paddingTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const v = entry.payload?.value ?? 0;
+                        const pct =
+                          passFailPieTotal > 0 ? ((v / passFailPieTotal) * 100).toFixed(0) : '0';
+                        return `${value}: ${v} (${pct}%)`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -905,18 +933,17 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <Typography variant="h6" gutterBottom>
                   Score Range Distribution
                 </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                     <Pie
                       data={scoreRangeDistributionData}
                       cx="50%"
-                      cy="50%"
+                      cy="45%"
+                      paddingAngle={2}
                       labelLine={false}
-                      label={(props: any) => {
-                        const { name = '', value = 0, percent = 0 } = props;
-                        return `${name}: ${value} (${(percent * 100).toFixed(0)}%)`;
-                      }}
-                      outerRadius={80}
+                      label={false}
+                      innerRadius={48}
+                      outerRadius={78}
                       fill="#8884d8"
                       dataKey="value"
                     >
@@ -924,8 +951,27 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
-                    <Legend />
+                    <Tooltip
+                      formatter={(value) => {
+                        const n = rechartsTooltipNumber(value);
+                        return [
+                          `${n} (${scoreRangePieTotal > 0 ? ((n / scoreRangePieTotal) * 100).toFixed(0) : 0}%)`,
+                          'Attempts',
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      layout="vertical"
+                      align="center"
+                      wrapperStyle={{ paddingTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const v = entry.payload?.value ?? 0;
+                        const pct =
+                          scoreRangePieTotal > 0 ? ((v / scoreRangePieTotal) * 100).toFixed(0) : '0';
+                        return `${value}: ${v} (${pct}%)`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -941,18 +987,17 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <Typography variant="h6" gutterBottom>
                   Question Success Rate Distribution
                 </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                     <Pie
                       data={questionSuccessRateDistributionData}
                       cx="50%"
-                      cy="50%"
+                      cy="45%"
+                      paddingAngle={2}
                       labelLine={false}
-                      label={(props: any) => {
-                        const { name = '', value = 0, percent = 0 } = props;
-                        return `${name}: ${value} (${(percent * 100).toFixed(0)}%)`;
-                      }}
-                      outerRadius={80}
+                      label={false}
+                      innerRadius={48}
+                      outerRadius={78}
                       fill="#8884d8"
                       dataKey="value"
                     >
@@ -960,8 +1005,29 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
-                    <Legend />
+                    <Tooltip
+                      formatter={(value) => {
+                        const n = rechartsTooltipNumber(value);
+                        return [
+                          `${n} (${questionSuccessPieTotal > 0 ? ((n / questionSuccessPieTotal) * 100).toFixed(0) : 0}%)`,
+                          'Questions',
+                        ];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      layout="vertical"
+                      align="center"
+                      wrapperStyle={{ paddingTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const v = entry.payload?.value ?? 0;
+                        const pct =
+                          questionSuccessPieTotal > 0
+                            ? ((v / questionSuccessPieTotal) * 100).toFixed(0)
+                            : '0';
+                        return `${value}: ${v} (${pct}%)`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -980,13 +1046,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="courseTitle" 
-                      angle={-45} 
-                      textAnchor="end" 
-                      height={100}
-                      tickFormatter={(value) => truncateCourseName(value, 15)}
-                    />
+                    <XAxis dataKey="courseTitle" tick={false} />
                     <YAxis domain={[0, 100]} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
@@ -1033,13 +1093,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="courseTitle" 
-                      angle={-45} 
-                      textAnchor="end" 
-                      height={100}
-                      tickFormatter={(value) => truncateCourseName(value, 15)}
-                    />
+                    <XAxis dataKey="courseTitle" tick={false} />
                     <YAxis />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
@@ -1062,13 +1116,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={courseAnalytics}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="courseTitle" 
-                      angle={-45} 
-                      textAnchor="end" 
-                      height={100}
-                      tickFormatter={(value) => truncateCourseName(value, 15)}
-                    />
+                    <XAxis dataKey="courseTitle" tick={false} />
                     <YAxis />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
@@ -1240,13 +1288,7 @@ const QuizAnalytics: React.FC<QuizAnalyticsProps> = ({ selectedStoreId }) => {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={courseAnalytics}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="courseTitle" 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={100}
-                  tickFormatter={(value) => truncateCourseName(value, 15)}
-                />
+                <XAxis dataKey="courseTitle" tick={false} />
                 <YAxis />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
