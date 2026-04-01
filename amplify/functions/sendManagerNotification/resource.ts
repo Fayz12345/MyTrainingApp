@@ -12,6 +12,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const sendManagerNotification = defineFunction({
   name: 'sendManagerNotification',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 10,
   environment: {
     FROM_EMAIL: 'circular360dev@gmail.com' // Verified SES email

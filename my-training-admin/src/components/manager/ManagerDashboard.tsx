@@ -29,6 +29,7 @@ import {
   Menu,
   MenuItem,
   Collapse,
+  Stack,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -37,7 +38,8 @@ import StoreIcon from '@mui/icons-material/Store';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import ArrowDropDown from '@mui/icons-material/ArrowDropDown';
-import CourseForm from './CourseForm';
+import CourseBuilder from './courseBuilder/CourseBuilder';
+import TemplateGallery from './courseBuilder/TemplateGallery';
 import CourseList from './CourseList';
 import AssignmentForm from './AssignmentForm';
 import EmployeeList from './EmployeeList';
@@ -53,6 +55,7 @@ import EmployeesNeedingSupport from './EmployeesNeedingSupport';
 import EmployeesNeedingSupportWidget from './EmployeesNeedingSupportWidget';
 import TrainingReports from './TrainingReports';
 import TrainingLeaderboard from './TrainingLeaderboard';
+import CertificationCompliance from './CertificationCompliance';
 
 const client = generateClient<Schema>();
 
@@ -79,7 +82,8 @@ type ViewMode =
   | 'quiz-analytics'
   | 'employees-needing-support'
   | 'training-reports'
-  | 'training-leaderboard';
+  | 'training-leaderboard'
+  | 'certification-compliance';
 
 type CourseSummary = {
   readonly id: string;
@@ -87,9 +91,14 @@ type CourseSummary = {
   readonly description?: string | null;
   readonly videoKey?: string | null;
   readonly imageKey?: string | null;
+  readonly pdfKey?: string | null;
+  readonly pdfTitle?: string | null;
+  readonly contentType?: string | null;
   readonly passingScore?: number | null;
   readonly duration?: string | null;
   readonly category?: string | null;
+  readonly blocksJson?: string | null;
+  readonly isTemplate?: boolean | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -116,6 +125,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const [mobileLearningPathMenuOpen, setMobileLearningPathMenuOpen] = useState(false);
   const [desktopLearningPathMenuOpen, setDesktopLearningPathMenuOpen] = useState(false);
   const [logoImageError, setLogoImageError] = useState(false);
+  type CreateCourseMode = 'choice' | 'blank' | 'template';
+  const [createCourseMode, setCreateCourseMode] = useState<CreateCourseMode>('choice');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -236,7 +247,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
   const learningPathSubmenuItems = [
     { key: 'learning-paths', label: 'Create Learning Path', icon: '🛤️' },
     { key: 'assign-learning-path', label: 'Assign Learning Path', icon: '🎯' },
-    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' }
+    { key: 'learning-path-progress', label: 'Learning Path Progress', icon: '📊' },
+    { key: 'certification-compliance', label: 'Certification Compliance', icon: '📜' }
   ];
 
   const handleMenuClick = (view: ViewMode) => {
@@ -392,26 +404,69 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
       
-      case 'create-course':
+      case 'create-course': {
+        const handleUseTemplate = async (newCourseId: string) => {
+          try {
+            const result = await client.models.Course.get({ id: newCourseId });
+            if (result.data) {
+              setSelectedCourse(result.data as CourseSummary);
+              setCurrentView('edit-course');
+              setCreateCourseMode('choice');
+            }
+          } catch (e) {
+            console.error('Failed to load cloned course:', e);
+          }
+        };
         return (
           <Box>
             <Button
               startIcon={<ArrowBackIcon />}
-              onClick={() => navigateToCourses()}
+              onClick={() => {
+                navigateToCourses();
+                setCreateCourseMode('choice');
+              }}
               sx={{ mb: 2 }}
             >
               Back to Courses
             </Button>
-            <CourseForm
-              onSuccess={() => {
-                navigateToCourses();
-              }}
-              onCancel={() => {
-                setCurrentView('courses');
-              }}
-            />
+            {createCourseMode === 'choice' && (
+              <Card variant="outlined" sx={{ mb: 2, maxWidth: 560 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Create a new course
+                  </Typography>
+                  <Typography color="text.secondary" sx={{ mb: 2 }}>
+                    Start from scratch or use a template to copy structure and quiz.
+                  </Typography>
+                  <Stack direction="row" spacing={2} flexWrap="wrap">
+                    <Button variant="contained" onClick={() => setCreateCourseMode('blank')}>
+                      Create blank course
+                    </Button>
+                    <Button variant="outlined" onClick={() => setCreateCourseMode('template')}>
+                      Start from template
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+            {createCourseMode === 'blank' && (
+              <CourseBuilder
+                onSuccess={() => {
+                  navigateToCourses();
+                  setCreateCourseMode('choice');
+                }}
+                onCancel={() => setCreateCourseMode('choice')}
+              />
+            )}
+            {createCourseMode === 'template' && (
+              <TemplateGallery
+                onUseTemplate={handleUseTemplate}
+                onCancel={() => setCreateCourseMode('choice')}
+              />
+            )}
           </Box>
         );
+      }
 
       case 'edit-course':
         if (!selectedCourse) {
@@ -440,7 +495,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
             >
               Back to Courses
             </Button>
-            <CourseForm
+            <CourseBuilder
               course={selectedCourse}
               onSuccess={() => {
                 navigateToCourses();
@@ -690,6 +745,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
           </Box>
         );
 
+      case 'certification-compliance':
+        return (
+          <Box>
+            <Button
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setCurrentView('dashboard')}
+              sx={{ mb: 2 }}
+            >
+              Back to Dashboard
+            </Button>
+            <CertificationCompliance selectedStoreId={selectedStoreId} />
+          </Box>
+        );
+
       default:
         return (
           <Box>
@@ -726,7 +795,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                 { key: 'quiz-analytics', title: 'Quiz Performance Analytics', description: 'Analyze quiz performance and question-level statistics.', icon: '📊' },
                 { key: 'employees-needing-support', title: 'Employees Needing Support', description: 'Identify and support employees who need additional training assistance.', icon: '🆘' },
                 { key: 'training-reports', title: 'Training Reports', description: 'Generate comprehensive training reports and analytics.', icon: '📄' },
-                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' }
+                { key: 'training-leaderboard', title: 'Training Leaderboard', description: 'View employee rankings and achievements in training.', icon: '🏆' },
+                { key: 'certification-compliance', title: 'Certification Compliance', description: 'View certifications expiring soon, expired, and valid; reminders and auto re-assignment.', icon: '📜' }
               ].map((item) => (
                 <Grid item xs={12} sm={6} md={3} key={item.key}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
@@ -747,7 +817,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                         onClick={() => handleMenuClick(item.key as ViewMode)}
                         fullWidth
                       >
-                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
+                        {item.key === 'employees' ? 'Manage Employees' : item.key === 'analytics' ? 'View Analytics' : item.key === 'courses' ? 'Manage Courses' : item.key === 'learning-paths' ? 'Manage Learning Paths' : item.key === 'assign-learning-path' ? 'Assign Learning Path' : item.key === 'learning-path-progress' ? 'Track Progress' : item.key === 'assignments' ? 'Assign Courses' : item.key === 'training-status' ? 'View Status' : item.key === 'employees-needing-support' ? 'View Support' : item.key === 'training-reports' ? 'View Reports' : item.key === 'training-leaderboard' ? 'View Leaderboard' : item.key === 'certification-compliance' ? 'View Compliance' : item.key === 'quiz-analytics' ? 'View Analytics' : 'Open'}
                       </Button>
                     </CardActions>
                   </Card>
@@ -919,7 +989,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                    currentView === 'assign-learning-path' || 
                    currentView === 'learning-path-progress' ||
                    currentView === 'create-learning-path' ||
-                    currentView === 'edit-learning-path'
+                   currentView === 'edit-learning-path' ||
+                   currentView === 'certification-compliance'
                 }
                 sx={{
                     '&.Mui-selected': {
@@ -1007,7 +1078,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ signOut, user }) =>
                   currentView === 'assign-learning-path' || 
                   currentView === 'learning-path-progress' ||
                   currentView === 'create-learning-path' ||
-                  currentView === 'edit-learning-path'
+                  currentView === 'edit-learning-path' ||
+                  currentView === 'certification-compliance'
                 }
               >
                 <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>

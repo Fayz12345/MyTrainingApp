@@ -11,6 +11,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const sendEmployeeSupportMessage = defineFunction({
   name: 'sendEmployeeSupportMessage',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 10,
   environment: {
     FROM_EMAIL: 'circular360dev@gmail.com' // Verified SES email

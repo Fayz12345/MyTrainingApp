@@ -7,6 +7,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const createCognitoGroups = defineFunction({
   name: 'createCognitoGroups',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 30
 });
 

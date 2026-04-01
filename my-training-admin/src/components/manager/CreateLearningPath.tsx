@@ -62,6 +62,8 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
   const [isSequential, setIsSequential] = useState(true);
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
   const [mandatoryForScheduling, setMandatoryForScheduling] = useState(false);
+  const [isCertification, setIsCertification] = useState(false);
+  const [certificationExpirationDays, setCertificationExpirationDays] = useState<number>(365);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<LearningPathCourse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -209,6 +211,8 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
         version: 1,
         isArchived: false,
         mandatoryForScheduling,
+        isCertification,
+        certificationExpirationDays: isCertification ? certificationExpirationDays : null,
         createdAt: now,
         updatedAt: now,
       });
@@ -370,6 +374,27 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
               }
               label="Mandatory for Scheduling"
             />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isCertification}
+                  onChange={(e) => setIsCertification(e.target.checked)}
+                />
+              }
+              label="Certification (expires and requires recertification)"
+            />
+            {isCertification && (
+              <TextField
+                type="number"
+                label="Certification valid for (days)"
+                value={certificationExpirationDays}
+                onChange={(e) => setCertificationExpirationDays(Math.max(1, parseInt(e.target.value, 10) || 365))}
+                inputProps={{ min: 1, max: 3650 }}
+                size="small"
+                sx={{ maxWidth: 200 }}
+                helperText="e.g. 365 for 1 year"
+              />
+            )}
           </Box>
           {!isSequential && (
             <Alert severity="info" sx={{ mb: 2 }}>
@@ -379,6 +404,11 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
           {mandatoryForScheduling && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               This learning path is mandatory for scheduling eligibility. Employees must complete this path and have banking information on file to be eligible for scheduling.
+            </Alert>
+          )}
+          {isCertification && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              This path will expire after {certificationExpirationDays} days. Employees will receive reminders before expiration and will be re-assigned automatically when it lapses.
             </Alert>
           )}
         </CardContent>

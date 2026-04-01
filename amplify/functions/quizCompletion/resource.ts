@@ -13,6 +13,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const quizCompletion = defineFunction({
   name: 'quizCompletion',
   entry: './handler.ts',
+  runtime: 20,
   timeoutSeconds: 15, // Increased from 3 to handle AppSync queries + SNS publish
   environment: {
     // SNS Topic ARN for publishing notifications

@@ -49,6 +49,8 @@ interface LearningPath {
   isArchived?: boolean | null;
   isSequential?: boolean | null;
   mandatoryForScheduling?: boolean | null;
+  isCertification?: boolean | null;
+  certificationExpirationDays?: number | null;
   createdAt: string;
   updatedAt: string;
   courses?: {
@@ -337,6 +339,14 @@ const LearningPathList: React.FC<LearningPathListProps> = ({ refreshTrigger, onE
                 label="Mandatory for Scheduling"
                 size="small"
                 color="primary"
+                variant="outlined"
+              />
+            )}
+            {path.isCertification && (
+              <Chip
+                label={path.certificationExpirationDays ? `Certification (${path.certificationExpirationDays}d)` : 'Certification'}
+                size="small"
+                color="secondary"
                 variant="outlined"
               />
             )}

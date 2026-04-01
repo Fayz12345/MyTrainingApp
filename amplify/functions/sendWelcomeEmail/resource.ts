@@ -9,8 +9,9 @@ import { defineFunction } from "@aws-amplify/backend";
  * 3. Update frontend .env file with Function URL
  */
 export const sendWelcomeEmail = defineFunction({
-  name: "sendWelcomeEmail", // Lambda name in AWS
-  entry: "./handler.ts",    // Your handler file
+  name: "sendWelcomeEmail",
+  entry: "./handler.ts",
+  runtime: 20,
   timeoutSeconds: 10,
   environment: {
     FROM_EMAIL: "circular360dev@gmail.com", // SES Verified Email (must be verified in SES)
