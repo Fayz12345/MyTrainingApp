@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
@@ -49,10 +50,19 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
       setLoading(true);
       setError(null);
 
-      // Fetch courses and employees in parallel
+      const session = await fetchAuthSession();
+      const currentUserId =
+        session.userSub ?? (session.tokens?.idToken?.payload?.sub as string | undefined);
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Fetch courses and employees in parallel (only courses this manager created)
       const [coursesResult, employeesResult] = await Promise.all([
-        client.models.Course.list({}),
-        client.models.Employee.list({})
+        client.models.Course.list({
+          filter: { createdBy: { eq: currentUserId } },
+        }),
+        client.models.Employee.list({}),
       ]);
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {

@@ -106,8 +106,17 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
       setLoading(true);
       setError(null);
 
-      // Fetch all courses
-      const coursesResult = await client.models.Course.list({});
+      const session = await fetchAuthSession();
+      const currentUserId =
+        session.userSub ?? (session.tokens?.idToken?.payload?.sub as string | undefined);
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Courses available to add: only those created by this manager
+      const coursesResult = await client.models.Course.list({
+        filter: { createdBy: { eq: currentUserId } },
+      });
       if (coursesResult.errors && coursesResult.errors.length > 0) {
         throw new Error('Failed to fetch courses: ' + coursesResult.errors.map((e: any) => e.message).join(', '));
       }

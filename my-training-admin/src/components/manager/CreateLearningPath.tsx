@@ -79,7 +79,15 @@ const CreateLearningPath: React.FC<CreateLearningPathProps> = ({ onSuccess, onCa
   const fetchCourses = async () => {
     try {
       setLoading(true);
-      const result = await client.models.Course.list({});
+      const session = await fetchAuthSession();
+      const currentUserId =
+        session.userSub ?? (session.tokens?.idToken?.payload?.sub as string | undefined);
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+      const result = await client.models.Course.list({
+        filter: { createdBy: { eq: currentUserId } },
+      });
       if (result.errors && result.errors.length > 0) {
         throw new Error('Failed to fetch courses: ' + result.errors.map((e: any) => e.message).join(', '));
       }
