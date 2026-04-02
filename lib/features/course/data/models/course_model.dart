@@ -64,6 +64,8 @@ class Course {
 }
  */
 
+import 'lesson_model.dart';
+
 enum CourseContentType {
   video,
   pdf,
@@ -122,6 +124,7 @@ class Course {
   final int? poolSize; // Total number of questions in pool
   final int?
       questionsToDisplay; // Number of questions to randomly select from pool
+  final List<Lesson> lessons; // Lessons loaded from assigned-courses query
 
   Course({
     required this.id,
@@ -146,6 +149,7 @@ class Course {
     this.useQuestionPool,
     this.poolSize,
     this.questionsToDisplay,
+    this.lessons = const [],
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
@@ -193,6 +197,11 @@ class Course {
       useQuestionPool: json['course']['useQuestionPool'] as bool? ?? false,
       poolSize: json['course']['poolSize'] as int?,
       questionsToDisplay: json['course']['questionsToDisplay'] as int?,
+      lessons: ((json['course']['lessons']?['items'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(Lesson.fromJson)
+          .toList()
+        ..sort((a, b) => a.order.compareTo(b.order)),
     );
   }
 
@@ -220,6 +229,17 @@ class Course {
       'useQuestionPool': useQuestionPool ?? false,
       'poolSize': poolSize,
       'questionsToDisplay': questionsToDisplay,
+      'lessons': lessons
+          .map(
+            (l) => {
+              'id': l.id,
+              'courseId': l.courseId,
+              'title': l.title,
+              'order': l.order,
+              'contentBlocks': l.contentBlocks,
+            },
+          )
+          .toList(),
     };
   }
 

@@ -1,4 +1,5 @@
 import '../../../course/data/models/course_model.dart';
+import '../../../../models/learning_path_assignment_model.dart';
 
 /// Represents a course within a learning path
 class PathCourse {
@@ -35,6 +36,18 @@ class LearningPath {
   final bool isCompleted; // All courses completed
   final int? version; // Learning path version
 
+  /// Current employee's assignment (certification / expiration live here).
+  final LearningPathAssignmentModel? assignment;
+
+  /// From `LearningPath` — path is a certification track.
+  final bool? isCertification;
+
+  /// Days until certification expires after completion (path config).
+  final int? certificationExpirationDays;
+
+  /// Path gates scheduling eligibility (Amplify `mandatoryForScheduling`).
+  final bool? mandatoryForScheduling;
+
   LearningPath({
     required this.id,
     required this.title,
@@ -47,7 +60,39 @@ class LearningPath {
     required this.progressPercentage,
     required this.isCompleted,
     this.version,
+    this.assignment,
+    this.isCertification,
+    this.certificationExpirationDays,
+    this.mandatoryForScheduling,
   });
+
+  bool get isCertificationPath => isCertification == true;
+
+  /// Calendar days from today until [assignment.expirationDate] (null if unknown).
+  int? get daysUntilCertificationExpires {
+    final exp = assignment?.expirationDate;
+    if (exp == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final expDay = DateTime(exp.year, exp.month, exp.day);
+    return expDay.difference(today).inDays;
+  }
+
+  /// Short copy for list / header (certification + expiration).
+  String? get certificationUiSubtitle {
+    if (!isCertificationPath) return null;
+    final days = daysUntilCertificationExpires;
+    if (days != null) {
+      if (days < 0) return 'Certification expired';
+      if (days == 0) return 'Certification expires today';
+      if (days == 1) return 'Certification expires tomorrow';
+      return 'Certification expires in $days days';
+    }
+    if (certificationExpirationDays != null && certificationExpirationDays! > 0) {
+      return 'Valid $certificationExpirationDays days after completion';
+    }
+    return 'Certification path';
+  }
 
   /// Calculate progress from courses
   static LearningPath calculateProgress({
@@ -117,6 +162,10 @@ class LearningPath {
       progressPercentage: progressPercentage,
       isCompleted: isCompleted,
       version: null, // Legacy method doesn't have version
+      assignment: null,
+      isCertification: null,
+      certificationExpirationDays: null,
+      mandatoryForScheduling: null,
     );
   }
 }

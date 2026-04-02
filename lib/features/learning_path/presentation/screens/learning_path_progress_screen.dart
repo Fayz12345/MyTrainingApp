@@ -5,14 +5,16 @@ import 'package:amplify_flutter/amplify_flutter.dart';
 import '../../data/models/learning_path_model.dart';
 import '../../../course/data/models/course_model.dart';
 import '../../services/learning_path_service.dart';
-import '../../../course/services/video_progress_service.dart';
-import '../../../../core/services/activity_logger.dart';
 import '../bloc/learning_path_bloc.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../course/presentation/bloc/course_bloc.dart';
-import '../../../../core/mixins/screen_refresh_mixin.dart';
+import '../../../course/presentation/course_list/course_list_filter.dart';
+import '../../../course/presentation/widgets/course_list/course_lesson_list_section.dart';
+import '../../../course/services/combined_progress_calculator.dart';
+import '../../../course/services/course_image_preload_service.dart';
+import '../../../course/services/lesson_completion_service.dart';
 import '../../../../core/widgets/app_loader.dart';
 
 class LearningPathProgressScreen extends StatefulWidget {
@@ -30,521 +32,88 @@ class LearningPathProgressScreen extends StatefulWidget {
       _LearningPathProgressScreenState();
 }
 
-class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
-    with ScreenRefreshMixin {
+class _LearningPathProgressScreenState
+    extends State<LearningPathProgressScreen> {
   bool _isRefreshing = false; // Flag to prevent race conditions
-  bool _isLoadingCourseAction =
-      false; // Flag for loading state during course actions
+  final Map<String, String> _imageUrlCache = {};
+  int _lessonProgressRebuildCounter = 0;
 
   @override
   void initState() {
     super.initState();
-    // Trigger refresh via BLoC after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _refreshDataSafely();
-      }
+      if (mounted) _loadDataIfNeeded();
+      if (mounted) _preloadPathCourseImages();
     });
   }
 
-  @override
-  void onScreenVisible() {
-    // Refresh data when screen becomes visible again
-    // This ensures UI shows updated data after quiz completion
-    if (mounted) {
-      _refreshDataSafely();
-    }
+  void _preloadPathCourseImages() {
+    if (!mounted) return;
+    final courses = widget.learningPath.courses.map((pc) => pc.course).toList();
+    CourseImagePreloadService.preloadForCourses(
+      courses: courses,
+      imageUrlCache: _imageUrlCache,
+      context: context,
+      isMounted: () => mounted,
+      scheduleSetState: (fn) => setState(fn),
+    );
   }
 
-  /// Safely refresh data with proper error handling and race condition prevention
-  Future<void> _refreshDataSafely() async {
-    // Prevent multiple simultaneous refresh calls
-    if (_isRefreshing) {
+  /// Load data only when blocs are Initial/Error; otherwise use existing data.
+  Future<void> _loadDataIfNeeded() async {
+    if (_isRefreshing || !mounted) return;
+    // If caller already passed learning-path data (CourseListScreen path card),
+    // render from passed model and avoid entry-time API calls/reloads.
+    if (widget.learningPath.courses.isNotEmpty && !widget.returningFromQuiz) {
       return;
     }
+    final learningPathState = context.read<LearningPathBloc>().state;
+    final needLoad = learningPathState is LearningPathInitial ||
+        learningPathState is LearningPathError;
+    if (!needLoad) return;
 
     _isRefreshing = true;
     try {
-      // Refresh learning paths
+      if (mounted) {
+        // Use load (not refresh) when bloc has no data yet — same as home screen.
+        context.read<LearningPathBloc>().add(const LoadLearningPaths());
+      }
+      try {
+        if (mounted) {
+          final courseState = context.read<CourseBloc>().state;
+          if (courseState is CourseInitial || courseState is CourseError) {
+            context.read<CourseBloc>().add(const LoadCourses());
+          }
+        }
+      } catch (e) {
+        safePrint('[LEARNING_PATH] ⚠️ CourseBloc not available: $e');
+      }
+    } finally {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _isRefreshing = false;
+      });
+    }
+  }
+
+  /// Explicit refresh (retry, after quiz, etc.).
+  Future<void> _refreshDataSafely() async {
+    if (_isRefreshing || !mounted) return;
+    _isRefreshing = true;
+    try {
       if (mounted) {
         context.read<LearningPathBloc>().add(const RefreshLearningPaths());
       }
-
-      // Also refresh courses to ensure both lists are updated
-      // Use try-catch with proper error handling
       try {
         if (mounted) {
           context.read<CourseBloc>().add(const RefreshCourses());
         }
       } catch (e) {
-        // CourseBloc might not be available - log but don't crash
-        safePrint(
-          '[LEARNING_PATH] ⚠️ CourseBloc not available: $e',
-        );
-        // Continue execution - learning path refresh is more important
+        safePrint('[LEARNING_PATH] ⚠️ CourseBloc not available: $e');
       }
     } finally {
-      // Reset flag after a delay to allow refresh to complete
       Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          _isRefreshing = false;
-        }
+        if (mounted) _isRefreshing = false;
       });
-    }
-  }
-
-  Widget _getStatusIcon(CourseStatus status) {
-    switch (status) {
-      case CourseStatus.completed:
-        return const Icon(
-          Icons.check_circle,
-          color: AppColors.completedGreen,
-          size: 24,
-        );
-      case CourseStatus.inProgress:
-        return const Icon(
-          Icons.pause_circle_filled,
-          color: AppColors.primaryBlue,
-          size: 24,
-        );
-      case CourseStatus.locked:
-        return const Icon(
-          Icons.lock,
-          color: Colors.grey,
-          size: 24,
-        );
-      case CourseStatus.notStarted:
-        return Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: AppColors.continueOrange,
-              width: 2,
-            ),
-          ),
-        );
-    }
-  }
-
-  Color _getStatusColor(CourseStatus status) {
-    switch (status) {
-      case CourseStatus.completed:
-        return AppColors.completedGreen;
-      case CourseStatus.inProgress:
-        return AppColors.primaryBlue;
-      case CourseStatus.notStarted:
-        return AppColors.continueOrange;
-      case CourseStatus.locked:
-        return Colors.grey;
-    }
-  }
-
-  Color _getStatusBackgroundColor(CourseStatus status) {
-    switch (status) {
-      case CourseStatus.completed:
-        return AppColors.lightGreenBackground;
-      case CourseStatus.inProgress:
-        return AppColors.lightBlueBackground;
-      case CourseStatus.notStarted:
-        return AppColors.lightOrangeBackground;
-      case CourseStatus.locked:
-        return Colors.grey[100]!;
-    }
-  }
-
-  String _getStatusText(CourseStatus status) {
-    switch (status) {
-      case CourseStatus.completed:
-        return 'Completed';
-      case CourseStatus.inProgress:
-        return 'In Progress';
-      case CourseStatus.locked:
-        return 'Locked';
-      case CourseStatus.notStarted:
-        return 'Not Started';
-    }
-  }
-
-  Future<void> _handleCourseTap(
-      PathCourse pathCourse, LearningPath path) async {
-    // Prevent multiple simultaneous taps
-    if (_isLoadingCourseAction) {
-      return;
-    }
-
-    final course = pathCourse.course;
-
-    // If completed, allow review
-    if (pathCourse.status == CourseStatus.completed) {
-      //_showCompletedCourseDialog(context, course);
-      return;
-    }
-
-    // Check if course is clickable (handles locked courses)
-    if (!LearningPathService.isCourseClickable(pathCourse, path)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Complete previous course to unlock this one'),
-          backgroundColor: AppColors.warningOrange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    // Show loading state
-    setState(() {
-      _isLoadingCourseAction = true;
-    });
-
-    try {
-      // Check if video is completed with timeout
-      final progressKey = course.assignmentId ?? course.id;
-      final isVideoCompleted = await VideoProgressService.isVideoCompleted(
-        progressKey,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          safePrint(
-            '[LEARNING_PATH] ⚠️ Timeout checking video completion status',
-          );
-          return false;
-        },
-      );
-
-      if (isVideoCompleted) {
-        // Navigate to quiz
-        _startQuiz(context, course);
-      } else {
-        // Log course start
-        ActivityLogger.logCourseStart(
-          courseId: course.id,
-          courseTitle: course.title,
-          assignmentId: course.assignmentId,
-        );
-
-        // Log video start
-        if (course.videoKey != null) {
-          ActivityLogger.logVideoStart(
-            courseId: course.id,
-            courseTitle: course.title,
-            videoKey: course.videoKey!,
-            assignmentId: course.assignmentId,
-          );
-        }
-
-        // Navigate to video player
-        await context.push('/video-player', extra: course);
-
-        // After video player closes, check if video was completed
-        if (mounted) {
-          final isVideoCompletedAfter =
-              await VideoProgressService.isVideoCompleted(progressKey).timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              safePrint(
-                '[LEARNING_PATH] ⚠️ Timeout checking video completion after viewing',
-              );
-              return false;
-            },
-          );
-
-          // If video was completed, navigate to quiz
-          if (isVideoCompletedAfter) {
-            // Small delay to ensure dialog is closed
-            await Future.delayed(const Duration(milliseconds: 300));
-            if (mounted) {
-              _startQuiz(context, course);
-            }
-          }
-
-          // Immediately refresh paths to update UI with latest progress
-          await _refreshDataSafely();
-        }
-      }
-    } catch (e) {
-      safePrint('[LEARNING_PATH] ⚠️ Error handling course tap: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: AppColors.errorRed,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } finally {
-      // Reset loading state
-      if (mounted) {
-        setState(() {
-          _isLoadingCourseAction = false;
-        });
-      }
-    }
-  }
-
-  void _showCompletedCourseDialog(BuildContext context, Course course) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Success Icon
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppColors.lightGreenBackground,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle,
-                  size: 48,
-                  color: AppColors.completedGreen,
-                ),
-              ),
-              const SizedBox(height: 20),
-              // Title
-              DefaultTextStyle(
-                style: TextStyle(decoration: TextDecoration.none),
-                child: Text(
-                  course.title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textBlack87,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Message
-              DefaultTextStyle(
-                style: TextStyle(decoration: TextDecoration.none),
-                child: const Text(
-                  'You have already completed this course!',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Review Video Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    context.pop();
-                    _reviewVideo(context, course);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.startCourseBackground,
-                    foregroundColor: AppColors.startCourseForeground,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.play_circle_outline, size: 20),
-                      SizedBox(width: 8),
-                      DefaultTextStyle(
-                        style: TextStyle(decoration: TextDecoration.none),
-                        child: Text(
-                          'Review Video',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Review Quiz Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    context.pop();
-                    _reviewQuiz(context, course);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.primaryBlue),
-                    foregroundColor: AppColors.primaryBlue,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.quiz, size: 20),
-                      SizedBox(width: 8),
-                      DefaultTextStyle(
-                        style: TextStyle(decoration: TextDecoration.none),
-                        child: Text(
-                          'Review Quiz',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Close Button
-              TextButton(
-                onPressed: () => context.pop(),
-                child: const Text(
-                  'Close',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _reviewVideo(BuildContext context, Course course) async {
-    await context.push('/video-player', extra: course);
-
-    // Wait a bit for any state updates to complete
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Immediately refresh data to update UI with latest progress
-    if (mounted) {
-      await _refreshDataSafely();
-    }
-  }
-
-  Future<void> _reviewQuiz(BuildContext context, Course course) async {
-    if (course.assignmentId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Assignment ID not found'),
-          backgroundColor: AppColors.errorRed,
-        ),
-      );
-      return;
-    }
-
-    // Get current learning path from state
-    LearningPath? currentPath;
-    try {
-      final learningPathBloc = context.read<LearningPathBloc>();
-      final learningPathState = learningPathBloc.state;
-      if (learningPathState is LearningPathLoaded) {
-        currentPath = learningPathState.paths.firstWhere(
-          (p) => p.id == widget.learningPath.id,
-          orElse: () => widget.learningPath,
-        );
-      } else {
-        currentPath = widget.learningPath;
-      }
-    } catch (e) {
-      safePrint('[LEARNING_PATH] ⚠️ Error getting learning path: $e');
-      currentPath = widget.learningPath;
-    }
-
-    await context.push(
-      '/quiz',
-      extra: {
-        'course': course,
-        'assignmentId': course.assignmentId!,
-        'source':
-            'learning_path', // Track that quiz was started from learning path
-        'learningPath': currentPath, // Pass learning path for navigation back
-      },
-    );
-
-    // Wait for backend to update assignment status after quiz completion
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    // Immediately refresh data to update UI with latest progress
-    if (mounted) {
-      await _refreshDataSafely();
-    }
-  }
-
-  Future<void> _startQuiz(BuildContext context, Course course) async {
-    if (course.assignmentId == null) {
-      return;
-    }
-
-    // Log quiz start
-    ActivityLogger.logQuizStart(
-      courseId: course.id,
-      courseTitle: course.title,
-      assignmentId: course.assignmentId!,
-    );
-
-    // Get current learning path from state with error handling
-    LearningPath? currentPath;
-    try {
-      final learningPathBloc = context.read<LearningPathBloc>();
-      final learningPathState = learningPathBloc.state;
-      if (learningPathState is LearningPathLoaded) {
-        currentPath = learningPathState.paths.firstWhere(
-          (p) => p.id == widget.learningPath.id,
-          orElse: () => widget.learningPath,
-        );
-      } else {
-        currentPath = widget.learningPath;
-      }
-    } catch (e) {
-      safePrint('[LEARNING_PATH] ⚠️ Error getting learning path: $e');
-      currentPath = widget.learningPath;
-    }
-
-    await context.push(
-      '/quiz',
-      extra: {
-        'course': course,
-        'assignmentId': course.assignmentId!,
-        'source':
-            'learning_path', // Track that quiz was started from learning path
-        'learningPath': currentPath, // Pass learning path for navigation back
-      },
-    );
-
-    // Wait for backend to update assignment status after quiz completion
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    // Immediately refresh data to update UI with latest progress
-    if (mounted) {
-      await _refreshDataSafely();
     }
   }
 
@@ -552,18 +121,7 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
   Widget build(BuildContext context) {
     return Container(
         color: AppColors.lightGrayBackground,
-        child: BlocConsumer<LearningPathBloc, LearningPathState>(
-          listener: (context, state) {
-            // Handle state changes - refresh when data is loaded
-            if (state is LearningPathLoaded) {
-              // Data loaded successfully, ensure UI is updated
-              if (mounted) {
-                setState(() {
-                  // Trigger UI rebuild to show updated progress
-                });
-              }
-            }
-          },
+        child: BlocBuilder<LearningPathBloc, LearningPathState>(
           builder: (context, state) {
             // Show loader when returning from quiz until lists are updated
             // Also show loader during course actions
@@ -582,18 +140,13 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
                     !(state is LearningPathLoaded &&
                         courseState is CourseLoaded));
 
-            // Also show loader during course actions
-            final showActionLoader = _isLoadingCourseAction;
-
             // Show shimmer loader for initial data loading
-            if (state is LearningPathLoading &&
-                !shouldShowLoader &&
-                !showActionLoader) {
+            if (state is LearningPathLoading && !shouldShowLoader) {
               return _buildShimmerLoader(context);
             }
 
-            // Show normal loader for button actions (returning from quiz or course action)
-            if (shouldShowLoader || showActionLoader) {
+            // Show normal loader when returning from quiz until lists are updated
+            if (shouldShowLoader) {
               return CustomScrollView(
                 slivers: [
                   _buildNavigationBar(context),
@@ -611,11 +164,9 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
                           DefaultTextStyle(
                             style: TextStyle(decoration: TextDecoration.none),
                             child: Text(
-                              showActionLoader
-                                  ? 'Loading course...'
-                                  : widget.returningFromQuiz
-                                      ? 'Updating course list...'
-                                      : 'Loading learning path...',
+                              widget.returningFromQuiz
+                                  ? 'Updating course list...'
+                                  : 'Loading learning path...',
                               style: TextStyle(
                                 fontSize: 16,
                                 color: AppColors.textSecondary,
@@ -734,7 +285,6 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
                   ),
                   slivers: [
                     _buildNavigationBar(context),
-
                     // Pull-to-refresh
                     CupertinoSliverRefreshControl(
                       onRefresh: () async {
@@ -810,6 +360,148 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
                                                 height: 1.3),
                                           ),
                                         ),
+                                      ],
+                                      if (currentPath.isCertificationPath ||
+                                          currentPath.mandatoryForScheduling ==
+                                              true ||
+                                          currentPath.certificationUiSubtitle !=
+                                              null) ...[
+                                        SizedBox(
+                                            height: isSmallScreen ? 10 : 12),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            if (currentPath.isCertificationPath)
+                                              Container(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal:
+                                                      isTablet ? 12 : 10,
+                                                  vertical:
+                                                      isSmallScreen ? 4 : 5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors
+                                                      .lightOrangeBackground,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors
+                                                        .continueOrange
+                                                        .withValues(
+                                                            alpha: 0.35),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  'Certification',
+                                                  style: TextStyle(
+                                                    fontSize: isTablet
+                                                        ? 13
+                                                        : (isSmallScreen
+                                                            ? 11
+                                                            : 12),
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors
+                                                        .continueOrange,
+                                                    decoration:
+                                                        TextDecoration.none,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (currentPath
+                                                    .mandatoryForScheduling ==
+                                                true)
+                                              Container(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal:
+                                                      isTablet ? 12 : 10,
+                                                  vertical:
+                                                      isSmallScreen ? 4 : 5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors
+                                                      .lightBlueBackground,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors.primaryBlue
+                                                        .withValues(
+                                                            alpha: 0.25),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  'Scheduling',
+                                                  style: TextStyle(
+                                                    fontSize: isTablet
+                                                        ? 13
+                                                        : (isSmallScreen
+                                                            ? 11
+                                                            : 12),
+                                                    fontWeight: FontWeight.w700,
+                                                    color:
+                                                        AppColors.primaryBlue,
+                                                    decoration:
+                                                        TextDecoration.none,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        if (currentPath
+                                                .certificationUiSubtitle !=
+                                            null) ...[
+                                          SizedBox(
+                                              height: isSmallScreen ? 6 : 8),
+                                          DefaultTextStyle(
+                                            style: const TextStyle(
+                                              decoration: TextDecoration.none,
+                                            ),
+                                            child: Text(
+                                              currentPath
+                                                  .certificationUiSubtitle!,
+                                              style: TextStyle(
+                                                fontSize: isTablet
+                                                    ? 14
+                                                    : (isSmallScreen ? 12 : 13),
+                                                fontWeight: FontWeight.w600,
+                                                color: currentPath
+                                                                .daysUntilCertificationExpires !=
+                                                            null &&
+                                                        currentPath
+                                                                .daysUntilCertificationExpires! <
+                                                            0
+                                                    ? AppColors.errorRed
+                                                    : AppColors.textSecondary,
+                                                decoration: TextDecoration.none,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        if (currentPath.assignment
+                                                    ?.certificationStatus !=
+                                                null &&
+                                            currentPath
+                                                .assignment!
+                                                .certificationStatus!
+                                                .isNotEmpty) ...[
+                                          SizedBox(
+                                              height: isSmallScreen ? 4 : 6),
+                                          DefaultTextStyle(
+                                            style: const TextStyle(
+                                              decoration: TextDecoration.none,
+                                            ),
+                                            child: Text(
+                                              'Certification status: ${currentPath.assignment!.certificationStatus}',
+                                              style: TextStyle(
+                                                fontSize: isTablet
+                                                    ? 12
+                                                    : (isSmallScreen ? 10 : 11),
+                                                color: AppColors.textSecondary,
+                                                decoration: TextDecoration.none,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                       SizedBox(height: isSmallScreen ? 16 : 20),
                                       // Progress Info
@@ -1318,7 +1010,6 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
     LearningPath path,
     ResponsiveDimensions dims,
   ) {
-    final isTablet = dims.isTablet;
     final isSmallScreen = dims.isSmallScreen;
 
     // Separate courses into two sections
@@ -1356,16 +1047,18 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
     return widgets;
   }
 
+  /// Same card layout as the home [CourseListScreen] course card: thumbnail,
+  /// description, [CourseLessonListSection], tags, Start Quiz, completed badge.
+  /// Tap opens [CourseDetailsScreen] (aligned with course list flow).
   Widget _buildCourseCard(
     PathCourse pathCourse,
     LearningPath path,
     ResponsiveDimensions dims,
   ) {
-    final isTablet = dims.isTablet;
     final isSmallScreen = dims.isSmallScreen;
     final course = pathCourse.course;
+    final cacheKey = course.assignmentId ?? course.id;
 
-    // Use service methods for all business logic
     final isLocked = pathCourse.status == CourseStatus.locked;
     final isCurrentCourse = LearningPathService.isCurrentCourse(
       pathCourse,
@@ -1376,200 +1069,336 @@ class _LearningPathProgressScreenState extends State<LearningPathProgressScreen>
       path,
     );
 
-    return Container(
-      margin: EdgeInsets.only(bottom: isSmallScreen ? 10 : 12),
-      decoration: BoxDecoration(
-        color: isLocked
-            ? Colors.grey[50] // Grayed out background for locked courses
-            : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: isCurrentCourse
-            ? Border.all(
-                color: AppColors.primaryBlueAlt,
-                width: 2,
-              )
-            : isLocked
-                ? Border.all(
-                    color: Colors.grey[300]!,
-                    width: 1,
-                  )
-                : null,
-        boxShadow: [
-          BoxShadow(
-            color: isCurrentCourse
-                ? AppColors.primaryBlueAlt.withOpacity(0.1)
-                : isLocked
-                    ? Colors.grey.withOpacity(0.1)
-                    : Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isClickable ? () => _handleCourseTap(pathCourse, path) : null,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding:
-                EdgeInsets.all(isTablet ? 20.0 : (isSmallScreen ? 12.0 : 16.0)),
-            child: Row(
-              children: [
-                // Status Icon
-                Container(
-                  width: isTablet ? 56 : (isSmallScreen ? 40 : 48),
-                  height: isTablet ? 56 : (isSmallScreen ? 40 : 48),
-                  decoration: BoxDecoration(
-                    color: _getStatusBackgroundColor(pathCourse.status),
-                    shape: BoxShape.circle,
+    final courseDone = course.assignmentStatus == 'completed' ||
+        pathCourse.status == CourseStatus.completed;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isSmallScreen ? 10 : 12),
+      child: Opacity(
+        opacity: isLocked ? 0.72 : 1.0,
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(28),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              if (!isClickable) {
+                if (isLocked) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Complete previous course to unlock this one'),
+                      backgroundColor: AppColors.warningOrange,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+                return;
+              }
+              context.push('/course-details', extra: course).then((_) {
+                if (mounted) {
+                  _lessonProgressRebuildCounter++;
+                  setState(() {});
+                }
+              });
+            },
+            borderRadius: BorderRadius.circular(28),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                border: isCurrentCourse
+                    ? Border.all(
+                        color: AppColors.primaryBlueAlt,
+                        width: 2,
+                      )
+                    : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: isCurrentCourse
+                        ? AppColors.primaryBlueAlt.withValues(alpha: 0.12)
+                        : Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
                   ),
-                  child: Center(
-                    child: _getStatusIcon(pathCourse.status),
-                  ),
-                ),
-                SizedBox(width: isTablet ? 20 : (isSmallScreen ? 12 : 16)),
-                // Course Info
-                Expanded(
-                  child: Column(
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DefaultTextStyle(
-                              style: TextStyle(decoration: TextDecoration.none),
-                              child: Text(
-                                course.title,
-                                style: TextStyle(
-                                  fontSize:
-                                      isTablet ? 18 : (isSmallScreen ? 14 : 16),
-                                  fontWeight: FontWeight.w600,
-                                  color: isLocked
-                                      ? AppColors.textSecondary
-                                      : AppColors.textBlack87,
-                                ),
-                              ),
-                            ),
-                          ),
-                          /*
-                          if (isCurrentCourse)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isTablet ? 10 : 8,
-                                vertical: isSmallScreen ? 3 : 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.lightBlueBackground,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                'Current',
-                                style: TextStyle(
-                                  fontSize:
-                                      isTablet ? 12 : (isSmallScreen ? 10 : 11),
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primaryBlueAlt,
-                                ),
-                              ),
-                            ),
-                        */
-                        ],
-                      ),
-                      SizedBox(height: isSmallScreen ? 4 : 6),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _getStatusBackgroundColor(
-                                    pathCourse.status),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: DefaultTextStyle(
-                                style:
-                                    TextStyle(decoration: TextDecoration.none),
-                                child: Text(
-                                  _getStatusText(pathCourse.status),
-                                  style: TextStyle(
-                                    fontSize: isTablet
-                                        ? 13
-                                        : (isSmallScreen ? 11 : 12),
-                                    color: _getStatusColor(pathCourse.status),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (course.duration != null) ...[
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: DefaultTextStyle(
-                                style:
-                                    TextStyle(decoration: TextDecoration.none),
-                                child: Text(
-                                  '• ${course.duration}',
-                                  style: TextStyle(
-                                    fontSize: isTablet
-                                        ? 13
-                                        : (isSmallScreen ? 11 : 12),
-                                    color: isLocked
-                                        ? AppColors.textSecondary
-                                            .withOpacity(0.6)
-                                        : AppColors.textSecondary,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (isLocked && path.isSequential) ...[
-                        const SizedBox(height: 6),
-                        Row(
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 14,
-                              color: AppColors.textSecondary,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: DefaultTextStyle(
-                                style:
-                                    TextStyle(decoration: TextDecoration.none),
-                                child: Text(
-                                  'Complete previous course to unlock',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
+                            Text(
+                              course.title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textBlack87,
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              CourseListFilter.description(course),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                height: 1.4,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if (isLocked && path.isSequential) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline,
+                                    size: 16,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Complete the previous course to unlock',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
-                      ],
+                      ),
+                      const SizedBox(width: 16),
+                      _buildLpCourseThumbnail(course),
                     ],
                   ),
-                ),
-                // Arrow Icon or Lock Icon
-                Icon(
-                  Icons.chevron_right,
-                  color: AppColors.textSecondary,
-                ),
-              ],
+                  if (course.lessons.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    CourseLessonListSection(
+                      course: course,
+                      progressRebuildKey: _lessonProgressRebuildCounter,
+                      onAfterLessonReturn: (pathProgressChanged) {
+                        if (!mounted) return;
+                        _lessonProgressRebuildCounter++;
+                        setState(() {});
+                        if (pathProgressChanged) {
+                          _refreshDataSafely();
+                        }
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _learningPathCourseTags(course)
+                        .map(
+                          (tag) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: courseDone
+                                  ? AppColors.grey(200)
+                                  : AppColors.lightBlueBackground,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: Text(
+                              tag,
+                              style: TextStyle(
+                                color: courseDone
+                                    ? AppColors.grey(600)
+                                    : AppColors.primaryBlue,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  if (!courseDone && course.assignmentId != null)
+                    FutureBuilder<Set<String>>(
+                      future: LessonCompletionService.getCompletedLessonIds(
+                          cacheKey),
+                      builder: (context, lessonSnapshot) {
+                        final doneIds = lessonSnapshot.data ?? {};
+                        final allLessonsCompleted = course.lessons.isNotEmpty &&
+                            course.lessons
+                                .every((lesson) => doneIds.contains(lesson.id));
+                        if (!allLessonsCompleted) {
+                          return const SizedBox.shrink();
+                        }
+                        return SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                color: AppColors.continueOrange,
+                              ),
+                              foregroundColor: AppColors.continueOrange,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: AppColors.continueOrange,
+                            ),
+                            onPressed: () {
+                              context.push(
+                                '/quiz',
+                                extra: {
+                                  'course': course,
+                                  'assignmentId': course.assignmentId!,
+                                  'source': 'learning_path',
+                                  'learningPath': path,
+                                },
+                              );
+                            },
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.quiz,
+                                  size: 20,
+                                  color: AppColors.white,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Start Quiz',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  FutureBuilder<double>(
+                    key: ValueKey(
+                      'lp_course_prog_${cacheKey}_$_lessonProgressRebuildCounter',
+                    ),
+                    future: CombinedProgressCalculator.calculatePercent(course),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const SizedBox(
+                          height: 44,
+                          child: Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      final calculatedProgress = snapshot.data ?? 0.0;
+                      final isActuallyCompleted =
+                          courseDone || calculatedProgress >= 100.0;
+                      if (!isActuallyCompleted) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.lightGreenBackground,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                size: 16,
+                                color: AppColors.completedGreen,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Completed',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.completedGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  List<String> _learningPathCourseTags(Course course) {
+    final tags = <String>[];
+    final d = course.duration?.trim();
+    if (d != null && d.isNotEmpty) tags.add(d);
+    final c = course.category?.trim();
+    if (c != null && c.isNotEmpty) tags.add(c);
+    return tags;
+  }
+
+  Widget _buildLpCourseThumbnail(Course course) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: course.imageKey != null
+            ? _imageUrlCache.containsKey(course.imageKey)
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      image: DecorationImage(
+                        image: NetworkImage(_imageUrlCache[course.imageKey]!),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.grey(200),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.image, color: Colors.grey),
+                  )
+            : Container(
+                decoration: BoxDecoration(
+                  color: AppColors.grey(200),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.image_not_supported,
+                  color: Colors.grey,
+                ),
+              ),
       ),
     );
   }

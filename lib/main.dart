@@ -351,23 +351,15 @@ class _AppContentState extends State<AppContent> {
     );
     try {
       final user = await Amplify.Auth.getCurrentUser();
-      safePrint(
-        '[LOGIN_FLOW] [AppContent] ✅ Initial check: User is authenticated',
-      );
-      safePrint('[LOGIN_FLOW] [AppContent] User ID: ${user.userId}');
-      safePrint('[LOGIN_FLOW] [AppContent] Username: ${user.username}');
-      safePrint('[LOGIN_FLOW] [AppContent] Triggering CheckUserGroups...');
+
+
       if (mounted) {
         context.read<AuthBloc>().add(const CheckUserGroups());
       }
     } catch (e) {
-      safePrint(
-        '[LOGIN_FLOW] [AppContent] ❌ Initial check: User is NOT authenticated',
-      );
+
       safePrint('[LOGIN_FLOW] [AppContent] Error: $e');
-      safePrint(
-        '[LOGIN_FLOW] [AppContent] Authenticator will show login screen',
-      );
+
     }
   }
 

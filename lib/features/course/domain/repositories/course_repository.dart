@@ -1,10 +1,6 @@
 import 'dart:async';
 import '../../data/models/course_model.dart';
 
-/// Repository interface for course data access
-///
-/// This follows Dependency Inversion Principle (DIP)
-/// Domain layer depends on abstraction, not implementation
 abstract class CourseRepository {
   /// Get all assigned courses for current user
   Future<List<Course>> getAssignedCourses();

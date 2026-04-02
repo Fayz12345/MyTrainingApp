@@ -2,9 +2,11 @@ import 'package:amplify_flutter/amplify_flutter.dart';
 import 'package:amplify_api/amplify_api.dart';
 import '../../auth/services/auth_service.dart';
 import '../../course/data/models/course_model.dart';
+import '../../course/data/models/lesson_model.dart';
 import '../../course/services/course_service.dart';
 import 'dart:convert';
 import '../data/models/learning_path_model.dart';
+import '../../../models/learning_path_assignment_model.dart';
 
 class LearningPathService {
   /// Fetch all learning paths for the current employee using GraphQL query
@@ -29,15 +31,28 @@ class LearningPathService {
               learningPathAssignments {
                 items {
                   id
+                  learningPathId
+                  employeeId
                   status
                   assignedDate
                   dueDate
                   completedDate
+                  expirationDate
+                  certificationStatus
+                  lastReminderSentAt
+                  reminderCount
+                  createdAt
+                  updatedAt
                   learningPath {
                     id
                     title
                     description
                     isSequential
+                    mandatoryForScheduling
+                    isCertification
+                    certificationExpirationDays
+                    isArchived
+                    version
                     courses {
                       items {
                         id
@@ -48,13 +63,31 @@ class LearningPathService {
                           id
                           title
                           videoKey
+                          pdfKey
+                          pdfTitle
+                          contentType
                           passingScore
                           createdAt
                           updatedAt
                           duration
                           category
+                          tag
                           imageKey
                           description
+                          randomizeQuestions
+                          randomizeOptions
+                          useQuestionPool
+                          poolSize
+                          questionsToDisplay
+                          lessons {
+                            items {
+                              id
+                              courseId
+                              title
+                              order
+                              contentBlocks
+                            }
+                          }
                         }
                       }
                     }
@@ -157,7 +190,20 @@ class LearningPathService {
       final title = learningPathData['title'] as String;
       final description = learningPathData['description'] as String?;
       final isSequential = learningPathData['isSequential'] as bool? ?? false;
-      final version = null; // Not available in query
+      final version = (learningPathData['version'] as num?)?.toInt();
+      final mandatoryForScheduling =
+          learningPathData['mandatoryForScheduling'] as bool?;
+      final isCertification = learningPathData['isCertification'] as bool?;
+      final certificationExpirationDays =
+          (learningPathData['certificationExpirationDays'] as num?)?.toInt();
+
+      LearningPathAssignmentModel? assignmentModel;
+      try {
+        assignmentModel =
+            LearningPathAssignmentModel.fromJson(assignmentData);
+      } catch (e) {
+        safePrint('[LEARNING_PATH] ⚠️ Assignment parse skipped: $e');
+      }
 
       // Get due date from assignment
       DateTime? dueDate;
@@ -210,7 +256,7 @@ class LearningPathService {
         final courseAssignmentStatus = courseAssignment?['status'] as String?;
         final courseAssignmentId = courseAssignment?['id'] as String?;
 
-        // Create Course object with individual assignment status
+        // Create Course object with individual assignment status (lessons + fields aligned with [CourseService])
         final course = Course(
           id: courseId,
           title: courseJson['title'] as String,
@@ -222,8 +268,27 @@ class LearningPathService {
           updatedAt: DateTime.parse(courseJson['updatedAt'] as String),
           duration: courseJson['duration'] as String?,
           category: courseJson['category'] as String?,
+          tag: courseJson['tag'] as String?,
           assignmentStatus: courseAssignmentStatus ?? pathAssignmentStatus,
           assignmentId: courseAssignmentId,
+          assignmentUpdatedAt: courseAssignment?['updatedAt'] as String?,
+          pdfKey: courseJson['pdfKey'] as String?,
+          pdfTitle: courseJson['pdfTitle'] as String?,
+          contentType: CourseContentType.fromString(
+            courseJson['contentType'] as String?,
+          ),
+          randomizeQuestions:
+              courseJson['randomizeQuestions'] as bool? ?? false,
+          randomizeOptions: courseJson['randomizeOptions'] as bool? ?? false,
+          useQuestionPool: courseJson['useQuestionPool'] as bool? ?? false,
+          poolSize: courseJson['poolSize'] as int?,
+          questionsToDisplay: courseJson['questionsToDisplay'] as int?,
+          lessons: ((courseJson['lessons']?['items'] as List<dynamic>?) ??
+                  const [])
+              .whereType<Map<String, dynamic>>()
+              .map(Lesson.fromJson)
+              .toList()
+            ..sort((a, b) => a.order.compareTo(b.order)),
         );
 
         // Determine course status in the path using individual assignment status
@@ -281,6 +346,10 @@ class LearningPathService {
         progressPercentage: progressPercentage,
         isCompleted: isCompleted,
         version: version,
+        assignment: assignmentModel,
+        isCertification: isCertification,
+        certificationExpirationDays: certificationExpirationDays,
+        mandatoryForScheduling: mandatoryForScheduling,
       );
     } catch (e, stackTrace) {
       safePrint('[LEARNING_PATH] ❌ Error mapping learning path: $e');

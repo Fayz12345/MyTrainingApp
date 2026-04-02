@@ -3,6 +3,7 @@ import 'package:amplify_auth_cognito/amplify_auth_cognito.dart';
 import 'package:amplify_api/amplify_api.dart';
 import 'file_logger.dart';
 import 'dart:convert';
+import '../../../models/employee_model.dart';
 
 class AuthService {
   static Future<bool> checkIsEmployee() async {
@@ -195,23 +196,37 @@ class AuthService {
     }
   }
 
-  static Future<Map<String, String?>> getEmployeeInfo() async {
-    safePrint('[AUTH_SERVICE] getEmployeeInfo() called');
+  /// Full current [Employee] row (includes [Employee.schedulingEligible] from API).
+  static Future<Employee?> getCurrentEmployee() async {
+    safePrint('[AUTH_SERVICE] getCurrentEmployee() called');
     try {
       final userId = await getCurrentUserId();
       if (userId == null) {
         safePrint('[AUTH_SERVICE] ❌ User ID is null');
-        return {'name': null, 'department': null};
+        return null;
       }
 
-      safePrint('[AUTH_SERVICE] Fetching employee data for userId: $userId');
+      safePrint('[AUTH_SERVICE] Fetching Employee for userId: $userId');
       const query = '''
-        query GetEmployeeInfo(\$userId: String!) {
+        query GetCurrentEmployee(\$userId: String!) {
           listEmployees(filter: { userId: { eq: \$userId } }) {
             items {
               id
+              userId
+              email
               name
               department
+              managerId
+              storeId
+              createdBy
+              isActive
+              transitNumber
+              institutionNumber
+              accountNumber
+              bankingDocumentKey
+              schedulingEligible
+              createdAt
+              updatedAt
             }
           }
         }
@@ -219,28 +234,43 @@ class AuthService {
 
       final request = GraphQLRequest<String>(
         document: query,
-        variables: {"userId": userId},
+        variables: {'userId': userId},
       );
 
       final response = await Amplify.API.query(request: request).response;
+      if (response.errors.isNotEmpty) {
+        safePrint(
+            '[AUTH_SERVICE] getCurrentEmployee GraphQL errors: ${response.errors}');
+      }
       final data = jsonDecode(response.data ?? '{}') as Map<String, dynamic>;
 
       final employees = data['listEmployees']?['items'] as List?;
       if (employees != null && employees.isNotEmpty) {
-        final employee = employees[0] as Map<String, dynamic>;
-        final name = employee['name'] as String?;
-        final department = employee['department'] as String?;
+        final map = employees[0] as Map<String, dynamic>;
+        final employee = Employee.fromJson(map);
         safePrint(
-            '[AUTH_SERVICE] ✅ Employee name: $name, department: $department');
-        return {'name': name, 'department': department};
+            '[AUTH_SERVICE] ✅ Employee loaded, schedulingEligible: ${employee.schedulingEligible}');
+        return employee;
       }
 
       safePrint('[AUTH_SERVICE] ⚠️ No employee record found');
-      return {'name': null, 'department': null};
+      return null;
     } catch (e) {
-      safePrint('[AUTH_SERVICE] ❌ ERROR getting employee info: $e');
+      safePrint('[AUTH_SERVICE] ❌ ERROR getCurrentEmployee: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, String?>> getEmployeeInfo() async {
+    safePrint('[AUTH_SERVICE] getEmployeeInfo() called');
+    final employee = await getCurrentEmployee();
+    if (employee == null) {
       return {'name': null, 'department': null};
     }
+    return {
+      'name': employee.name,
+      'department': employee.department,
+    };
   }
 
   static Future<void> signOut() async {

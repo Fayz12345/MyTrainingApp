@@ -13,6 +13,12 @@ import '../../services/bank_info_service.dart';
 class BankingInformationScreen extends StatefulWidget {
   const BankingInformationScreen({super.key});
 
+  static BankInfoModel? _cachedBankInfo;
+
+  static void clearCache() {
+    _cachedBankInfo = null;
+  }
+
   @override
   State<BankingInformationScreen> createState() =>
       _BankingInformationScreenState();
@@ -32,7 +38,23 @@ class _BankingInformationScreenState extends State<BankingInformationScreen> {
   @override
   void initState() {
     super.initState();
+    if (BankingInformationScreen._cachedBankInfo != null) {
+      _applyCachedBankInfo(BankingInformationScreen._cachedBankInfo!);
+      return;
+    }
     _loadBankInfo();
+  }
+
+  void _applyCachedBankInfo(BankInfoModel model) {
+    _transitController.text = model.transitNumber;
+    _institutionController.text = model.institutionNumber;
+    _accountController.text = model.accountNumber;
+    if (model.attachmentPath != null) {
+      final f = File(model.attachmentPath!);
+      if (f.existsSync()) _attachmentFile = f;
+    }
+    _isLoading = false;
+    setState(() {});
   }
 
   @override
@@ -47,6 +69,7 @@ class _BankingInformationScreenState extends State<BankingInformationScreen> {
     try {
       final model = await BankInfoService.load();
       if (mounted) {
+        BankingInformationScreen._cachedBankInfo = model;
         setState(() {
           _transitController.text = model.transitNumber;
           _institutionController.text = model.institutionNumber;
@@ -171,6 +194,7 @@ class _BankingInformationScreenState extends State<BankingInformationScreen> {
       );
       if (mounted) {
         setState(() => _isSaving = false);
+        BankingInformationScreen._cachedBankInfo = null;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Banking information saved successfully.'),

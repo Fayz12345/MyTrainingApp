@@ -3,6 +3,7 @@ import 'package:amplify_api/amplify_api.dart';
 import '../../auth/services/auth_service.dart';
 import 'dart:convert';
 import '../data/models/course_model.dart';
+import '../data/models/lesson_model.dart';
 
 class CourseService {
   static Future<List<Course>> getAssignedCourses() async {
@@ -46,6 +47,15 @@ class CourseService {
                     useQuestionPool
                     poolSize
                     questionsToDisplay
+                    lessons {
+                      items {
+                        id
+                        courseId
+                        title
+                        order
+                        contentBlocks
+                      }
+                    }
                   }
                 }
               }
@@ -209,6 +219,12 @@ class CourseService {
             useQuestionPool: courseData['useQuestionPool'] as bool? ?? false,
             poolSize: courseData['poolSize'] as int?,
             questionsToDisplay: courseData['questionsToDisplay'] as int?,
+            lessons: ((courseData['lessons']?['items'] as List<dynamic>?) ??
+                    const [])
+                .whereType<Map<String, dynamic>>()
+                .map(Lesson.fromJson)
+                .toList()
+              ..sort((a, b) => a.order.compareTo(b.order)),
           );
           courses.add(course);
 
@@ -222,8 +238,7 @@ class CourseService {
         }
       }
 
-      safePrint(
-          '[REFRESH_COURSES] [COURSE_SERVICE] [STEP 10.1] Total courses created: ${courses.length}');
+      safePrint('[REFRESH_COURSES] [COURSE_SERVICE] [STEP 10.1] Total courses created: ${courses.length}');
 
       courses.sort((a, b) {
         final statusA = a.assignmentStatus ?? '';
