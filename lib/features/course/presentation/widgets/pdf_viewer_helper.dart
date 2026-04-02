@@ -1,8 +1,6 @@
 import '../../services/pdf_progress_service.dart';
 import '../../data/models/course_model.dart';
 
-/// Helper class for PDF-related operations
-/// Provides clean separation of concerns for PDF viewing logic
 class PdfViewerHelper {
   /// Check if PDF must be viewed before quiz can be taken
   /// PDF is mandatory only when there's no video (Case 2: PDF + Quiz)

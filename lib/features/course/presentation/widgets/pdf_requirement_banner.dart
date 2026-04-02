@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/course_model.dart';
 
-/// Banner widget to inform users that PDF must be viewed before quiz
-/// Provides clear, user-friendly messaging
 class PdfRequirementBanner extends StatelessWidget {
   final Course course;
 

@@ -9,10 +9,20 @@ import '../../../../core/theme/app_colors.dart';
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
+  static NotificationsBloc? _cachedBloc;
+
+  static void clearCache() {
+    _cachedBloc?.close();
+    _cachedBloc = null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => NotificationsBloc()..add(const LoadNotifications()),
+    if (_cachedBloc == null) {
+      _cachedBloc = NotificationsBloc()..add(const LoadNotifications());
+    }
+    return BlocProvider.value(
+      value: _cachedBloc!,
       child: BlocBuilder<NotificationsBloc, NotificationsState>(
         builder: (context, state) {
           if (state is NotificationsLoading) {

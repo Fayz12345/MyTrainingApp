@@ -17,8 +17,8 @@ import 'package:go_router/go_router.dart';
 class PdfViewerScreen extends StatefulWidget {
   final Course course;
   final VoidCallback? onPdfViewed;
-  final Function(Course)?
-      onPdfViewedAndReadyForQuiz; // Callback when PDF is viewed and ready for quiz
+  final Function(Course)?onPdfViewedAndReadyForQuiz; // Callback when PDF is viewed and ready for quiz
+
 
   const PdfViewerScreen({
     super.key,
@@ -197,7 +197,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   Future<void> _markAsViewed() async {
-    if (_hasViewed) return;
+    // Course-level "already viewed" uses the same progress key as other flows.
+    // Lesson tracking uses [onPdfViewed] separately — we must still notify the
+    // parent when the PDF UI shows viewed, otherwise lesson progress stays stuck.
+    if (_hasViewed) {
+      widget.onPdfViewed?.call();
+      return;
+    }
 
     final progressKey = widget.course.assignmentId ?? widget.course.id;
     await PdfProgressService.markPdfViewed(progressKey);
@@ -623,8 +629,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   Future<bool> _onWillPop() async {
     // Check if course is already completed
     // If completed, allow direct back navigation without showing dialog
-    final bool isCourseCompleted =
-        widget.course.assignmentStatus == 'completed';
+    final bool isCourseCompleted = widget.course.assignmentStatus == 'completed';
 
     if (isCourseCompleted) {
       // Course is completed, allow direct back navigation
@@ -785,14 +790,14 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
-        if (!didPop) {
-          final shouldPop = await _onWillPop();
-          if (shouldPop && mounted) {
-            Navigator.of(context).pop();
-          }
-        }
-      },
+    //  onPopInvoked: (didPop) async {
+      //         if (!didPop) {
+      //           final shouldPop = await _onWillPop();
+      //           if (shouldPop && mounted) {
+      //             Navigator.of(context).pop();
+      //           }
+      //         }
+      //       },
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
@@ -801,10 +806,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: AppColors.textBlack87),
             onPressed: () async {
-              final shouldPop = await _onWillPop();
-              if (shouldPop && mounted) {
+              //final shouldPop = await _onWillPop();
+             // if (shouldPop && mounted) {
                 Navigator.of(context).pop();
-              }
+            //  }
             },
             tooltip: 'Back',
           ),

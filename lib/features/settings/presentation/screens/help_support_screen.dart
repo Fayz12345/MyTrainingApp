@@ -9,10 +9,20 @@ import '../../../../core/theme/app_colors.dart';
 class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});
 
+  static HelpBloc? _cachedBloc;
+
+  static void clearCache() {
+    _cachedBloc?.close();
+    _cachedBloc = null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => HelpBloc()..add(const LoadHelpContent()),
+    if (_cachedBloc == null) {
+      _cachedBloc = HelpBloc()..add(const LoadHelpContent());
+    }
+    return BlocProvider.value(
+      value: _cachedBloc!,
       child: BlocBuilder<HelpBloc, HelpState>(
         builder: (context, state) {
           if (state is HelpLoading) {

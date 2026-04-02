@@ -13,16 +13,27 @@ import '../../domain/use_cases/get_bank_info_submitted_use_case.dart';
 class AccountSettingsScreen extends StatelessWidget {
   const AccountSettingsScreen({super.key});
 
+  static SettingsBloc? _cachedBloc;
+
+  static void clearCache() {
+    _cachedBloc?.close();
+    _cachedBloc = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final dims = AppTheme.getDimensions(context);
     final horizontalPadding = dims.isTablet ? 24.0 : 15.0;
     final bottomPadding = dims.isTablet ? 24.0 : 15.0;
 
-    return BlocProvider(
-      create: (context) => SettingsBloc(
+    if (_cachedBloc == null) {
+      _cachedBloc = SettingsBloc(
         GetBankInfoSubmittedUseCase(BankInfoRepositoryImpl()),
-      )..add(const LoadSettings()),
+      )..add(const LoadSettings());
+    }
+
+    return BlocProvider.value(
+      value: _cachedBloc!,
       child: BlocBuilder<SettingsBloc, SettingsState>(
         builder: (context, state) {
           if (state is SettingsLoading) {

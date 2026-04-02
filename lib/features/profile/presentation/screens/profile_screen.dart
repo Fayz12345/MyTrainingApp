@@ -7,12 +7,17 @@ import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../course/presentation/bloc/course_bloc.dart';
 import '../../../course/data/models/course_model.dart';
 import '../../../auth/services/auth_service.dart';
+import '../../../../models/employee_model.dart';
 import '../../../course/services/video_progress_service.dart';
 import '../../../course/services/quiz_progress_service.dart';
 import '../../../course/services/quiz_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_loader.dart';
+import '../../../settings/presentation/screens/account_settings_screen.dart';
+import '../../../settings/presentation/screens/notifications_screen.dart';
+import '../../../settings/presentation/screens/help_support_screen.dart';
+import '../../../settings/presentation/screens/banking_information_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -48,27 +53,76 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
   String? _userName;
   String? _employeeFullName;
   String? _employeeDepartment;
+  /// Mirrors API `schedulingEligible`; meaningful when [_hasEmployeeRecord].
+  bool? _schedulingEligible;
+  bool _hasEmployeeRecord = false;
   bool _isLoadingUserData = true;
+
+  /// Cache so profile data is not refetched every time the tab is shown.
+  /// Reload happens when returning from Edit Profile; cache is cleared on logout.
+  static String? _cachedEmail;
+  static String? _cachedUsername;
+  static String? _cachedEmployeeFullName;
+  static String? _cachedDepartment;
+  static bool? _cachedSchedulingEligible;
+  static bool? _cachedHasEmployeeRecord;
+
+  static void _clearProfileCache() {
+    _cachedEmail = null;
+    _cachedUsername = null;
+    _cachedEmployeeFullName = null;
+    _cachedDepartment = null;
+    _cachedSchedulingEligible = null;
+    _cachedHasEmployeeRecord = null;
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    if (_cachedEmail != null ||
+        _cachedUsername != null ||
+        _cachedEmployeeFullName != null ||
+        _cachedDepartment != null ||
+        _cachedHasEmployeeRecord != null) {
+      setState(() {
+        _userEmail = _cachedEmail;
+        _userName = _cachedUsername;
+        _employeeFullName = _cachedEmployeeFullName;
+        _employeeDepartment = _cachedDepartment;
+        _schedulingEligible = _cachedSchedulingEligible;
+        _hasEmployeeRecord = _cachedHasEmployeeRecord ?? false;
+        _isLoadingUserData = false;
+      });
+    } else {
+      _loadUserData();
+    }
   }
 
   Future<void> _loadUserData() async {
+    if (!mounted) return;
+    setState(() => _isLoadingUserData = true);
     try {
       final email = await AuthService.getCurrentUserEmail();
       final username = await AuthService.getCurrentUsername();
-      final employeeInfo = await AuthService.getEmployeeInfo();
+      final Employee? employee = await AuthService.getCurrentEmployee();
+      if (!mounted) return;
+      _cachedEmail = email;
+      _cachedUsername = username;
+      _cachedEmployeeFullName = employee?.name;
+      _cachedDepartment = employee?.department;
+      _cachedSchedulingEligible = employee?.schedulingEligible;
+      _cachedHasEmployeeRecord = employee != null;
       setState(() {
         _userEmail = email;
         _userName = username;
-        _employeeFullName = employeeInfo['name'];
-        _employeeDepartment = employeeInfo['department'];
+        _employeeFullName = employee?.name;
+        _employeeDepartment = employee?.department;
+        _schedulingEligible = employee?.schedulingEligible;
+        _hasEmployeeRecord = employee != null;
         _isLoadingUserData = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingUserData = false;
       });
@@ -356,7 +410,10 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
                     stretch: true,
                     trailing: CupertinoButton(
                       padding: EdgeInsets.zero,
-                      onPressed: () => context.push('/edit-profile'),
+                      onPressed: () async {
+                        await context.push('/edit-profile');
+                        if (mounted) _loadUserData();
+                      },
                       child: Container(
                         width: 36,
                         height: 36,
@@ -392,7 +449,13 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
                       delegate: SliverChildListDelegate([
                         // User Profile Card
                         _buildProfileCard(
-                            context, displayName, _employeeDepartment, dims),
+                          context,
+                          displayName,
+                          _employeeDepartment,
+                          dims,
+                          schedulingEligible: _schedulingEligible,
+                          hasEmployeeRecord: _hasEmployeeRecord,
+                        ),
                         const SizedBox(height: 16),
                         // Learning Achievements Card
                         _buildAchievementsCard(
@@ -424,8 +487,14 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, String displayName,
-      String? department, ResponsiveDimensions dims) {
+  Widget _buildProfileCard(
+    BuildContext context,
+    String displayName,
+    String? department,
+    ResponsiveDimensions dims, {
+    bool? schedulingEligible,
+    required bool hasEmployeeRecord,
+  }) {
     return Container(
       padding: EdgeInsets.all(dims.isTablet ? 24 : 20),
       decoration: BoxDecoration(
@@ -474,6 +543,68 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
               color: Colors.grey[600],
             ),
           ),
+          if (hasEmployeeRecord) ...[
+            SizedBox(height: dims.isTablet ? 16 : 12),
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: dims.isTablet ? 14 : 12,
+                vertical: dims.isTablet ? 10 : 8,
+              ),
+              decoration: BoxDecoration(
+                color: schedulingEligible == true
+                    ? AppColors.lightGreenBackground
+                    : AppColors.lightOrangeBackground,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: schedulingEligible == true
+                      ? AppColors.completedGreen.withValues(alpha: 0.35)
+                      : AppColors.continueOrange.withValues(alpha: 0.45),
+                  width: schedulingEligible == true ? 1 : 1.5,
+                ),
+                boxShadow: schedulingEligible == true
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: AppColors.continueOrange.withValues(alpha: 0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    schedulingEligible == true
+                        ? Icons.event_available_rounded
+                        : Icons.pending_actions_rounded,
+                    size: dims.isTablet ? 20 : 18,
+                    color: schedulingEligible == true
+                        ? AppColors.completedGreen
+                        : AppColors.continueOrange,
+                  ),
+                  SizedBox(width: dims.isTablet ? 10 : 8),
+                  Flexible(
+                    child: Text(
+                      schedulingEligible == true
+                          ? 'Eligible for scheduling'
+                          : 'Scheduling eligibility pending',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize:
+                            (dims.isTablet ? 14 : 13) * dims.textScaleFactor,
+                        fontWeight: FontWeight.w800,
+                        color: schedulingEligible == true
+                            ? AppColors.completedGreen
+                            : AppColors.continueOrange,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1101,6 +1232,11 @@ class _ProfileScreenContentState extends State<ProfileScreenContent> {
                     child: ElevatedButton(
                       onPressed: () async {
                         context.pop();
+                        _clearProfileCache();
+                        AccountSettingsScreen.clearCache();
+                        NotificationsScreen.clearCache();
+                        HelpSupportScreen.clearCache();
+                        BankingInformationScreen.clearCache();
                         // Trigger logout
                         context.read<AuthBloc>().add(const SignOut());
                         // Wait a moment for state to update, then clear navigation

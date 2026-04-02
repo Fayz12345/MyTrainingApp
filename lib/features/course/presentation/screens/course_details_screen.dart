@@ -10,6 +10,7 @@ import '../../services/pdf_progress_service.dart';
 import '../../services/quiz_service.dart';
 import '../../../../core/services/activity_logger.dart';
 import '../widgets/pdf_viewer_helper.dart';
+import '../../services/lesson_completion_service.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   final Course course;
@@ -219,6 +220,24 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
   void _startQuiz(BuildContext context, Course course) async {
     if (course.assignmentId == null) return;
 
+    final lessonsOk = await LessonCompletionService.areAllLessonsCompleted(
+      course,
+    );
+    if (!lessonsOk) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Complete all lessons before starting the quiz.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      return;
+    }
+
     // Check if PDF must be viewed before quiz
     final mustViewPdf = await PdfViewerHelper.mustViewPdfBeforeQuiz(course);
 
@@ -390,7 +409,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
   Widget build(BuildContext context) {
     final course = widget.course;
     final progressKey = course.assignmentId ?? course.id;
-    final videoCompleted = _videoCompleted[progressKey] ?? false;
     final isCourseCompleted = course.assignmentStatus == 'completed';
 
     return SafeArea(
@@ -624,7 +642,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                         ),
                       ),
 
-                      // Course Content Section
+                      // Lessons Section
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Column(
@@ -633,13 +651,13 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                             const Row(
                               children: [
                                 Icon(
-                                  Icons.library_books,
+                                  Icons.menu_book_rounded,
                                   size: 24,
                                   color: AppColors.primaryBlue,
                                 ),
                                 SizedBox(width: 12),
                                 Text(
-                                  'Course Content',
+                                  'Lessons',
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
@@ -649,205 +667,92 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                               ],
                             ),
                             const SizedBox(height: 20),
-                          ],
-                        ),
-                      ),
+                            FutureBuilder<Set<String>>(
+                              key: ValueKey(
+                                'course_details_lessons_${course.assignmentId ?? course.id}_$_progressRebuildCounter',
+                              ),
+                              future: LessonCompletionService.getCompletedLessonIds(
+                                progressKey,
+                              ),
+                              builder: (context, lessonSnapshot) {
+                                final doneIds = lessonSnapshot.data ?? <String>{};
+                                final sortedLessons = [...course.lessons]
+                                  ..sort((a, b) => a.order.compareTo(b.order));
+                                final allLessonsCompleted = sortedLessons.isNotEmpty &&
+                                    sortedLessons.every(
+                                      (lesson) => doneIds.contains(lesson.id),
+                                    );
 
-                      // Content Cards
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: FutureBuilder<bool>(
-                          future: _hasQuiz(course),
-                          builder: (context, quizSnapshot) {
-                            final hasQuiz = quizSnapshot.data ?? false;
-                            final hasVideo = course.hasVideo;
-                            final hasPdf = course.hasPdf;
-
-                            // Determine cases
-                            final isCase1 = hasVideo && hasQuiz && !hasPdf;
-                            final isCase2 = hasPdf && hasQuiz && !hasVideo;
-                            final isCase3 = hasVideo && hasPdf && hasQuiz;
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                // Case 1: Video + Quiz (No PDF)
-                                if (isCase1) ...[
-                                  _buildEnhancedContentCard(
-                                    context: context,
-                                    icon: Icons.play_circle_filled,
-                                    title: 'Video Training',
-                                    subtitle:
-                                        'Watch the training video to learn',
-                                    color: AppColors.primaryBlue,
-                                    onTap: () => _startVideo(context, course),
-                                    isCompleted: videoCompleted,
+                                return Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.05),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
-                                  if (isCourseCompleted) ...[
-                                    const SizedBox(height: 16),
-                                    _buildEnhancedContentCard(
-                                      context: context,
-                                      icon: Icons.quiz,
-                                      title: 'Quiz Assessment',
-                                      subtitle: 'Test your knowledge',
-                                      color: AppColors.primaryBlue,
-                                      onTap: () => _startQuiz(context, course),
-                                      isCompleted: false,
-                                    ),
-                                  ],
-                                ],
-
-                                // Case 2: PDF + Quiz (No Video)
-                                // Quiz shows if: course is completed OR PDF is viewed
-                                if (isCase2) ...[
-                                  FutureBuilder<bool>(
-                                    future: PdfProgressService.hasViewedPdf(
-                                        progressKey),
-                                    builder: (context, pdfSnapshot) {
-                                      final pdfViewed =
-                                          pdfSnapshot.data ?? false;
-                                      // Quiz is visible if course is completed OR PDF is viewed
-                                      final showQuiz =
-                                          isCourseCompleted || pdfViewed;
-                                      return Column(
-                                        children: [
-                                          _buildEnhancedContentCard(
-                                            context: context,
-                                            icon: Icons.picture_as_pdf,
-                                            title: 'PDF Document',
-                                            subtitle: pdfViewed
-                                                ? 'Document reviewed'
-                                                : 'Review the document (Required)',
-                                            color: Colors.red[600]!,
-                                            onTap: () =>
-                                                _openPdfViewer(context, course),
-                                            isCompleted: pdfViewed,
-                                            isRequired: true,
-                                            pdfViewed: pdfViewed,
-                                          ),
-                                          if (showQuiz) ...[
-                                            const SizedBox(height: 16),
-                                            _buildEnhancedContentCard(
-                                              context: context,
-                                              icon: Icons.quiz,
-                                              title: 'Quiz Assessment',
-                                              subtitle: pdfViewed
-                                                  ? 'Test your knowledge'
-                                                  : 'View PDF first (Required)',
-                                              color: AppColors.primaryBlue,
-                                              onTap: () =>
-                                                  _startQuiz(context, course),
-                                              isCompleted: false,
-                                              isDisabled: !pdfViewed,
-                                            ),
-                                          ],
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ],
-
-                                // Case 3: Video + PDF + Quiz
-                                if (isCase3) ...[
-                                  _buildEnhancedContentCard(
-                                    context: context,
-                                    icon: Icons.play_circle_filled,
-                                    title: 'Video Training',
-                                    subtitle:
-                                        'Watch the training video to learn',
-                                    color: AppColors.primaryBlue,
-                                    onTap: () => _startVideo(context, course),
-                                    isCompleted: videoCompleted,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  FutureBuilder<bool>(
-                                    future: PdfProgressService.hasViewedPdf(
-                                        progressKey),
-                                    builder: (context, pdfSnapshot) {
-                                      final pdfViewed =
-                                          pdfSnapshot.data ?? false;
-                                      return _buildEnhancedContentCard(
-                                        context: context,
-                                        icon: Icons.picture_as_pdf,
-                                        title: 'PDF Document',
-                                        subtitle: pdfViewed
-                                            ? 'Document reviewed'
-                                            : 'Additional reference',
-                                        color: Colors.red[600]!,
-                                        onTap: () =>
-                                            _openPdfViewer(context, course),
-                                        isCompleted: pdfViewed,
-                                        isOptional: true,
-                                      );
-                                    },
-                                  ),
-                                  if (isCourseCompleted) ...[
-                                    const SizedBox(height: 16),
-                                    _buildEnhancedContentCard(
-                                      context: context,
-                                      icon: Icons.quiz,
-                                      title: 'Quiz Assessment',
-                                      subtitle: 'Test your knowledge',
-                                      color: AppColors.primaryBlue,
-                                      onTap: () => _startQuiz(context, course),
-                                      isCompleted: false,
-                                    ),
-                                  ],
-                                ],
-
-                                // Fallback for other cases
-                                if (!isCase1 && !isCase2 && !isCase3) ...[
-                                  if (hasVideo)
-                                    _buildEnhancedContentCard(
-                                      context: context,
-                                      icon: Icons.play_circle_filled,
-                                      title: 'Video Training',
-                                      subtitle: 'Watch the training video',
-                                      color: AppColors.primaryBlue,
-                                      onTap: () => _startVideo(context, course),
-                                      isCompleted: videoCompleted,
-                                    ),
-                                  if (hasVideo && hasPdf)
-                                    const SizedBox(height: 16),
-                                  if (hasPdf)
-                                    FutureBuilder<bool>(
-                                      future: PdfProgressService.hasViewedPdf(
-                                          progressKey),
-                                      builder: (context, pdfSnapshot) {
-                                        final pdfViewed =
-                                            pdfSnapshot.data ?? false;
-                                        return _buildEnhancedContentCard(
+                                  child: Column(
+                                    children: [
+                                      for (var i = 0; i < sortedLessons.length; i++) ...[
+                                        _buildLessonItem(
                                           context: context,
-                                          icon: Icons.picture_as_pdf,
-                                          title: 'PDF Document',
-                                          subtitle: pdfViewed
-                                              ? 'Document reviewed ✓'
-                                              : 'View PDF document',
-                                          color: Colors.red[600]!,
-                                          onTap: () =>
-                                              _openPdfViewer(context, course),
-                                          isCompleted: pdfViewed,
-                                        );
-                                      },
-                                    ),
-                                  if ((hasVideo || hasPdf) &&
-                                      hasQuiz &&
-                                      isCourseCompleted)
-                                    const SizedBox(height: 16),
-                                  if (hasQuiz && isCourseCompleted)
-                                    _buildEnhancedContentCard(
-                                      context: context,
-                                      icon: Icons.quiz,
-                                      title: 'Quiz Assessment',
-                                      subtitle: 'Test your knowledge',
-                                      color: AppColors.primaryBlue,
-                                      onTap: () => _startQuiz(context, course),
-                                      isCompleted: false,
-                                    ),
-                                ],
-                              ],
-                            );
-                          },
+                                          title: sortedLessons[i].title,
+                                          index: i + 1,
+                                          isCompleted: doneIds.contains(sortedLessons[i].id),
+                                          onTap: () async {
+                                            await context.push(
+                                              '/lesson-details',
+                                              extra: {
+                                                'lesson': sortedLessons[i],
+                                                'course': course,
+                                              },
+                                            );
+                                            await _refreshProgress();
+                                          },
+                                        ),
+                                        if (i < sortedLessons.length - 1)
+                                          Divider(
+                                            height: 20,
+                                            color: AppColors.borderLightGray,
+                                          ),
+                                      ],
+                                      if (sortedLessons.isNotEmpty)
+                                        Divider(
+                                          height: 20,
+                                          color: AppColors.borderLightGray,
+                                        ),
+                                      FutureBuilder<bool>(
+                                        future: _hasQuiz(course),
+                                        builder: (context, quizSnapshot) {
+                                          if (!(quizSnapshot.data ?? false)) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return _buildLessonItem(
+                                            context: context,
+                                            title: 'Quiz Assessment',
+                                            index: sortedLessons.length + 1,
+                                            isCompleted: isCourseCompleted,
+                                            isDisabled: !allLessonsCompleted,
+                                            subtitle: allLessonsCompleted
+                                                ? 'Test your knowledge'
+                                                : 'Complete all lessons to unlock',
+                                            icon: Icons.quiz,
+                                            onTap: () => _startQuiz(context, course),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
 
@@ -921,6 +826,106 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     ],
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLessonItem({
+    required BuildContext context,
+    required String title,
+    required int index,
+    required VoidCallback onTap,
+    bool isCompleted = false,
+    bool isDisabled = false,
+    String? subtitle,
+    IconData? icon,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isDisabled ? null : onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? AppColors.completedGreen.withOpacity(0.12)
+                      : AppColors.lightBlueBackground,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isCompleted
+                        ? AppColors.completedGreen.withOpacity(0.35)
+                        : AppColors.borderLightGray,
+                  ),
+                ),
+                child: Center(
+                  child: isCompleted
+                      ? const Icon(
+                          Icons.check,
+                          size: 18,
+                          color: AppColors.completedGreen,
+                        )
+                      : icon != null
+                          ? Icon(
+                              icon,
+                              size: 18,
+                              color: isDisabled
+                                  ? AppColors.grey(400)
+                                  : AppColors.primaryBlue,
+                            )
+                          : Text(
+                              '$index',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: isDisabled
+                                    ? AppColors.grey(400)
+                                    : AppColors.primaryBlue,
+                              ),
+                            ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isDisabled
+                            ? AppColors.grey(400)
+                            : AppColors.textBlack87,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDisabled
+                              ? AppColors.grey(400)
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: isDisabled ? AppColors.grey(350) : AppColors.grey(500),
               ),
             ],
           ),

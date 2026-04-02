@@ -7,11 +7,15 @@ import '../../features/auth/presentation/screens/verification_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/auth/presentation/screens/account_created_success_screen.dart';
+import '../../features/course/data/models/lesson_model.dart';
 import '../../features/video_player/presentation/screens/video_player_screen.dart';
 import '../../features/quiz/presentation/screens/quiz_screen.dart';
 import '../../features/learning_path/presentation/screens/learning_path_progress_screen.dart';
 import '../../features/course/presentation/screens/pdf_viewer_screen.dart';
 import '../../features/course/presentation/screens/course_details_screen.dart';
+import '../../features/course/presentation/screens/lesson_details_screen.dart';
+import '../../features/course/presentation/bloc/lesson_details/lesson_details_bloc.dart';
+import '../../features/course/presentation/screens/lesson_video_player_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/settings/presentation/screens/account_settings_screen.dart';
 import '../../features/settings/presentation/screens/banking_information_screen.dart';
@@ -38,8 +42,7 @@ class CustomTransitionPage<T> extends Page<T> {
     Animation<double>,
     Animation<double>,
     Widget,
-  )?
-  transitionsBuilder;
+  )? transitionsBuilder;
 
   const CustomTransitionPage({
     required super.key,
@@ -52,8 +55,7 @@ class CustomTransitionPage<T> extends Page<T> {
     return PageRouteBuilder<T>(
       settings: this,
       pageBuilder: (context, animation, secondaryAnimation) => child,
-      transitionsBuilder:
-          transitionsBuilder ??
+      transitionsBuilder: transitionsBuilder ??
           (context, animation, secondaryAnimation, child) {
             // Default smooth fade + slide transition
             return FadeTransition(
@@ -62,16 +64,15 @@ class CustomTransitionPage<T> extends Page<T> {
                 curve: Curves.easeOutCubic,
               ),
               child: SlideTransition(
-                position:
-                    Tween<Offset>(
-                      begin: const Offset(0.0, 0.05),
-                      end: Offset.zero,
-                    ).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    ),
+                position: Tween<Offset>(
+                  begin: const Offset(0.0, 0.05),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
                 child: child,
               ),
             );
@@ -250,23 +251,83 @@ class AppRouter {
               child: CourseDetailsScreen(course: course),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0.0, 0.05),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
-                        child: child,
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.05),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
                       ),
-                    );
-                  },
+                    ),
+                    child: child,
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        GoRoute(
+          path: '/lesson-details',
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            if (extra == null) {
+              return const MaterialPage(
+                child: Scaffold(
+                  body: Center(child: Text('Extra data not found')),
+                ),
+              );
+            }
+            final lesson = extra['lesson'] as Lesson?;
+            final course = extra['course'] as Course?;
+            if (lesson == null || course == null) {
+              return const MaterialPage(
+                child: Scaffold(
+                  body: Center(child: Text('Lesson or Course not found')),
+                ),
+              );
+            }
+            return CustomTransitionPage(
+              key: state.pageKey,
+              child: BlocProvider(
+                create: (_) => LessonDetailsBloc()
+                  ..add(LessonDetailsStarted(lesson: lesson, course: course)),
+                child: const LessonDetailsScreen(),
+              ),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/lesson-video-player',
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            if (extra == null) {
+              return const MaterialPage(
+                child: Scaffold(
+                  body: Center(child: Text('Lesson video data not found')),
+                ),
+              );
+            }
+            final course = extra['course'] as Course?;
+            final lesson = extra['lesson'] as Lesson?;
+            final videoKey = extra['videoKey'] as String?;
+            if (course == null || lesson == null || videoKey == null) {
+              return const MaterialPage(
+                child: Scaffold(
+                  body: Center(child: Text('Lesson video data incomplete')),
+                ),
+              );
+            }
+            return CustomTransitionPage(
+              key: state.pageKey,
+              child: LessonVideoPlayerScreen(
+                course: course,
+                lesson: lesson,
+                videoKey: videoKey,
+              ),
             );
           },
         ),
@@ -275,11 +336,13 @@ class AppRouter {
           pageBuilder: (context, state) {
             // Handle both Course object and Map with course + callback
             Course? course;
+            VoidCallback? onPdfViewed;
             Function(Course)? onPdfViewedAndReadyForQuiz;
 
             if (state.extra is Map) {
               final extra = state.extra as Map<String, dynamic>;
               course = extra['course'] as Course?;
+              onPdfViewed = extra['onPdfViewed'] as VoidCallback?;
               onPdfViewedAndReadyForQuiz =
                   extra['onPdfViewedAndReadyForQuiz'] as Function(Course)?;
             } else {
@@ -297,30 +360,27 @@ class AppRouter {
               key: state.pageKey,
               child: PdfViewerScreen(
                 course: course,
-                onPdfViewed: () {
-                  // PDF was viewed, can trigger any callbacks if needed
-                },
+                onPdfViewed: onPdfViewed,
                 onPdfViewedAndReadyForQuiz: onPdfViewedAndReadyForQuiz,
               ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0.0, 0.05),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
-                        child: child,
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.05),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
                       ),
-                    );
-                  },
+                    ),
+                    child: child,
+                  ),
+                );
+              },
             );
           },
         ),
@@ -337,8 +397,7 @@ class AppRouter {
             }
             final course = extra['course'] as Course?;
             final assignmentId = extra['assignmentId'] as String?;
-            final source =
-                extra['source'] as String? ??
+            final source = extra['source'] as String? ??
                 'course_list'; // Default to course_list if not specified
             final learningPath = extra['learningPath'] as LearningPath?;
             if (course == null || assignmentId == null) {
@@ -396,10 +455,10 @@ class AppRouter {
                       if (navigatorContext != null &&
                           navigatorContext.mounted) {
                         try {
-                          final courseBloc = navigatorContext
-                              .read<CourseBloc>();
-                          final learningPathBloc = navigatorContext
-                              .read<LearningPathBloc>();
+                          final courseBloc =
+                              navigatorContext.read<CourseBloc>();
+                          final learningPathBloc =
+                              navigatorContext.read<LearningPathBloc>();
 
                           safePrint(
                             '[QUIZ_NAVIGATION] ✅ BLoCs found, triggering refresh...',
@@ -483,23 +542,22 @@ class AppRouter {
               ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0.0, 0.1),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
-                        child: child,
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.1),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
                       ),
-                    );
-                  },
+                    ),
+                    child: child,
+                  ),
+                );
+              },
             );
           },
         ),
@@ -558,23 +616,22 @@ class AppRouter {
               ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0.0, 0.05),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
-                        child: child,
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.05),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
                       ),
-                    );
-                  },
+                    ),
+                    child: child,
+                  ),
+                );
+              },
             );
           },
         ),

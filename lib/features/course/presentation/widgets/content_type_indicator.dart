@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/course_model.dart';
 
-/// Widget to display content type indicators (Video, PDF, or Both)
-/// Provides clear visual feedback about course content types
 class ContentTypeIndicator extends StatelessWidget {
   final Course course;
   final bool showLabels;
