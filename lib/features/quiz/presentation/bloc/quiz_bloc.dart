@@ -441,21 +441,25 @@ class QuizBloc extends Bloc<QuizEvent, QuizState> {
         print('>>> QuizBloc: Starting quiz from beginning');
       }
 
-      emit(QuizLoaded(
+      final loadedState = QuizLoaded(
         questions: displayQuestions, // Shuffled questions for display
         answers: savedAnswers,
         textAnswers: savedTextAnswers,
         currentQuestionIndex: startIndex.clamp(0, displayQuestions.length - 1),
-      ));
+      );
+      emit(loadedState);
+      if (_currentProgressKey != null) {
+        await _saveProgress(loadedState);
+      }
     } catch (e) {
       emit(QuizError(e.toString()));
     }
   }
 
-  void _onSelectAnswer(
+  Future<void> _onSelectAnswer(
     SelectAnswer event,
     Emitter<QuizState> emit,
-  ) {
+  ) async {
     if (state is QuizLoaded) {
       final currentState = state as QuizLoaded;
       if (event.questionIndex >= 0 &&
@@ -477,15 +481,15 @@ class QuizBloc extends Bloc<QuizEvent, QuizState> {
         emit(newState);
 
         // Save progress after answer is selected
-        _saveProgress(newState);
+        await _saveProgress(newState);
       }
     }
   }
 
-  void _onSelectTextAnswer(
+  Future<void> _onSelectTextAnswer(
     SelectTextAnswer event,
     Emitter<QuizState> emit,
-  ) {
+  ) async {
     if (state is QuizLoaded) {
       final currentState = state as QuizLoaded;
       if (event.questionIndex >= 0 &&
@@ -513,7 +517,7 @@ class QuizBloc extends Bloc<QuizEvent, QuizState> {
         emit(newState);
 
         // Save progress after answer is entered
-        _saveProgress(newState);
+        await _saveProgress(newState);
       }
     }
   }
@@ -538,14 +542,15 @@ class QuizBloc extends Bloc<QuizEvent, QuizState> {
         questionOrder:
             _questionOrderMapping, // Save question order for randomized quizzes
         optionOrders: optionOrders, // Save option orders for randomized options
+        selectedQuestionIds: _selectedQuestionIds,
       );
     }
   }
 
-  void _onNextQuestion(
+  Future<void> _onNextQuestion(
     NextQuestion event,
     Emitter<QuizState> emit,
-  ) {
+  ) async {
     if (state is QuizLoaded) {
       final currentState = state as QuizLoaded;
       if (currentState.currentQuestionIndex <
@@ -554,21 +559,23 @@ class QuizBloc extends Bloc<QuizEvent, QuizState> {
           currentQuestionIndex: currentState.currentQuestionIndex + 1,
         );
         emit(newState);
-        _saveProgress(newState);
+        await _saveProgress(newState);
       }
     }
   }
 
-  void _onPreviousQuestion(
+  Future<void> _onPreviousQuestion(
     PreviousQuestion event,
     Emitter<QuizState> emit,
-  ) {
+  ) async {
     if (state is QuizLoaded) {
       final currentState = state as QuizLoaded;
       if (currentState.currentQuestionIndex > 0) {
-        emit(currentState.copyWith(
+        final newState = currentState.copyWith(
           currentQuestionIndex: currentState.currentQuestionIndex - 1,
-        ));
+        );
+        emit(newState);
+        await _saveProgress(newState);
       }
     }
   }

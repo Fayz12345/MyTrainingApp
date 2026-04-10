@@ -2,8 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:amplify_flutter/amplify_flutter.dart' hide Emitter;
 import 'bloc_error_handler.dart';
 
-/// Mixin for BLoCs that load and refresh data
-/// Provides common patterns for Load and Refresh operations
+
 mixin DataBlocMixin<Event, State, T> on Bloc<Event, State>, BlocErrorHandler<Event, State> {
   /// Name of the BLoC for logging (override in implementing class)
   String get blocName;

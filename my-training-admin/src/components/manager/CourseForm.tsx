@@ -398,9 +398,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
   };
 
   const addQuizQuestion = () => {
-    if (quiz.length < 10) {
-      setQuiz([...quiz, { question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
-    }
+    setQuiz((prev) => [...prev, { question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
   };
 
   const handleQuestionTypeChange = (questionIndex: number, newType: 'multiple_choice' | 'true_false' | 'fill_blank') => {
@@ -1591,15 +1589,13 @@ const CourseForm: React.FC<CourseFormProps> = ({ course, onSuccess, onCancel }) 
               <button
                 type="button"
                 onClick={addQuizQuestion}
-                disabled={quiz.length >= 10}
                 style={{
                   padding: '0.5rem 1rem',
                   backgroundColor: '#1976d2',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
-                  cursor: quiz.length >= 10 ? 'not-allowed' : 'pointer',
-                  opacity: quiz.length >= 10 ? 0.6 : 1
+                  cursor: 'pointer',
                 }}
               >
                 Add Question

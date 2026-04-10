@@ -12,9 +12,10 @@ String formatLearningPathDueDate(DateTime date) {
   return '${date.month}/${date.day}/${date.year}';
 }
 
-/// Learning paths block for the course list home scroll (reads [LearningPathBloc]).
-class LearningPathsCourseListSection extends StatelessWidget {
-  const LearningPathsCourseListSection({super.key});
+/// Incomplete training paths for the home course list (reads [LearningPathBloc]).
+/// Completed paths are rendered under **Completed Training** in [CourseListScreen].
+class TrainingPathsSection extends StatelessWidget {
+  const TrainingPathsSection({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -24,21 +25,7 @@ class LearningPathsCourseListSection extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Builder(
-                builder: (context) {
-                  final dims = AppTheme.getDimensions(context);
-                  final isTablet = dims.isTablet;
-                  final isSmallScreen = dims.isSmallScreen;
-                  return Text(
-                    'My Learning Paths',
-                    style: TextStyle(
-                      fontSize: isTablet ? 24 : (isSmallScreen ? 18 : 20),
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textBlack87,
-                    ),
-                  );
-                },
-              ),
+              _trainingPathsSectionTitle(context),
               SizedBox(
                 height: AppTheme.getDimensions(context).isSmallScreen ? 10 : 12,
               ),
@@ -52,89 +39,30 @@ class LearningPathsCourseListSection extends StatelessWidget {
         }
 
         if (state is LearningPathLoaded) {
-          final allPaths = state.paths;
-          if (allPaths.isEmpty) {
+          final activePaths =
+              state.paths.where((path) => !path.isCompleted).toList();
+          if (activePaths.isEmpty) {
             return const SizedBox.shrink();
           }
-
-          final activePaths =
-              allPaths.where((path) => !path.isCompleted).toList();
-          final completedPaths =
-              allPaths.where((path) => path.isCompleted).toList();
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (activePaths.isNotEmpty) ...[
-                Builder(
-                  builder: (context) {
-                    final dims = AppTheme.getDimensions(context);
-                    final isTablet = dims.isTablet;
-                    final isSmallScreen = dims.isSmallScreen;
-                    return Text(
-                      'My Learning Paths',
-                      style: TextStyle(
-                        fontSize: isTablet ? 24 : (isSmallScreen ? 18 : 20),
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textBlack87,
-                      ),
-                    );
-                  },
-                ),
-                SizedBox(
-                  height:
-                      AppTheme.getDimensions(context).isSmallScreen ? 10 : 12,
-                ),
-                ...activePaths.map((path) {
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom: AppTheme.getDimensions(context).isSmallScreen
-                          ? 10
-                          : 12,
-                    ),
-                    child: LearningPathSummaryCard(path: path),
-                  );
-                }),
-              ],
-              if (completedPaths.isNotEmpty) ...[
-                if (activePaths.isNotEmpty)
-                  SizedBox(
-                    height:
-                        AppTheme.getDimensions(context).isSmallScreen ? 16 : 24,
+              _trainingPathsSectionTitle(context),
+              SizedBox(
+                height:
+                    AppTheme.getDimensions(context).isSmallScreen ? 10 : 12,
+              ),
+              ...activePaths.map((path) {
+                return Padding(
+                  padding: EdgeInsets.only(
+                    bottom: AppTheme.getDimensions(context).isSmallScreen
+                        ? 10
+                        : 12,
                   ),
-                Builder(
-                  builder: (context) {
-                    final dims = AppTheme.getDimensions(context);
-                    final isTablet = dims.isTablet;
-                    final isSmallScreen = dims.isSmallScreen;
-                    return Text(
-                      'Completed Training',
-                      style: TextStyle(
-                        fontSize: isTablet ? 24 : (isSmallScreen ? 18 : 20),
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textBlack87,
-                      ),
-                    );
-                  },
-                ),
-                SizedBox(
-                  height:
-                      AppTheme.getDimensions(context).isSmallScreen ? 10 : 12,
-                ),
-                ...completedPaths.map((path) {
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom: AppTheme.getDimensions(context).isSmallScreen
-                          ? 10
-                          : 12,
-                    ),
-                    child: LearningPathSummaryCard(
-                      path: path,
-                      isCompleted: true,
-                    ),
-                  );
-                }),
-              ],
+                  child: LearningPathSummaryCard(path: path),
+                );
+              }),
             ],
           );
         }
@@ -143,6 +71,20 @@ class LearningPathsCourseListSection extends StatelessWidget {
       },
     );
   }
+}
+
+Widget _trainingPathsSectionTitle(BuildContext context) {
+  final dims = AppTheme.getDimensions(context);
+  final isTablet = dims.isTablet;
+  final isSmallScreen = dims.isSmallScreen;
+  return Text(
+    'Training Paths',
+    style: TextStyle(
+      fontSize: isTablet ? 24 : (isSmallScreen ? 18 : 20),
+      fontWeight: FontWeight.bold,
+      color: AppColors.textBlack87,
+    ),
+  );
 }
 
 class LearningPathSummaryCard extends StatelessWidget {

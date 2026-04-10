@@ -24,6 +24,7 @@ dependencies:
   
   # UI
   cupertino_icons: ^1.0.6
+  flutter_html: ^3.0.0
   
   # State Management
   flutter_bloc: ^8.1.6
