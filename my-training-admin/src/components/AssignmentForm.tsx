@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../amplify/data/resource';
@@ -33,6 +33,37 @@ const AssignmentForm: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [courseSearch, setCourseSearch] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
+
+  const activeEmployees = useMemo(
+    () => employees.filter((emp) => emp.isActive !== false),
+    [employees]
+  );
+
+  const filteredEmployees = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase();
+    if (!q) return activeEmployees;
+    return activeEmployees.filter(
+      (emp) =>
+        (emp.name || '').toLowerCase().includes(q) ||
+        (emp.email || '').toLowerCase().includes(q) ||
+        (emp.department || '').toLowerCase().includes(q)
+    );
+  }, [activeEmployees, employeeSearch]);
+
+  const displayEmployees = useMemo(() => {
+    const selected = activeEmployees.find((e) => e.id === selectedEmployeeId);
+    if (!selected) return filteredEmployees;
+    if (filteredEmployees.some((e) => e.id === selected.id)) return filteredEmployees;
+    return [selected, ...filteredEmployees];
+  }, [activeEmployees, filteredEmployees, selectedEmployeeId]);
+
+  const filteredCourses = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courses;
+    return courses.filter((c) => (c.title || '').toLowerCase().includes(q));
+  }, [courses, courseSearch]);
 
   const fetchData = async () => {
     try {
@@ -146,6 +177,8 @@ const AssignmentForm: React.FC = () => {
       // Reset form
       setSelectedEmployeeId('');
       setSelectedCourseIds([]);
+      setCourseSearch('');
+      setEmployeeSearch('');
     } catch (err) {
       console.error('Error creating assignments:', err);
       alert('Failed to create assignments: ' + (err instanceof Error ? err.message : 'Unknown error'));
@@ -198,29 +231,74 @@ const AssignmentForm: React.FC = () => {
               No employees found. You'll need to add employees first.
             </p>
           ) : (
-            <select
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            <div
               style={{
-                width: '100%',
-                padding: '0.75rem',
                 border: '1px solid #ccc',
                 borderRadius: '4px',
-                fontSize: '1rem'
+                padding: '1rem',
               }}
-              required
             >
-              <option value="">Choose an employee...</option>
-              {employees
-                .filter(emp => emp.isActive !== false)
-                .map(employee => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name} ({employee.email})
-                    {employee.department && ` - ${employee.department}`}
-                  </option>
-                ))
-              }
-            </select>
+              <label htmlFor="employee-search-legacy" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#555' }}>
+                Search employees
+              </label>
+              <input
+                id="employee-search-legacy"
+                type="search"
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                placeholder="Type name, email, or department…"
+                autoComplete="off"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.75rem',
+                  marginBottom: '0.75rem',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  fontSize: '1rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                {displayEmployees.length === 0 ? (
+                  <p style={{ color: '#666', fontStyle: 'italic', margin: '0.5rem 0' }}>
+                    {employeeSearch.trim()
+                      ? 'No employees match your search. Try a different name or email.'
+                      : 'No active employees to show.'}
+                  </p>
+                ) : (
+                  displayEmployees.map((employee) => (
+                    <div
+                      key={employee.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        marginBottom: '0.75rem',
+                        padding: '0.75rem',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '4px',
+                        backgroundColor: selectedEmployeeId === employee.id ? '#f0f8ff' : 'white',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="assign-employee-legacy"
+                        id={`employee-legacy-${employee.id}`}
+                        checked={selectedEmployeeId === employee.id}
+                        onChange={() => setSelectedEmployeeId(employee.id)}
+                        style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
+                      />
+                      <label htmlFor={`employee-legacy-${employee.id}`} style={{ flex: 1, cursor: 'pointer' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>{employee.name}</div>
+                        <div style={{ fontSize: '0.9rem', color: '#666' }}>{employee.email}</div>
+                        {employee.department && (
+                          <div style={{ fontSize: '0.8rem', color: '#999' }}>{employee.department}</div>
+                        )}
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -234,43 +312,74 @@ const AssignmentForm: React.FC = () => {
               No courses found. Create courses first before assigning them.
             </p>
           ) : (
-            <div style={{ 
-              border: '1px solid #ccc', 
-              borderRadius: '4px', 
-              maxHeight: '300px', 
-              overflowY: 'auto',
-              padding: '1rem'
-            }}>
-              {courses.map(course => (
-                <div key={course.id} style={{ 
-                  display: 'flex', 
-                  alignItems: 'flex-start', 
-                  marginBottom: '1rem',
-                  padding: '0.75rem',
-                  border: '1px solid #e0e0e0',
+            <div
+              style={{
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                padding: '1rem',
+              }}
+            >
+              <label htmlFor="course-search-legacy" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#555' }}>
+                Search courses
+              </label>
+              <input
+                id="course-search-legacy"
+                type="search"
+                value={courseSearch}
+                onChange={(e) => setCourseSearch(e.target.value)}
+                placeholder="Type to filter by course title…"
+                autoComplete="off"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.75rem',
+                  marginBottom: '0.75rem',
+                  border: '1px solid #ccc',
                   borderRadius: '4px',
-                  backgroundColor: selectedCourseIds.includes(course.id) ? '#f0f8ff' : 'white'
-                }}>
-                  <input
-                    type="checkbox"
-                    id={`course-${course.id}`}
-                    checked={selectedCourseIds.includes(course.id)}
-                    onChange={(e) => handleCourseSelection(course.id, e.target.checked)}
-                    style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
-                  />
-                  <label htmlFor={`course-${course.id}`} style={{ flex: 1, cursor: 'pointer' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                      {course.title}
+                  fontSize: '1rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                {filteredCourses.length === 0 ? (
+                  <p style={{ color: '#666', fontStyle: 'italic', margin: '0.5rem 0' }}>
+                    {courseSearch.trim()
+                      ? 'No courses match your search. Try a different title.'
+                      : 'No courses to show.'}
+                  </p>
+                ) : (
+                  filteredCourses.map((course) => (
+                    <div
+                      key={course.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        marginBottom: '1rem',
+                        padding: '0.75rem',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '4px',
+                        backgroundColor: selectedCourseIds.includes(course.id) ? '#f0f8ff' : 'white',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        id={`course-${course.id}`}
+                        checked={selectedCourseIds.includes(course.id)}
+                        onChange={(e) => handleCourseSelection(course.id, e.target.checked)}
+                        style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
+                      />
+                      <label htmlFor={`course-${course.id}`} style={{ flex: 1, cursor: 'pointer' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>{course.title}</div>
+                        <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                          Passing Score: {course.passingScore ?? 'Not set'}%
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#999' }}>
+                          Created: {new Date(course.createdAt).toLocaleDateString()}
+                        </div>
+                      </label>
                     </div>
-                    <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                      Passing Score: {course.passingScore ?? 'Not set'}%
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: '#999' }}>
-                      Created: {new Date(course.createdAt).toLocaleDateString()}
-                    </div>
-                  </label>
-                </div>
-              ))}
+                  ))
+                )}
+              </div>
             </div>
           )}
           {selectedCourseIds.length > 0 && (

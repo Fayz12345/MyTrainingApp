@@ -341,42 +341,44 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
           </Box>
         ) : (
           <>
-            <List dense disablePadding>
-              {groupedStruggling.map((group: GroupedStrugglingRow) => (
-                <React.Fragment key={group.employee.id}>
-                  <ListItem sx={{ px: 0, alignItems: 'flex-start' }}>
-                    <Avatar sx={{ width: 32, height: 32, mr: 1, mt: 0.25 }}>
-                      <PersonIcon fontSize="small" />
-                    </Avatar>
-                    <ListItemText
-                      primary={
-                        <Typography variant="body2" fontWeight="medium">
-                          {group.employee.name?.trim() || group.employee.email}
-                        </Typography>
-                      }
-                      secondary={
-                        <Box component="div" sx={{ mt: 0.5 }}>
-                          {group.courses.map((row: GroupedStrugglingCourseEntry) => (
-                            <Box
-                              key={row.course.id}
-                              sx={{ mb: group.courses.length > 1 ? 1 : 0, '&:last-of-type': { mb: 0 } }}
-                            >
-                              <Typography variant="caption" display="block" color="text.secondary">
-                                {row.course.title}
-                              </Typography>
-                              <Typography variant="caption" color="error" display="block">
-                                {row.reason}
-                              </Typography>
-                            </Box>
-                          ))}
-                        </Box>
-                      }
-                      secondaryTypographyProps={{ component: 'div' }}
-                    />
-                  </ListItem>
-                </React.Fragment>
-              ))}
-            </List>
+            <Box sx={{ maxHeight: 320, overflowY: 'auto', pr: 1 }}>
+              <List dense disablePadding>
+                {groupedStruggling.map((group: GroupedStrugglingRow) => (
+                  <React.Fragment key={group.employee.id}>
+                    <ListItem sx={{ px: 0, alignItems: 'flex-start' }}>
+                      <Avatar sx={{ width: 32, height: 32, mr: 1, mt: 0.25 }}>
+                        <PersonIcon fontSize="small" />
+                      </Avatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" fontWeight="medium">
+                            {group.employee.name?.trim() || group.employee.email}
+                          </Typography>
+                        }
+                        secondary={
+                          <Box component="div" sx={{ mt: 0.5 }}>
+                            {group.courses.map((row: GroupedStrugglingCourseEntry) => (
+                              <Box
+                                key={row.course.id}
+                                sx={{ mb: group.courses.length > 1 ? 1 : 0, '&:last-of-type': { mb: 0 } }}
+                              >
+                                <Typography variant="caption" display="block" color="text.secondary">
+                                  {row.course.title}
+                                </Typography>
+                                <Typography variant="caption" color="error" display="block">
+                                  {row.reason}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        }
+                        secondaryTypographyProps={{ component: 'div' }}
+                      />
+                    </ListItem>
+                  </React.Fragment>
+                ))}
+              </List>
+            </Box>
             <Button
               fullWidth
               endIcon={<ArrowForwardIcon />}

@@ -35,3 +35,9 @@ class LessonPdfSyncFromStorage extends LessonDetailsEvent {
 class LessonDetailsRefreshCompletion extends LessonDetailsEvent {
   const LessonDetailsRefreshCompletion();
 }
+
+/// Fired when the learner has read a text-only lesson (reached bottom or
+/// content fits on screen without scrolling).
+class LessonTextOnlyEngaged extends LessonDetailsEvent {
+  const LessonTextOnlyEngaged();
+}
