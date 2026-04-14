@@ -13,10 +13,12 @@ class CourseLessonListSection extends StatelessWidget {
     required this.course,
     required this.progressRebuildKey,
     required this.onAfterLessonReturn,
+
   });
 
   final Course course;
   final int progressRebuildKey;
+
 
 
   final void Function(bool pathProgressChanged) onAfterLessonReturn;
@@ -63,6 +65,7 @@ class CourseLessonListSection extends StatelessWidget {
                       ),
                     ),
                   ),
+              /*
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -84,6 +87,7 @@ class CourseLessonListSection extends StatelessWidget {
                       ),
                     ),
                   ),
+               */
                 ],
               ),
               const SizedBox(height: 4),
@@ -96,6 +100,7 @@ class CourseLessonListSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
+
               for (var i = 0; i < sorted.length; i++) ...[
                 if (i > 0)
                   Divider(
@@ -125,6 +130,8 @@ class CourseLessonListSection extends StatelessWidget {
                           _LessonIndexBadge(
                             index: i + 1,
                             isDone: doneIds.contains(sorted[i].id),
+                            course : course
+
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -138,7 +145,7 @@ class CourseLessonListSection extends StatelessWidget {
                                 fontWeight: doneIds.contains(sorted[i].id)
                                     ? FontWeight.w500
                                     : FontWeight.w600,
-                                color: doneIds.contains(sorted[i].id)
+                                color: doneIds.contains(sorted[i].id) ||  course.assignmentStatus == "completed"
                                     ? AppColors.textSecondary
                                     : AppColors.textBlack87,
                               ),
@@ -170,15 +177,17 @@ class _LessonIndexBadge extends StatelessWidget {
   const _LessonIndexBadge({
     required this.index,
     required this.isDone,
+    required this.course,
   });
 
   final int index;
   final bool isDone;
+  final Course course;
 
   @override
   Widget build(BuildContext context) {
     const size = 32.0;
-    if (isDone) {
+    if (isDone || course.assignmentStatus == "completed") {
       return Container(
         width: size,
         height: size,

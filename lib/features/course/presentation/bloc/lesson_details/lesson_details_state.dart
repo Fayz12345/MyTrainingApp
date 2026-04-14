@@ -61,6 +61,14 @@ class LessonDetailsReady extends LessonDetailsState {
   bool get hasTrackableLessonContent =>
       hasVideoBlock || hasPdfBlock || hasImageBlock;
 
+  /// Lessons with only text/html blocks (no video, PDF, or image keys).
+  /// These complete when the learner opens the lesson — nothing to "track" separately.
+  bool get isTextOnlyLessonContent =>
+      blocks.isNotEmpty &&
+      !hasVideoBlock &&
+      !hasPdfBlock &&
+      !hasImageBlock;
+
   int get requiredItemCount =>
       (hasImageBlock ? 1 : 0) + (hasPdfBlock ? 1 : 0) + (hasVideoBlock ? 1 : 0);
 

@@ -20,6 +20,7 @@ class LessonDetailsBloc extends Bloc<LessonDetailsEvent, LessonDetailsState> {
     on<LessonPdfMarkedViewed>(_onPdfMarked);
     on<LessonPdfSyncFromStorage>(_onPdfSync);
     on<LessonDetailsRefreshCompletion>(_onRefreshCompletion);
+    on<LessonTextOnlyEngaged>(_onTextOnlyEngaged);
   }
 
   final Map<String, Future<String>> _imageUrlFutureCache = {};
@@ -149,8 +150,28 @@ class LessonDetailsBloc extends Bloc<LessonDetailsEvent, LessonDetailsState> {
   Future<void> _tryAutoComplete(Emitter<LessonDetailsState> emit) async {
     final current = state;
     if (current is! LessonDetailsReady) return;
-    if (!current.hasTrackableLessonContent) return;
-    if (!current.meetsAutoCompletionRequirements) return;
+    if (!current.hasTrackableLessonContent ||
+        !current.meetsAutoCompletionRequirements) {
+      return;
+    }
+    await _persistLessonIfIncomplete(emit);
+  }
+
+  Future<void> _onTextOnlyEngaged(
+    LessonTextOnlyEngaged event,
+    Emitter<LessonDetailsState> emit,
+  ) async {
+    final current = state;
+    if (current is! LessonDetailsReady) return;
+    if (!current.isTextOnlyLessonContent) return;
+    await _persistLessonIfIncomplete(emit);
+  }
+
+  Future<void> _persistLessonIfIncomplete(
+    Emitter<LessonDetailsState> emit,
+  ) async {
+    final current = state;
+    if (current is! LessonDetailsReady) return;
     if (current.lessonPersistedComplete) return;
     if (current.autoMarkingInProgress) return;
 

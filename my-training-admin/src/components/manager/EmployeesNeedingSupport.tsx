@@ -115,6 +115,26 @@ interface StrugglingEmployee {
   supportProvidedAt?: string;
 }
 
+function groupFlaggedEmployeesByEmployeeId(items: StrugglingEmployee[]): Array<{
+  employee: StrugglingEmployee['employee'];
+  rows: StrugglingEmployee[];
+}> {
+  const order: string[] = [];
+  const map = new Map<string, StrugglingEmployee[]>();
+  for (const item of items) {
+    const id = item.employee.id;
+    if (!map.has(id)) {
+      order.push(id);
+      map.set(id, []);
+    }
+    map.get(id)!.push(item);
+  }
+  return order.map((id) => {
+    const rows = map.get(id)!;
+    return { employee: rows[0].employee, rows };
+  });
+}
+
 const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selectedStoreId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1010,6 +1030,11 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
     return strugglingEmployees.filter((s) => !s.supportProvided);
   }, [strugglingEmployees]);
 
+  const groupedFlaggedEmployees = useMemo(
+    () => groupFlaggedEmployeesByEmployeeId(filteredStruggling),
+    [filteredStruggling]
+  );
+
   // Calculate unique employee counts (not course-based)
   const uniqueEmployeeCounts = useMemo(() => {
     // Get unique employee IDs
@@ -1523,97 +1548,105 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredStruggling.map((employee, index) => (
-                    <TableRow
-                      key={`${employee.employee.id}_${employee.type}_${employee.course?.id || employee.learningPath?.id}_${index}`}
-                      sx={{
-                        bgcolor: employee.supportProvided ? 'grey.50' : 'inherit',
-                      }}
-                    >
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Avatar>
-                            <PersonIcon />
-                          </Avatar>
+                  {groupedFlaggedEmployees.map((group) =>
+                    group.rows.map((row, rowIndex) => (
+                      <TableRow
+                        key={row.assignmentId}
+                        sx={{
+                          bgcolor: row.supportProvided ? 'grey.50' : 'inherit',
+                        }}
+                      >
+                        {rowIndex === 0 && (
+                          <TableCell
+                            rowSpan={group.rows.length}
+                            sx={{ verticalAlign: 'top', borderBottom:
+                              group.rows.length > 1 ? 'none' : undefined }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                              <Avatar>
+                                <PersonIcon />
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {group.employee.name?.trim() || group.employee.email}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  {group.employee.email}
+                                </Typography>
+                                {group.employee.department && (
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    {group.employee.department}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
+                          </TableCell>
+                        )}
+                        <TableCell>
                           <Box>
-                            <Typography variant="body2" fontWeight="medium">
-                              {employee.employee.name}
+                            <Chip
+                              label={row.type === 'course' ? 'Course' : 'Learning Path'}
+                              size="small"
+                              color={row.type === 'course' ? 'primary' : 'secondary'}
+                              sx={{ mb: 0.5 }}
+                            />
+                            <Typography variant="body2">
+                              {row.type === 'course' ? row.course?.title : row.learningPath?.title}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {employee.employee.email}
-                            </Typography>
-                            {employee.employee.department && (
-                              <Typography variant="caption" color="text.secondary">
-                                {employee.employee.department}
-                              </Typography>
-                            )}
                           </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box>
-                          <Chip 
-                            label={employee.type === 'course' ? 'Course' : 'Learning Path'} 
-                            size="small" 
-                            color={employee.type === 'course' ? 'primary' : 'secondary'}
-                            sx={{ mb: 0.5 }}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={row.reason}
+                            color={getFlagColor(row.flagType)}
+                            size="small"
                           />
-                          <Typography variant="body2">
-                            {employee.type === 'course' ? employee.course?.title : employee.learningPath?.title}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {row.suggestedAction}
                           </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={employee.reason}
-                          color={getFlagColor(employee.flagType)}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {employee.suggestedAction}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', gap: 0.5 }}>
-                          <Tooltip title="View Details">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setSelectedEmployeeForHistory({
-                                  id: employee.employee.id,
-                                  name: employee.employee.name,
-                                });
-                                setShowHistoryView(true);
-                              }}
-                            >
-                              <VisibilityIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Send Message">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleSendMessage(employee)}
-                            >
-                              <EmailIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Mark Support Provided">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setSelectedEmployee(employee);
-                                setShowSupportDialog(true);
-                              }}
-                            >
-                              <CheckCircleIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <Tooltip title="View Details">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setSelectedEmployeeForHistory({
+                                    id: row.employee.id,
+                                    name: row.employee.name,
+                                  });
+                                  setShowHistoryView(true);
+                                }}
+                              >
+                                <VisibilityIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Send Message">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleSendMessage(row)}
+                              >
+                                <EmailIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Mark Support Provided">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setSelectedEmployee(row);
+                                  setShowSupportDialog(true);
+                                }}
+                              >
+                                <CheckCircleIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>

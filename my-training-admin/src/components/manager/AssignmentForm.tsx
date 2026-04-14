@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
@@ -43,16 +44,59 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  const [courseSearch, setCourseSearch] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const courseBlockRef = useRef<HTMLDivElement>(null);
+  const employeeBlockRef = useRef<HTMLDivElement>(null);
+
+  const activeEmployees = useMemo(
+    () => employees.filter((emp) => emp.isActive !== false),
+    [employees]
+  );
+
+  const filteredEmployees = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase();
+    if (!q) return activeEmployees;
+    return activeEmployees.filter(
+      (emp) =>
+        (emp.name || '').toLowerCase().includes(q) ||
+        (emp.email || '').toLowerCase().includes(q) ||
+        (emp.department || '').toLowerCase().includes(q)
+    );
+  }, [activeEmployees, employeeSearch]);
+
+  /** Keep the chosen employee visible even when the search no longer matches them. */
+  const displayEmployees = useMemo(() => {
+    const selected = activeEmployees.find((e) => e.id === selectedEmployeeId);
+    if (!selected) return filteredEmployees;
+    if (filteredEmployees.some((e) => e.id === selected.id)) return filteredEmployees;
+    return [selected, ...filteredEmployees];
+  }, [activeEmployees, filteredEmployees, selectedEmployeeId]);
+
+  const filteredCourses = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courses;
+    return courses.filter((c) => (c.title || '').toLowerCase().includes(q));
+  }, [courses, courseSearch]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch courses and employees in parallel
+      const session = await fetchAuthSession();
+      const currentUserId =
+        session.userSub ?? (session.tokens?.idToken?.payload?.sub as string | undefined);
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Fetch courses and employees in parallel (only courses this manager created)
       const [coursesResult, employeesResult] = await Promise.all([
-        client.models.Course.list({}),
-        client.models.Employee.list({})
+        client.models.Course.list({
+          filter: { createdBy: { eq: currentUserId } },
+        }),
+        client.models.Employee.list({}),
       ]);
 
       if (coursesResult.errors && coursesResult.errors.length > 0) {
@@ -103,11 +147,10 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
     }
   };
 
-  const handleEmployeeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedEmployeeId(e.target.value);
-    // Clear error when user selects an employee
+  const handleEmployeeSelect = (employeeId: string) => {
+    setSelectedEmployeeId(employeeId);
     if (fieldErrors.employeeId) {
-      setFieldErrors(prev => {
+      setFieldErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors.employeeId;
         return newErrors;
@@ -139,6 +182,18 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
         return newErrors;
       });
     }
+  };
+
+  const handleCourseBlockBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && courseBlockRef.current?.contains(next)) return;
+    handleCoursesBlur();
+  };
+
+  const handleEmployeeBlockBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && employeeBlockRef.current?.contains(next)) return;
+    handleEmployeeBlur();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -246,6 +301,8 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
       // Reset form
       setSelectedEmployeeId('');
       setSelectedCourseIds([]);
+      setCourseSearch('');
+      setEmployeeSearch('');
       setFieldErrors({});
       setTouchedFields({});
     } catch (err) {
@@ -313,31 +370,76 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
             </p>
           ) : (
             <>
-              <select
-                value={selectedEmployeeId}
-                onChange={handleEmployeeChange}
-                onBlur={handleEmployeeBlur}
+              <div
+                ref={employeeBlockRef}
                 style={{
-                  width: '100%',
-                  padding: '0.75rem',
                   border: fieldErrors.employeeId ? '2px solid #d32f2f' : '1px solid #ccc',
                   borderRadius: '4px',
-                  fontSize: '1rem',
-                  outline: 'none'
+                  padding: '1rem',
                 }}
-                required
+                onBlur={handleEmployeeBlockBlur}
               >
-                <option value="">Choose an employee...</option>
-                {employees
-                  .filter(emp => emp.isActive !== false)
-                  .map(employee => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.name} ({employee.email})
-                      {employee.department && ` - ${employee.department}`}
-                    </option>
-                  ))
-                }
-              </select>
+                <label htmlFor="employee-search" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#555' }}>
+                  Search employees
+                </label>
+                <input
+                  id="employee-search"
+                  type="search"
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  placeholder="Type name, email, or department…"
+                  autoComplete="off"
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.75rem',
+                    marginBottom: '0.75rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                  {displayEmployees.length === 0 ? (
+                    <p style={{ color: '#666', fontStyle: 'italic', margin: '0.5rem 0' }}>
+                      {employeeSearch.trim()
+                        ? 'No employees match your search. Try a different name or email.'
+                        : 'No active employees to show.'}
+                    </p>
+                  ) : (
+                    displayEmployees.map((employee) => (
+                      <div
+                        key={employee.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          marginBottom: '0.75rem',
+                          padding: '0.75rem',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '4px',
+                          backgroundColor: selectedEmployeeId === employee.id ? '#f0f8ff' : 'white',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="assign-employee"
+                          id={`employee-${employee.id}`}
+                          checked={selectedEmployeeId === employee.id}
+                          onChange={() => handleEmployeeSelect(employee.id)}
+                          style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
+                        />
+                        <label htmlFor={`employee-${employee.id}`} style={{ flex: 1, cursor: 'pointer' }}>
+                          <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>{employee.name}</div>
+                          <div style={{ fontSize: '0.9rem', color: '#666' }}>{employee.email}</div>
+                          {employee.department && (
+                            <div style={{ fontSize: '0.8rem', color: '#999' }}>{employee.department}</div>
+                          )}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
               {touchedFields.employeeId && fieldErrors.employeeId && (
                 <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.25rem' }}>
                   {fieldErrors.employeeId}
@@ -358,47 +460,81 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({ selectedStoreId }) => {
             </p>
           ) : (
             <>
-              <div 
-                style={{ 
-                  border: fieldErrors.courses ? '2px solid #d32f2f' : '1px solid #ccc', 
-                  borderRadius: '4px', 
-                  maxHeight: '300px', 
-                  overflowY: 'auto',
-                  padding: '1rem'
-                }}
-                onBlur={handleCoursesBlur}
-                tabIndex={0}
-              >
-              {courses.map(course => (
-                <div key={course.id} style={{ 
-                  display: 'flex', 
-                  alignItems: 'flex-start', 
-                  marginBottom: '1rem',
-                  padding: '0.75rem',
-                  border: '1px solid #e0e0e0',
+              <div
+                ref={courseBlockRef}
+                style={{
+                  border: fieldErrors.courses ? '2px solid #d32f2f' : '1px solid #ccc',
                   borderRadius: '4px',
-                  backgroundColor: selectedCourseIds.includes(course.id) ? '#f0f8ff' : 'white'
-                }}>
-                  <input
-                    type="checkbox"
-                    id={`course-${course.id}`}
-                    checked={selectedCourseIds.includes(course.id)}
-                    onChange={(e) => handleCourseSelection(course.id, e.target.checked)}
-                    style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
-                  />
-                  <label htmlFor={`course-${course.id}`} style={{ flex: 1, cursor: 'pointer' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                      {course.title}
-                    </div>
-                    <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                      Passing Score: {course.passingScore ?? 'Not set'}%
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: '#999' }}>
-                      Created: {new Date(course.createdAt).toLocaleDateString()}
-                    </div>
-                  </label>
+                  padding: '1rem',
+                }}
+                onBlur={handleCourseBlockBlur}
+              >
+                <label htmlFor="course-search" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#555' }}>
+                  Search courses
+                </label>
+                <input
+                  id="course-search"
+                  type="search"
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  placeholder="Type to filter by course title…"
+                  autoComplete="off"
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.75rem',
+                    marginBottom: '0.75rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div
+                  style={{
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  {filteredCourses.length === 0 ? (
+                    <p style={{ color: '#666', fontStyle: 'italic', margin: '0.5rem 0' }}>
+                      {courseSearch.trim()
+                        ? 'No courses match your search. Try a different title.'
+                        : 'No courses to show.'}
+                    </p>
+                  ) : (
+                    filteredCourses.map((course) => (
+                      <div
+                        key={course.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          marginBottom: '1rem',
+                          padding: '0.75rem',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '4px',
+                          backgroundColor: selectedCourseIds.includes(course.id) ? '#f0f8ff' : 'white',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          id={`course-${course.id}`}
+                          checked={selectedCourseIds.includes(course.id)}
+                          onChange={(e) => handleCourseSelection(course.id, e.target.checked)}
+                          style={{ marginRight: '0.75rem', marginTop: '0.25rem' }}
+                        />
+                        <label htmlFor={`course-${course.id}`} style={{ flex: 1, cursor: 'pointer' }}>
+                          <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>{course.title}</div>
+                          <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                            Passing Score: {course.passingScore ?? 'Not set'}%
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#999' }}>
+                            Created: {new Date(course.createdAt).toLocaleDateString()}
+                          </div>
+                        </label>
+                      </div>
+                    ))
+                  )}
                 </div>
-              ))}
               </div>
               {touchedFields.courses && fieldErrors.courses && (
                 <div style={{ color: '#d32f2f', fontSize: '0.875rem', marginTop: '0.5rem' }}>

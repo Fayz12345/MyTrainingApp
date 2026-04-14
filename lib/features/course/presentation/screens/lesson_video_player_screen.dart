@@ -8,6 +8,7 @@ import '../../../../core/services/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/course_model.dart';
 import '../../data/models/lesson_model.dart';
+import '../../services/video_progress_service.dart';
 
 class LessonVideoPlayerScreen extends StatefulWidget {
   final Course course;
@@ -50,6 +51,15 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   /// Beyond this, first frame is slow → treat as weak/slow link and show spinner (no text).
   static const Duration _initStallThreshold = Duration(milliseconds: 550);
 
+  /// Separate from course main video — one row per assignment + lesson + storage key.
+  String get _lessonVideoProgressKey {
+    final scope = widget.course.assignmentId ?? widget.course.id;
+    return '${scope}_lesson_${widget.lesson.id}_${widget.videoKey}';
+  }
+
+  Duration? _savedResumePosition;
+  bool _savedVideoCompleted = false;
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +74,16 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
 
   Future<void> _loadVideo() async {
     try {
+      final saved = await VideoProgressService.getVideoProgress(
+        _lessonVideoProgressKey,
+      );
+      final completed = await VideoProgressService.isVideoCompleted(
+        _lessonVideoProgressKey,
+      );
+      if (!mounted || _disposed) return;
+      _savedResumePosition = saved;
+      _savedVideoCompleted = completed;
+
       final url = await StorageService.getVideoUrl(widget.videoKey);
       // Progressive buffering is handled by the platform player (HTTP range / internal buffer).
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -75,7 +95,20 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
       }
 
       await controller.setPlaybackSpeed(_playbackSpeed);
+
+      final duration = controller.value.duration;
+      if (duration.inMilliseconds > 0 &&
+          _savedResumePosition != null &&
+          !_savedVideoCompleted) {
+        final resume = _savedResumePosition!.inMilliseconds <
+                (duration.inMilliseconds * 0.95)
+            ? _savedResumePosition!
+            : Duration.zero;
+        await controller.seekTo(resume);
+      }
+
       controller.addListener(_onVideoUpdate);
+      _startPeriodicProgressSave();
       await controller.play();
       if (!mounted || _disposed) {
         controller.removeListener(_onVideoUpdate);
@@ -104,6 +137,46 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
     }
   }
 
+  void _startPeriodicProgressSave() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted || _disposed) return;
+      final c = _controller;
+      if (c == null || !c.value.isInitialized) return;
+      final position = c.value.position;
+      final duration = c.value.duration;
+      if (duration.inMilliseconds > 0 &&
+          position.inMilliseconds > 0 &&
+          !_completed) {
+        final validPosition =
+            position.inMilliseconds > duration.inMilliseconds ? duration : position;
+        VideoProgressService.saveVideoProgress(
+          _lessonVideoProgressKey,
+          validPosition,
+          duration: duration,
+        );
+      }
+      if (mounted && !_disposed && _controller != null) {
+        _startPeriodicProgressSave();
+      }
+    });
+  }
+
+  void _saveFinalProgress() {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || _disposed) return;
+    final position = c.value.position;
+    final duration = c.value.duration;
+    if (duration.inMilliseconds > 0 && position.inMilliseconds >= 0) {
+      final validPosition =
+          position.inMilliseconds > duration.inMilliseconds ? duration : position;
+      VideoProgressService.saveVideoProgress(
+        _lessonVideoProgressKey,
+        validPosition,
+        duration: duration,
+      );
+    }
+  }
+
   void _onVideoUpdate() {
     if (_disposed || !mounted) return;
     final c = _controller;
@@ -121,6 +194,12 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
       if (duration.inMilliseconds > 0 &&
           position.inMilliseconds >= (duration.inMilliseconds - 1000)) {
         _completed = true;
+        VideoProgressService.markVideoCompleted(_lessonVideoProgressKey);
+        VideoProgressService.saveVideoProgress(
+          _lessonVideoProgressKey,
+          duration,
+          duration: duration,
+        );
         c.removeListener(_onVideoUpdate);
         c.pause();
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -246,6 +325,9 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   void _restartFromBeginning() {
     final c = _controller;
     if (c == null) return;
+    VideoProgressService.clearVideoProgress(_lessonVideoProgressKey);
+    _savedResumePosition = Duration.zero;
+    _savedVideoCompleted = false;
     if (_completed) {
       c.addListener(_onVideoUpdate);
     }
@@ -333,6 +415,9 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
               if (!mounted || _disposed) return;
               final c = _controller;
               if (c == null || !c.value.isInitialized) return;
+              await VideoProgressService.clearVideoProgress(_lessonVideoProgressKey);
+              _savedResumePosition = Duration.zero;
+              _savedVideoCompleted = false;
               c.removeListener(_onVideoUpdate);
               try {
                 await c.seekTo(Duration.zero);
@@ -372,6 +457,7 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   @override
   void dispose() {
     _initStallTimer?.cancel();
+    _saveFinalProgress();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _disposed = true;
     final c = _controller;

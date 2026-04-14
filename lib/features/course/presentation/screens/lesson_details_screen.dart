@@ -47,10 +47,26 @@ class LessonDetailsScreen extends StatelessWidget {
   }
 }
 
-class _LessonDetailsBody extends StatelessWidget {
+class _LessonDetailsBody extends StatefulWidget {
   const _LessonDetailsBody({required this.ready});
 
   final LessonDetailsReady ready;
+
+  @override
+  State<_LessonDetailsBody> createState() => _LessonDetailsBodyState();
+}
+
+class _LessonDetailsBodyState extends State<_LessonDetailsBody> {
+  ScrollController? _textScrollController;
+  bool _textEngagementFired = false;
+  int _layoutRetries = 0;
+
+  LessonDetailsReady get ready => widget.ready;
+
+  bool get _shouldTrackTextScroll =>
+      ready.isTextOnlyLessonContent &&
+      ready.blocks.isNotEmpty &&
+      !ready.lessonPersistedComplete;
 
   bool _hasValidKey(dynamic key) =>
       key != null &&
@@ -91,6 +107,83 @@ class _LessonDetailsBody extends StatelessWidget {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _ensureTextScrollTracking();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LessonDetailsBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.ready.lesson.id != oldWidget.ready.lesson.id) {
+      _textEngagementFired = false;
+      _layoutRetries = 0;
+      _disposeTextScrollController();
+    }
+    _ensureTextScrollTracking();
+  }
+
+  @override
+  void dispose() {
+    _disposeTextScrollController();
+    super.dispose();
+  }
+
+  void _disposeTextScrollController() {
+    if (_textScrollController == null) return;
+    _textScrollController!.removeListener(_onTextScroll);
+    _textScrollController!.dispose();
+    _textScrollController = null;
+  }
+
+  void _ensureTextScrollTracking() {
+    if (!_shouldTrackTextScroll) {
+      _disposeTextScrollController();
+      return;
+    }
+    if (_textScrollController != null) return;
+    _textScrollController = ScrollController();
+    _textScrollController!.addListener(_onTextScroll);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _checkTextOnlyFitsOnScreen());
+  }
+
+  static const double _textScrollBottomSlack = 48;
+
+  void _checkTextOnlyFitsOnScreen() {
+    if (!mounted || _textEngagementFired || !_shouldTrackTextScroll) return;
+    final c = _textScrollController;
+    if (c == null) return;
+    if (!c.hasClients) {
+      _layoutRetries++;
+      if (_layoutRetries > 24) return;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _checkTextOnlyFitsOnScreen());
+      return;
+    }
+    _layoutRetries = 0;
+    if (c.position.maxScrollExtent <= _textScrollBottomSlack) {
+      _fireTextOnlyEngagement();
+    }
+  }
+
+  void _onTextScroll() {
+    if (_textEngagementFired || !_shouldTrackTextScroll) return;
+    final c = _textScrollController;
+    if (c == null || !c.hasClients) return;
+    if (c.position.pixels >=
+        c.position.maxScrollExtent - _textScrollBottomSlack) {
+      _fireTextOnlyEngagement();
+    }
+  }
+
+  void _fireTextOnlyEngagement() {
+    if (_textEngagementFired) return;
+    _textEngagementFired = true;
+    context.read<LessonDetailsBloc>().add(const LessonTextOnlyEngaged());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bloc = context.read<LessonDetailsBloc>();
     final content = ready.blocks.isEmpty
@@ -101,6 +194,8 @@ class _LessonDetailsBody extends StatelessWidget {
             ),
           )
         : ListView.builder(
+            controller:
+                _shouldTrackTextScroll ? _textScrollController : null,
             padding: const EdgeInsets.all(20.0),
             itemCount: ready.blocks.length,
             itemBuilder: (context, index) {
@@ -145,11 +240,22 @@ class _LessonDetailsBody extends StatelessWidget {
                   child: Builder(
                     builder: (context) {
                       final already = ready.lessonPersistedComplete;
+                      final courseAssignmentCompleted = ready.course.assignmentStatus == 'completed';
+                      final showCompletedBanner = already || courseAssignmentCompleted;
+                      print('showCompletedBanner $showCompletedBanner');
                       final required = ready.requiredItemCount;
                       final completed = ready.completedItemCount;
                       final progressText = required == 0
-                          ? 'No trackable content in this lesson.'
+                          ? (ready.isTextOnlyLessonContent
+                              ? 'Scroll to the bottom to complete. If it fits on screen, it completes automatically.'
+                              : ready.blocks.isEmpty
+                                  ? 'No content in this lesson.'
+                                  : 'No trackable content in this lesson.')
                           : '$completed / $required items completed';
+                      final pendingIcon = required == 0 &&
+                              ready.isTextOnlyLessonContent
+                          ? Icons.menu_book_outlined
+                          : Icons.hourglass_top;
                       return Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -157,12 +263,12 @@ class _LessonDetailsBody extends StatelessWidget {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: already
+                          color: showCompletedBanner
                               ? Colors.green.withOpacity(0.1)
                               : AppColors.primaryBlue.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: already
+                            color: showCompletedBanner
                                 ? Colors.green.withOpacity(0.35)
                                 : AppColors.primaryBlue.withOpacity(0.25),
                           ),
@@ -170,23 +276,26 @@ class _LessonDetailsBody extends StatelessWidget {
                         child: Row(
                           children: [
                             Icon(
-                              already
+                              showCompletedBanner
                                   ? Icons.check_circle
-                                  : Icons.hourglass_top,
-                              color: already
+                                  : pendingIcon,
+                              color: showCompletedBanner
                                   ? Colors.green
                                   : AppColors.primaryBlue,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                already
+                                showCompletedBanner
                                     ? 'Lesson completed'
-                                    : 'Auto progress: $progressText',
+                                    : (required == 0 &&
+                                            ready.isTextOnlyLessonContent)
+                                        ? progressText
+                                        : 'Auto progress: $progressText',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: already
+                                  color: showCompletedBanner
                                       ? Colors.green[700]
                                       : AppColors.primaryBlue,
                                 ),
@@ -517,3 +626,4 @@ class _LessonDetailsBody extends StatelessWidget {
     }
   }
 }
+

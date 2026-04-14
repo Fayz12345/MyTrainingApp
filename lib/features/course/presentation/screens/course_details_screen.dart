@@ -220,32 +220,37 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
   void _startQuiz(BuildContext context, Course course) async {
     if (course.assignmentId == null) return;
 
-    final lessonsOk = await LessonCompletionService.areAllLessonsCompleted(
-      course,
-    );
-    if (!lessonsOk) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Complete all lessons before starting the quiz.',
+    final isCourseCompleted = course.assignmentStatus == 'completed';
+
+    // Incomplete assignments: require all lessons (and PDF rules) before quiz.
+    // Completed assignments: allow opening the quiz directly (e.g. review).
+    if (!isCourseCompleted) {
+      final lessonsOk = await LessonCompletionService.areAllLessonsCompleted(
+        course,
+      );
+      if (!lessonsOk) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Complete all lessons before starting the quiz.',
+              ),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
             ),
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-          ),
-        );
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    // Check if PDF must be viewed before quiz
-    final mustViewPdf = await PdfViewerHelper.mustViewPdfBeforeQuiz(course);
+      final mustViewPdf = await PdfViewerHelper.mustViewPdfBeforeQuiz(course);
 
-    if (mustViewPdf) {
-      if (mounted) {
-        _showPdfRequiredDialog(context, course);
+      if (mustViewPdf) {
+        if (mounted) {
+          _showPdfRequiredDialog(context, course);
+        }
+        return;
       }
-      return;
     }
 
     // Log quiz start
@@ -664,6 +669,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                                     color: AppColors.textBlack87,
                                   ),
                                 ),
+
                               ],
                             ),
                             const SizedBox(height: 20),
@@ -680,7 +686,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                                   ..sort((a, b) => a.order.compareTo(b.order));
                                 final allLessonsCompleted = sortedLessons.isNotEmpty &&
                                     sortedLessons.every(
-                                      (lesson) => doneIds.contains(lesson.id),
+                                      (lesson) => doneIds.contains(lesson.id) ||course.assignmentStatus == "completed",
                                     );
 
                                 return Container(
@@ -699,6 +705,85 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                                   ),
                                   child: Column(
                                     children: [
+                                      if(course.assignmentStatus== "assigned")
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical:  4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.lightBlueBackground,
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text('Assigned', style: TextStyle(
+                                                fontSize:  11,
+                                                fontWeight: FontWeight.w700,
+                                              color: AppColors.inProgressBlue
+                                            ),),
+                                          ),
+                                        ],
+                                      ),
+                                      if(course.assignmentStatus== "in_progress")
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          children: [
+                                            Container(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical:  4,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.lightBlueBackground,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Text('In Progress', style: TextStyle(
+                                                  fontSize:  11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.inProgressBlue
+                                              ),),
+                                            ),
+                                          ],
+                                        ),
+
+                                      if(course.assignmentStatus== "completed")
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical:  4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.lightGreenBackground,
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.check_circle,
+                                                  size: 14,
+                                                  color: AppColors.completedGreen,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'Completed',
+                                                  style: TextStyle(
+                                                    fontSize:  11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.completedGreen,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+
                                       for (var i = 0; i < sortedLessons.length; i++) ...[
                                         _buildLessonItem(
                                           context: context,
@@ -715,6 +800,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                                             );
                                             await _refreshProgress();
                                           },
+                                          status: course.assignmentStatus
                                         ),
                                         if (i < sortedLessons.length - 1)
                                           Divider(
@@ -722,11 +808,13 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                                             color: AppColors.borderLightGray,
                                           ),
                                       ],
+
                                       if (sortedLessons.isNotEmpty)
                                         Divider(
                                           height: 20,
                                           color: AppColors.borderLightGray,
                                         ),
+
                                       FutureBuilder<bool>(
                                         future: _hasQuiz(course),
                                         builder: (context, quizSnapshot) {
@@ -842,7 +930,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
     bool isCompleted = false,
     bool isDisabled = false,
     String? subtitle,
-    IconData? icon,
+    IconData? icon, String? status,
   }) {
     return Material(
       color: Colors.transparent,
@@ -857,7 +945,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: isCompleted
+                  color: isCompleted ||status == "completed"
+                  //doneIds.contains(sorted[i].id) ||  course.assignmentStatus == "completed"
                       ? AppColors.completedGreen.withOpacity(0.12)
                       : AppColors.lightBlueBackground,
                   shape: BoxShape.circle,
@@ -868,7 +957,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                   ),
                 ),
                 child: Center(
-                  child: isCompleted
+                  child: isCompleted ||status == "completed"
                       ? const Icon(
                           Icons.check,
                           size: 18,

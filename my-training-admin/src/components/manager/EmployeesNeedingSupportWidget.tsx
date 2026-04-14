@@ -42,6 +42,31 @@ interface StrugglingEmployee {
   flagType: string;
 }
 
+interface GroupedStrugglingRow {
+  employee: StrugglingEmployee['employee'];
+  courses: Array<Pick<StrugglingEmployee, 'course' | 'reason' | 'flagType'>>;
+}
+
+type GroupedStrugglingCourseEntry = GroupedStrugglingRow['courses'][number];
+
+function groupStrugglingByEmployee(items: StrugglingEmployee[]): GroupedStrugglingRow[] {
+  const order: string[] = [];
+  const map = new Map<string, GroupedStrugglingRow>();
+  for (const item of items) {
+    const id = item.employee.id;
+    if (!map.has(id)) {
+      order.push(id);
+      map.set(id, { employee: item.employee, courses: [] });
+    }
+    map.get(id)!.courses.push({
+      course: item.course,
+      reason: item.reason,
+      flagType: item.flagType,
+    });
+  }
+  return order.map((id) => map.get(id)!);
+}
+
 const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps> = ({ onViewAll, selectedStoreId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -260,7 +285,7 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
         }
       });
 
-      setStrugglingEmployees(Array.from(unique.values()).slice(0, 5)); // Show top 5
+      setStrugglingEmployees(Array.from(unique.values()));
     } catch (err) {
       console.error('Error fetching struggling employees:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -291,6 +316,8 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
     );
   }
 
+  const groupedStruggling = groupStrugglingByEmployee(strugglingEmployees).slice(0, 5);
+
   return (
     <Card>
       <CardContent>
@@ -300,13 +327,13 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
             <Typography variant="h6">Employees Needing Support</Typography>
           </Box>
           <Chip
-            label={strugglingEmployees.length}
+            label={groupedStruggling.length}
             color="error"
             size="small"
           />
         </Box>
 
-        {strugglingEmployees.length === 0 ? (
+        {groupedStruggling.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 3 }}>
             <Typography variant="body2" color="text.secondary">
               No employees currently need support
@@ -314,32 +341,44 @@ const EmployeesNeedingSupportWidget: React.FC<EmployeesNeedingSupportWidgetProps
           </Box>
         ) : (
           <>
-            <List dense>
-              {strugglingEmployees.map((employee, index) => (
-                <ListItem
-                  key={`${employee.employee.id}_${employee.course.id}_${index}`}
-                  sx={{ px: 0 }}
-                >
-                  <Avatar sx={{ width: 32, height: 32, mr: 1 }}>
-                    <PersonIcon fontSize="small" />
-                  </Avatar>
-                  <ListItemText
-                    primary={employee.employee.name}
-                    secondary={
-                      <Box>
-                        <Typography variant="caption" display="block">
-                          {employee.course.title}
-                        </Typography>
-                        <Typography variant="caption" color="error">
-                          {employee.reason}
-                        </Typography>
-                      </Box>
-                    }
-                    secondaryTypographyProps={{ component: 'div' }}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <Box sx={{ maxHeight: 320, overflowY: 'auto', pr: 1 }}>
+              <List dense disablePadding>
+                {groupedStruggling.map((group: GroupedStrugglingRow) => (
+                  <React.Fragment key={group.employee.id}>
+                    <ListItem sx={{ px: 0, alignItems: 'flex-start' }}>
+                      <Avatar sx={{ width: 32, height: 32, mr: 1, mt: 0.25 }}>
+                        <PersonIcon fontSize="small" />
+                      </Avatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" fontWeight="medium">
+                            {group.employee.name?.trim() || group.employee.email}
+                          </Typography>
+                        }
+                        secondary={
+                          <Box component="div" sx={{ mt: 0.5 }}>
+                            {group.courses.map((row: GroupedStrugglingCourseEntry) => (
+                              <Box
+                                key={row.course.id}
+                                sx={{ mb: group.courses.length > 1 ? 1 : 0, '&:last-of-type': { mb: 0 } }}
+                              >
+                                <Typography variant="caption" display="block" color="text.secondary">
+                                  {row.course.title}
+                                </Typography>
+                                <Typography variant="caption" color="error" display="block">
+                                  {row.reason}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        }
+                        secondaryTypographyProps={{ component: 'div' }}
+                      />
+                    </ListItem>
+                  </React.Fragment>
+                ))}
+              </List>
+            </Box>
             <Button
               fullWidth
               endIcon={<ArrowForwardIcon />}

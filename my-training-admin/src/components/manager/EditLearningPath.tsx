@@ -106,8 +106,17 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
       setLoading(true);
       setError(null);
 
-      // Fetch all courses
-      const coursesResult = await client.models.Course.list({});
+      const session = await fetchAuthSession();
+      const currentUserId =
+        session.userSub ?? (session.tokens?.idToken?.payload?.sub as string | undefined);
+      if (!currentUserId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Courses available to add: only those created by this manager
+      const coursesResult = await client.models.Course.list({
+        filter: { createdBy: { eq: currentUserId } },
+      });
       if (coursesResult.errors && coursesResult.errors.length > 0) {
         throw new Error('Failed to fetch courses: ' + coursesResult.errors.map((e: any) => e.message).join(', '));
       }
@@ -219,13 +228,23 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
     setDraggedIndex(null);
   };
 
+  const certificationSettingsChanged = () => {
+    const origOn = learningPath.isCertification ?? false;
+    const currOn = isCertification;
+    const origDays = origOn ? (learningPath.certificationExpirationDays ?? 365) : null;
+    const currDays = currOn ? certificationExpirationDays : null;
+    return origOn !== currOn || origDays !== currDays;
+  };
+
   const hasChanges = () => {
     if (title !== learningPath.title) return true;
     if (description !== (learningPath.description || '')) return true;
     if (isSequential !== (learningPath.isSequential ?? true)) return true;
     if (status !== (learningPath.status || 'draft')) return true;
+    if (mandatoryForScheduling !== (learningPath.mandatoryForScheduling ?? false)) return true;
+    if (certificationSettingsChanged()) return true;
     if (selectedCourses.length !== originalCourses.length) return true;
-    
+
     for (let i = 0; i < selectedCourses.length; i++) {
       const selected = selectedCourses[i];
       const original = originalCourses[i];
@@ -271,9 +290,12 @@ const EditLearningPath: React.FC<EditLearningPathProps> = ({ learningPath, onSuc
     const statusChanged = finalStatus !== (learningPath.status || 'draft');
     
     // Check if there are other changes (excluding status since we check it separately)
-    const hasOtherChanges = title !== learningPath.title ||
+    const hasOtherChanges =
+      title !== learningPath.title ||
       description !== (learningPath.description || '') ||
       isSequential !== (learningPath.isSequential ?? true) ||
+      mandatoryForScheduling !== (learningPath.mandatoryForScheduling ?? false) ||
+      certificationSettingsChanged() ||
       selectedCourses.length !== originalCourses.length ||
       selectedCourses.some((selected, i) => {
         const original = originalCourses[i];

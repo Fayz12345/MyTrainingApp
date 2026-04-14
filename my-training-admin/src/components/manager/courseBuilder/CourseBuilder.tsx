@@ -124,14 +124,27 @@ async function listAllQuizQuestionsForCourse(courseId: string) {
   return rows;
 }
 
-/** Update existing rows by id, create new rows, delete removed — avoids duplicate inserts from overlapping saves. */
-async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: QuizQuestion[]) {
+/** Update existing rows by id, create new rows, delete removed — avoids duplicate inserts from overlapping saves.
+ *  Returns persisted questions (same order as non-empty snapshot rows) so the UI can merge server ids without a full reload. */
+async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: QuizQuestion[]): Promise<QuizQuestion[]> {
   const validQuestions = prepareQuestionsForPersistence(quizSnapshot);
   const existing = await listAllQuizQuestionsForCourse(courseId);
   const existingById = new Map(existing.map((r: any) => [r.id as string, r]));
 
   const keptIds = new Set<string>();
   const now = new Date().toISOString();
+  const persistedOut: QuizQuestion[] = [];
+
+  const toClientShape = (q: QuizQuestion, id: string | undefined): QuizQuestion => ({
+    id,
+    question: q.question.trim(),
+    questionType: normalizeQuestionType(q.questionType),
+    options: q.options,
+    correctAnswer: q.correctAnswer,
+    correctAnswerText: q.correctAnswerText?.trim() ? q.correctAnswerText.trim() : undefined,
+    caseSensitive: q.caseSensitive ?? false,
+    fuzzyMatching: q.fuzzyMatching ?? false,
+  });
 
   for (const q of validQuestions) {
     const payload = {
@@ -153,6 +166,7 @@ async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: Quiz
         ...payload,
       });
       keptIds.add(qid);
+      persistedOut.push(toClientShape(q, qid));
     } else {
       const res = await client.models.QuizQuestion.create({
         courseId,
@@ -162,6 +176,7 @@ async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: Quiz
       });
       const newId = (res as { data?: { id?: string } | null })?.data?.id;
       if (newId) keptIds.add(newId);
+      persistedOut.push(toClientShape(q, newId));
     }
   }
 
@@ -171,6 +186,8 @@ async function upsertQuizQuestionsForCourse(courseId: string, quizSnapshot: Quiz
       await client.models.QuizQuestion.delete({ id: rid });
     }
   }
+
+  return persistedOut;
 }
 
 type CourseInput = {
@@ -260,39 +277,7 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
     }
   };
 
-  const loadQuiz = useCallback(async (courseId: string) => {
-    setIsLoadingQuiz(true);
-    try {
-      const raw = await listAllQuizQuestionsForCourse(courseId);
-      const data = raw.slice().sort((a: any, b: any) => {
-        const ta = new Date(a?.createdAt ?? 0).getTime();
-        const tb = new Date(b?.createdAt ?? 0).getTime();
-        return ta - tb;
-      });
-      if (data.length) {
-        setQuiz(
-          data.map((q: any) => ({
-            id: q.id as string | undefined,
-            question: q.question,
-            questionType: (q.questionType || 'multiple_choice') as QuizQuestion['questionType'],
-            options: Array.isArray(q.options) && q.options.length ? (q.options as string[]) : ['', '', '', ''],
-            correctAnswer: q.correctAnswer,
-            correctAnswerText: q.correctAnswerText ?? undefined,
-            caseSensitive: q.caseSensitive ?? false,
-            fuzzyMatching: q.fuzzyMatching ?? false,
-          }))
-        );
-      } else {
-        setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
-      }
-    } catch (e) {
-      console.error('Load quiz failed:', e);
-    } finally {
-      setIsLoadingQuiz(false);
-      setQuizServerSynced(true);
-    }
-  }, []);
-
+  // Load quiz once per course id (edit mode). No refetch after autosave — ids are merged from upsertQuizQuestionsForCourse.
   useEffect(() => {
     if (!course?.id) {
       setQuizServerSynced(true);
@@ -304,8 +289,46 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
       quizDebounceRef.current = null;
     }
     setQuizServerSynced(false);
-    loadQuiz(course.id);
-  }, [course?.id, loadQuiz]);
+    let cancelled = false;
+    (async () => {
+      setIsLoadingQuiz(true);
+      try {
+        const raw = await listAllQuizQuestionsForCourse(course.id);
+        if (cancelled) return;
+        const data = raw.slice().sort((a: any, b: any) => {
+          const ta = new Date(a?.createdAt ?? 0).getTime();
+          const tb = new Date(b?.createdAt ?? 0).getTime();
+          return ta - tb;
+        });
+        if (data.length) {
+          setQuiz(
+            data.map((q: any) => ({
+              id: q.id as string | undefined,
+              question: q.question,
+              questionType: (q.questionType || 'multiple_choice') as QuizQuestion['questionType'],
+              options: Array.isArray(q.options) && q.options.length ? (q.options as string[]) : ['', '', '', ''],
+              correctAnswer: q.correctAnswer,
+              correctAnswerText: q.correctAnswerText ?? undefined,
+              caseSensitive: q.caseSensitive ?? false,
+              fuzzyMatching: q.fuzzyMatching ?? false,
+            }))
+          );
+        } else {
+          setQuiz([{ question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
+        }
+      } catch (e) {
+        if (!cancelled) console.error('Load quiz failed:', e);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingQuiz(false);
+          setQuizServerSynced(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [course?.id]);
 
   // Load lessons for edit mode; migrate from blocksJson if no lessons exist yet.
   useEffect(() => {
@@ -447,9 +470,21 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
       persistChainRef.current = persistChainRef.current.catch(() => {}).then(async () => {
         setSaveStatus('saving');
         try {
-          await upsertQuizQuestionsForCourse(courseId, quizSnapshot);
+          const persistedRows = await upsertQuizQuestionsForCourse(courseId, quizSnapshot);
           skipNextQuizSaveRef.current = true;
-          await loadQuiz(courseId);
+          setQuiz((prev) => {
+            let i = 0;
+            return prev.map((row) => {
+              if (!row.question.trim()) return row;
+              const p = persistedRows[i++];
+              if (!p) return row;
+              return {
+                ...row,
+                ...p,
+                id: p.id,
+              };
+            });
+          });
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (e) {
@@ -458,7 +493,7 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
         }
       });
     },
-    [course?.id, quizServerSynced, loadQuiz]
+    [course?.id, quizServerSynced]
   );
 
   useEffect(() => {
@@ -614,7 +649,7 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
   };
 
   const addQuizQuestion = () => {
-    if (quiz.length < 10) setQuiz([...quiz, { question: '', options: ['', '', '', ''], correctAnswer: 0 }]);
+    setQuiz((prev) => [...prev, { question: '', questionType: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0 }]);
   };
   const removeQuizQuestion = (index: number) => {
     if (quiz.length > 1) setQuiz(quiz.filter((_, i) => i !== index));
@@ -1185,7 +1220,7 @@ export default function CourseBuilder({ course, onSuccess, onCancel }: CourseBui
                     )}
                   </Paper>
                 ))}
-                <Button startIcon={<AddIcon />} onClick={addQuizQuestion} disabled={quiz.length >= 10} variant="outlined">
+                <Button startIcon={<AddIcon />} onClick={addQuizQuestion} variant="outlined">
                   Add question
                 </Button>
               </Stack>

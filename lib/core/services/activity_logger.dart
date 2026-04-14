@@ -9,8 +9,7 @@ class ActivityLogger {
   static final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss.SSS');
   static final DateFormat _dateOnlyFormat = DateFormat('yyyy-MM-dd');
 
-  /// Log user activity and upload to S3
-  /// Activities are stored daily in log/YYYY-MM-DD/activity_log.txt
+
   static Future<void> logActivity(
     String activityType, {
     Map<String, dynamic>? variables,

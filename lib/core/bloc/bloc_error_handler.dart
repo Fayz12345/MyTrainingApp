@@ -1,12 +1,12 @@
 import 'package:amplify_flutter/amplify_flutter.dart' hide Emitter;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-/// Mixin for consistent error handling across BLoCs
+
 mixin BlocErrorHandler<Event, State> on Bloc<Event, State> {
   /// Create error state (override in implementing class)
   State createErrorState(String message);
 
-  /// Handle errors with consistent logging and state emission
+
   void handleError(
     Object error,
     StackTrace stackTrace,

@@ -36,6 +36,63 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _showFeedback = false;
   bool _showCelebration = false;
 
+  /// Same side effects as "Review Course": refresh parent data and navigate home/learning path/course details.
+  void _finishPassedQuizAndNavigate(BuildContext context, QuizResults state) {
+    ActivityLogger.logQuizCompletion(
+      courseId: widget.course.id,
+      courseTitle: widget.course.title,
+      assignmentId: widget.assignmentId,
+      score: state.score,
+      passed: state.passed,
+    );
+    ActivityLogger.logCourseCompletion(
+      courseId: widget.course.id,
+      courseTitle: widget.course.title,
+      assignmentId: widget.assignmentId,
+      score: state.score,
+      passed: true,
+    );
+    widget.onQuizComplete(state.score, state.passed);
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!context.mounted) return;
+
+      if (widget.source == 'learning_path' && widget.learningPath != null) {
+        context.pushReplacement(
+          '/learning-path-progress',
+          extra: {
+            'learningPath': widget.learningPath,
+            'returningFromQuiz': true,
+          },
+        );
+      } else if (widget.source == 'course_details') {
+        context.pushReplacement(
+          '/course-details',
+          extra: widget.course,
+        );
+      } else {
+        if (context.canPop()) {
+          context.pop();
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (context.mounted) {
+              context.go('/home?returningFromQuiz=true');
+            }
+          });
+        }
+      }
+    });
+  }
+
+  void _handleClosePressed() {
+    final bloc = context.read<QuizBloc>();
+    final state = bloc.state;
+    if (state is QuizResults && state.passed) {
+      _finishPassedQuizAndNavigate(context, state);
+      return;
+    }
+    widget.onClose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -252,33 +309,33 @@ class _QuizScreenState extends State<QuizScreen> {
   Widget build(BuildContext context) {
     return BlocBuilder<QuizBloc, QuizState>(
       builder: (context, state) {
+        final blockPopForPassedQuiz =
+            state is QuizResults && state.passed;
+
+        Widget child;
         if (state is QuizInitial) {
           // Show loading while quiz questions are being loaded
-          return const Scaffold(
+          child = const Scaffold(
             backgroundColor: Color(0xFFF6F7FB),
             body: LoadingWidget(
               message: 'Loading quiz...',
             ),
           );
-        }
-
-        if (state is QuizLoading) {
-          return const Scaffold(
+        } else if (state is QuizLoading) {
+          child = const Scaffold(
             backgroundColor: Color(0xFFF6F7FB),
             body: LoadingWidget(
               message: 'Loading quiz...',
             ),
           );
-        }
-
-        if (state is QuizError) {
-          return SafeArea(
+        } else if (state is QuizError) {
+          child = SafeArea(
             child: Scaffold(
               backgroundColor: const Color(0xFFF6F7FB),
               appBar: AppBar(
                 leading: IconButton(
                   icon: const Icon(Icons.close, color: Colors.black87),
-                  onPressed: widget.onClose,
+                  onPressed: _handleClosePressed,
                 ),
                 backgroundColor: Colors.white,
                 elevation: 0,
@@ -299,7 +356,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       ),
                       const SizedBox(height: 20),
                       ElevatedButton(
-                        onPressed: widget.onClose,
+                        onPressed: _handleClosePressed,
                         child: const Text('Close'),
                       ),
                     ],
@@ -308,32 +365,37 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
           );
-        }
-
-        if (state is QuizResults) {
-          return _buildResultsView(context, state);
-        }
-
-        if (state is QuizLoaded) {
-          return _buildQuizView(context, state);
-        }
-
-        if (state is QuizSubmitting) {
-          return const Scaffold(
+        } else if (state is QuizResults) {
+          child = _buildResultsView(context, state);
+        } else if (state is QuizLoaded) {
+          child = _buildQuizView(context, state);
+        } else if (state is QuizSubmitting) {
+          child = const Scaffold(
             backgroundColor: Color(0xFFF6F7FB),
             body: LoadingWidget(
               message: 'Submitting quiz...',
             ),
           );
+        } else {
+          child = Scaffold(
+            backgroundColor: const Color(0xFFF6F7FB),
+            body: Center(
+              child: Text(
+                'Unknown state: ${state.runtimeType}',
+              ),
+            ),
+          );
         }
 
-        return Scaffold(
-          backgroundColor: const Color(0xFFF6F7FB),
-          body: Center(
-            child: Text(
-              'Unknown state: ${state.runtimeType}',
-            ),
-          ),
+        return PopScope(
+          canPop: !blockPopForPassedQuiz,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            if (state is QuizResults && state.passed) {
+              _finishPassedQuizAndNavigate(context, state);
+            }
+          },
+          child: child,
         );
       },
     );
@@ -346,7 +408,7 @@ class _QuizScreenState extends State<QuizScreen> {
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.black87),
-            onPressed: widget.onClose,
+            onPressed: _handleClosePressed,
           ),
           backgroundColor: Colors.white,
           elevation: 0,
@@ -368,7 +430,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: widget.onClose,
+                    onPressed: _handleClosePressed,
                     child: const Text('Close'),
                   ),
                 ],
@@ -422,7 +484,7 @@ class _QuizScreenState extends State<QuizScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.close, color: Colors.black87, size: 24),
-              onPressed: widget.onClose,
+              onPressed: _handleClosePressed,
             ),
           ],
           title: Text(
@@ -602,66 +664,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () {
-                        // Log quiz completion
-                        ActivityLogger.logQuizCompletion(
-                          courseId: widget.course.id,
-                          courseTitle: widget.course.title,
-                          assignmentId: widget.assignmentId,
-                          score: state.score,
-                          passed: state.passed,
-                        );
-                        
-                        // Log course completion if quiz passed
-                        if (state.passed) {
-                          ActivityLogger.logCourseCompletion(
-                            courseId: widget.course.id,
-                            courseTitle: widget.course.title,
-                            assignmentId: widget.assignmentId,
-                            score: state.score,
-                            passed: true,
-                          );
-                        }
-                        
-                        // Call onQuizComplete to handle any cleanup first
-                        widget.onQuizComplete(state.score, state.passed);
-
-                        // Navigate back to the original screen based on source
-                        // Use pop() to remove quiz from stack, maintaining navigation history
-                        // This ensures back button works correctly (Home → Learning Path, not Quiz)
-                        Future.delayed(const Duration(milliseconds: 300), () {
-                          if (!context.mounted) return;
-
-                          // Check source and navigate accordingly
-                          if (widget.source == 'learning_path' &&
-                              widget.learningPath != null) {
-
-                            context.pushReplacement(
-                              '/learning-path-progress',
-                              extra: {
-                                'learningPath': widget.learningPath,
-                                'returningFromQuiz': true, // Trigger refresh
-                              },
-                            );
-                          } else if (widget.source == 'course_details') {
-                            // User came from course details → Replace quiz with course details
-                            context.pushReplacement(
-                              '/course-details',
-                              extra: widget.course,
-                            );
-                          } else {
-                            // User came from course list → Pop quiz and navigate to home
-                            if (context.canPop()) {
-                              context.pop(); // Remove quiz from stack
-                              Future.delayed(const Duration(milliseconds: 100),
-                                  () {
-                                if (context.mounted && state.passed) {
-                                  // Only navigate with flag if quiz passed to trigger refresh
-                                  context.go('/home?returningFromQuiz=true');
-                                }
-                              });
-                            }
-                          }
-                        });
+                        _finishPassedQuizAndNavigate(context, state);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2C6EF2),
@@ -825,7 +828,7 @@ class _QuizScreenState extends State<QuizScreen> {
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.black87),
-            onPressed: widget.onClose,
+            onPressed: _handleClosePressed,
           ),
           title: Text(
             widget.course.title,
@@ -855,7 +858,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: widget.onClose,
+                    onPressed: _handleClosePressed,
                     child: const Text('Close'),
                   ),
                 ],
@@ -902,7 +905,7 @@ class _QuizScreenState extends State<QuizScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.black87, size: 24),
-          onPressed: widget.onClose,
+          onPressed: _handleClosePressed,
         ),
         title: Text(
           widget.course.title,

@@ -13,6 +13,7 @@ import '../../../../core/services/storage_service.dart';
 import '../../services/pdf_progress_service.dart';
 import '../../../../core/services/activity_logger.dart';
 import '../../../learning_path/presentation/bloc/learning_path_bloc.dart';
+import '../../../learning_path/data/models/learning_path_model.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../widgets/content_type_indicator.dart';
@@ -449,6 +450,20 @@ class _CourseListContentState extends State<CourseListContent> {
     );
   }
 
+  Widget _courseListSectionTitle(BuildContext context, String title) {
+    final dims = AppTheme.getDimensions(context);
+    final isTablet = dims.isTablet;
+    final isSmallScreen = dims.isSmallScreen;
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: isTablet ? 24 : (isSmallScreen ? 18 : 20),
+        fontWeight: FontWeight.bold,
+        color: AppColors.textBlack87,
+      ),
+    );
+  }
+
   /// Build main screen with CupertinoSliverNavigationBar
   Widget _buildCupertinoSliverScreen(
     BuildContext context,
@@ -564,56 +579,89 @@ class _CourseListContentState extends State<CourseListContent> {
                 learningPathState.paths.isNotEmpty;
 
             // If no courses AND no learning paths, show empty state
-            if (filteredCourses.isEmpty && !hasLearningPaths) {
+              if (filteredCourses.isEmpty && !hasLearningPaths) {
               return SliverFillRemaining(
                 hasScrollBody: false,
                 child: CourseListEmptyState(rawCoursesCount: courses.length),
               );
             }
 
+            final incompleteCourses = <Course>[
+              ...categorizedCourses[CourseListCategoryHelper.inProgress]!,
+              ...categorizedCourses[CourseListCategoryHelper.startTraining]!,
+            ];
+            final completedCourses =
+                categorizedCourses[CourseListCategoryHelper.completed]!;
+            final completedPaths = learningPathState is LearningPathLoaded
+                ? learningPathState.paths.where((p) => p.isCompleted).toList()
+                : <LearningPath>[];
+            final hasIncompletePaths = learningPathState is LearningPathLoaded &&
+                learningPathState.paths.any((p) => !p.isCompleted);
+            final hasCompletedTraining =
+                completedPaths.isNotEmpty || completedCourses.isNotEmpty;
+
+            final sectionGap = AppTheme.getDimensions(context).isSmallScreen
+                ? 16.0
+                : 24.0;
+            final pathCardBottomPad =
+                AppTheme.getDimensions(context).isSmallScreen ? 10.0 : 12.0;
+
+            final listChildren = <Widget>[
+              const TrainingPathsSection(),
+            ];
+
+            if (incompleteCourses.isNotEmpty) {
+              if (hasIncompletePaths) {
+                listChildren.add(SizedBox(height: sectionGap));
+              }
+              listChildren.add(_courseListSectionTitle(context, 'My Courses'));
+            // listChildren.add(const SizedBox(height: 12));
+              for (final course in incompleteCourses) {
+                listChildren.add(
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _buildCourseCard(context, course),
+                  ),
+                );
+              }
+            }
+
+            if (hasCompletedTraining) {
+              if (hasIncompletePaths || incompleteCourses.isNotEmpty) {
+                listChildren.add(SizedBox(height: sectionGap));
+              }
+              listChildren
+                  .add(_courseListSectionTitle(context, 'Completed Training'));
+              listChildren.add(const SizedBox(height: 12));
+              for (final path in completedPaths) {
+                listChildren.add(
+                  Padding(
+                    padding: EdgeInsets.only(bottom: pathCardBottomPad),
+                    child: LearningPathSummaryCard(
+                      path: path,
+                      isCompleted: true,
+                    ),
+                  ),
+                );
+              }
+              if (completedPaths.isNotEmpty && completedCourses.isNotEmpty) {
+                listChildren.add(const SizedBox(height: 12));
+              }
+              for (final course in completedCourses) {
+                listChildren.add(
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _buildCourseCard(context, course),
+                  ),
+                );
+              }
+            }
+
             // Otherwise, show content (learning paths and/or courses)
             return SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
               sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const LearningPathsCourseListSection(),
-
-                  // In Progress Section
-                  if (categorizedCourses['in_progress']!.isNotEmpty) ...[
-                    ...categorizedCourses['in_progress']!
-                        .map(
-                          (course) => Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _buildCourseCard(context, course),
-                          ),
-                        )
-                        .toList(),
-                  ],
-
-                  // Start Training Section
-                  if (categorizedCourses['start_training']!.isNotEmpty) ...[
-                    ...categorizedCourses['start_training']!
-                        .map(
-                          (course) => Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _buildCourseCard(context, course),
-                          ),
-                        )
-                        .toList(),
-                  ],
-
-                  // Completed Section
-                  if (categorizedCourses['completed']!.isNotEmpty) ...[
-                    ...categorizedCourses['completed']!
-                        .map(
-                          (course) => Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _buildCourseCard(context, course),
-                          ),
-                        )
-                        .toList(),
-                  ],
-                ]),
+                delegate: SliverChildListDelegate(listChildren),
               ),
             );
           },
