@@ -40,6 +40,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test-all-emails": "node test-all-email-lambdas.js",
     "eject": "react-scripts eject",
     "check-manager-groups": "node check-manager-groups.js",
     "list-cognito-groups": "node list-cognito-groups.js",

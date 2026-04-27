@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../../../amplify/data/resource';
+import { getEmployeeSupportMessageLambdaUrl } from '../../utils/employeeSupportEmailUrl';
 import {
   Box,
   Card,
@@ -880,12 +881,12 @@ const EmployeesNeedingSupport: React.FC<EmployeesNeedingSupportProps> = ({ selec
     message: string;
     supportReason?: string;
   }) => {
-    // Lambda Function URL - Configure after deployment
-    // Get this from AWS Lambda Console → Function → Configuration → Function URL
-    const LAMBDA_FUNCTION_URL = process.env.REACT_APP_EMPLOYEE_SUPPORT_MESSAGE_LAMBDA_URL || '';
-    
+    const LAMBDA_FUNCTION_URL = getEmployeeSupportMessageLambdaUrl();
+
     if (!LAMBDA_FUNCTION_URL) {
-      console.log('[EmployeesNeedingSupport] Lambda Function URL not configured. Skipping notification.');
+      console.log(
+        '[EmployeesNeedingSupport] Lambda Function URL not configured. Set REACT_APP_EMPLOYEE_SUPPORT_MESSAGE_LAMBDA_URL or deploy backend so amplify_outputs.json has custom.sendEmployeeSupportMessageFunctionUrl.'
+      );
       return { success: false, error: 'Lambda Function URL not configured' };
     }
 

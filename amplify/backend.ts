@@ -1,4 +1,6 @@
 import { defineBackend } from '@aws-amplify/backend';
+import { FunctionUrlAuthType, HttpMethod } from 'aws-cdk-lib/aws-lambda';
+import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { storage } from './storage/resource';
@@ -18,7 +20,7 @@ import { certificationExpirationCheck } from './functions/certificationExpiratio
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
  */
-defineBackend({
+const backend = defineBackend({
   auth,
   data,
   storage,
@@ -34,5 +36,30 @@ defineBackend({
   schedulingTest,
   schedulingEligibility,
   certificationExpirationCheck,
+});
+
+/** Admin UI → SES: manager sends support email to employee (browser POST). */
+const sendEmployeeSupportMessageUrl =
+  backend.sendEmployeeSupportMessage.resources.lambda.addFunctionUrl({
+    authType: FunctionUrlAuthType.NONE,
+    cors: {
+      allowedOrigins: ['*'],
+      allowedMethods: [HttpMethod.POST, HttpMethod.OPTIONS],
+      allowedHeaders: ['content-type'],
+    },
+  });
+
+backend.sendEmployeeSupportMessage.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+    resources: ['*'],
+  })
+);
+
+backend.addOutput({
+  custom: {
+    sendEmployeeSupportMessageFunctionUrl: sendEmployeeSupportMessageUrl.url,
+  },
 });
 
