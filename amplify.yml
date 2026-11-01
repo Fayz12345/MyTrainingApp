@@ -3,16 +3,33 @@ frontend:
   phases:
     preBuild:
       commands:
-        - cd my-training-admin
-        - npm ci
+        - 'echo "Working dir: $PWD"'
+        - "ls -la"
+        - 'FLUTTER_VERSION=3.24.3'
+        - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; if [ ! -d "$APP_DIR" ]; then echo "Flutter app dir not found"; ls -la; exit 1; fi; echo "Using APP_DIR=$APP_DIR"'
+        - 'cd "$APP_DIR" && curl -L "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" -o /tmp/flutter.tar.xz'
+        - |
+          cd "$APP_DIR" && python - <<'PY'
+          import tarfile, lzma
+          src = "/tmp/flutter.tar.xz"
+          dest = "/tmp"
+          with lzma.open(src) as f:
+              with tarfile.open(fileobj=f) as tar:
+                  tar.extractall(dest)
+          PY
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter config --no-analytics --enable-web'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && dart --disable-analytics'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter precache --web --no-android --no-ios'
+        - 'cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter pub get'
     build:
       commands:
-        - cd my-training-admin
-        - npm run build
+        - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; if [ ! -d "$APP_DIR" ]; then echo "Flutter app dir not found"; ls -la; exit 1; fi; cd "$APP_DIR" && export PATH="/tmp/flutter/bin:$PATH" && flutter build web --release --web-renderer html'
+        - 'APP_DIR="."; if [ ! -f pubspec.yaml ]; then APP_DIR="MyTrainingApp"; fi; cd "$APP_DIR" && OUT_DIR="$CODEBUILD_SRC_DIR/build" && rm -rf "$OUT_DIR" && mkdir -p "$OUT_DIR" && cp -R build/web/. "$OUT_DIR"/'
   artifacts:
-    baseDirectory: my-training-admin/build
+    baseDirectory: build
     files:
       - "**/*"
   cache:
     paths:
-      - my-training-admin/node_modules/**/*
+      - "$HOME/.pub-cache"
+      - "build"
